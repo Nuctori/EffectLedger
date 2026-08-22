@@ -130,7 +130,7 @@ public class BucketIsolationTests
         var net1 = NetTable.Compute(onlyCreate, scope);
         Assert.False(net1.IsConserved(res));
 
-        // create[5,5] + release[5,5] ⇒ 净 [-5,5] 含 0 ⇒ 守恒。
+        // create[5,5] + release[5,5] ⇒ signed sum = [0,0] 含 0 ⇒ 守恒（有符号 net 求和为真求和，非 min/max 包络）。
         var balanced = Signature.Of(
             new Claim(Kind.Occupy, res, Mode.Create, scope, Interval.Exact(5)),
             new Claim(Kind.Occupy, res, Mode.Release, scope, Interval.Exact(5)));
@@ -138,8 +138,8 @@ public class BucketIsolationTests
         Assert.True(net2.IsConserved(res));
 
         var v = net2.Get(res);
-        Assert.Equal(-5L, v.Lo.Value);
-        Assert.Equal(5L, v.Hi.Value);
+        Assert.Equal(0L, v.Lo.Value);
+        Assert.Equal(0L, v.Hi.Value);
         Assert.True(v.ContainsZero);
     }
 

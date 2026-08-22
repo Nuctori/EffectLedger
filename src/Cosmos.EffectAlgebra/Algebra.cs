@@ -61,7 +61,8 @@ public sealed class NetTable
             var r = ResourceId.Normalize(c.Resource);
             // §3.3.1 有符号 size：release 取 size 的「负向」[-hi,-lo]；create/move 正号 [lo,hi]。
             var signed = c.Mode == Mode.Release ? Negate(c.Size) : ToSigned(c.Size);
-            t._net[r] = t._net.ContainsKey(r) ? t._net[r].Merge(signed) : signed;
+            // §3.3.1 有符号 net = 同资源多 Claim 净效应「求和」（Add），非 min/max 包络（Merge 会吞掉守恒判定，漏报泄漏）。
+            t._net[r] = t._net.ContainsKey(r) ? t._net[r].Add(signed) : signed;
         }
         return t;
     }
