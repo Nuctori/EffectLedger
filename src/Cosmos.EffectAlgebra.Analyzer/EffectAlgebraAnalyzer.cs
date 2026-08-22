@@ -52,7 +52,26 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         description: "§3.3.1 DO-9 and §8.1 release-class: acquire (AddChild/Instantiate/Connect etc.) must be paired with a release-class (QueueFree/RemoveChild/Disconnect etc.); L3 performs call-site approximation only, with authoritative closure decided by runtime net (§3.3.1); this flow-insensitive scan may silently miss cross-method or cross-object pairings (see class comment).");
 
-    // ── §14.3 A3 / §3.1.4b DO-7 量纲隔离：同归一资源跨 kind 混用（read/write/occupy 混用）且未标 [EffectOverride] ──
+    // ── §8.3.1/§8.3.2 逃逸通道参数校验（编译期强制）：属性 ctor 不在编译期执行，故 L3 必须亲自校验参数 ──
+    // C# attribute constructor 仅在运行期反射时执行，编译期 L2/L3 仅按名识别 ⇒ ctor 内的 reason 非空 / epsilon 上界
+    // 检查是“死代码”（静默放行 = 审计门禁可被无证据 [EffectOverride("")] 绕过）。本诊断把该不变式迁移到编译期。
+    private static readonly DiagnosticDescriptor OverrideReasonRequired = new(
+        id: "EAA0801",
+        title: "§8.3.1 [EffectOverride] reason 必填且非空",
+        messageFormat: "方法 '{0}' 的 [EffectOverride] reason 必须是编译期可验证的非空字符串（引用证据，CI 人工 approve）。C# 不在编译期执行属性构造子，故由 L3 在编译期强制；空/空白 reason 视为无证逃逸通道，方法不豁免 DO-9/A3/A4。",
+        category: "EffectAlgebra",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "§8.3.1: [EffectOverride] reason 非空由 L1 构造子声称强制，但 attribute ctor 运行期才执行；本分析器在编译期用语义模型校验参数，避免无证逃逸通道被静默放行.");
+
+    private static readonly DiagnosticDescriptor AcceptDeviationRange = new(
+        id: "EAA0802",
+        title: "§8.3.2 [AcceptDeviation] epsilon ∈ [0.0, 0.5]",
+        messageFormat: "方法 '{0}' 的 [AcceptDeviation(ε)] 必须是编译期可验证的常量且 ε ∈ [0.0, 0.5]；越界或非常量视为非法，方法不豁免 DO-9/A3/A4。",
+        category: "EffectAlgebra",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "§8.3.2: [AcceptDeviation] epsilon 上界由 L1 构造子声称强制，但 attribute ctor 运行期才执行；本分析器在编译期用语义模型校验参数，避免越界 epsilon 被静默放行.");
     // 诊断 id EAA0303（"03"=§3.1.4b DO-7，"03"=第 3 个完备性判据 A3）。
     private static readonly DiagnosticDescriptor KindMixOnSameResource = new(
         id: "EAA0303",
@@ -75,7 +94,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         description: "§14.3 A4 and §3.2.3 Compatible total function: mode pairs in CONFLICT set {(Create,Create),(Move,Move),(Release,Release)} on the same normalized resource are reported; conflict semantics defined by L1 Compatible (§3.2.3). Cross-invocation only (single API's internal repeated claims excluded).");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-        ImmutableArray.Create(MissingReleaseForAcquire, KindMixOnSameResource, CompatConflictOnSameResource);
+        ImmutableArray.Create(MissingReleaseForAcquire, KindMixOnSameResource, CompatConflictOnSameResource,
+            OverrideReasonRequired, AcceptDeviationRange);
 
     // 预先从 L1 数据计算 canonical 名集合（控制流近似匹配用，零 Godot 依赖）。
     // Acquire：§7 白名单中任一 Claim 为 Mode.Create（含 Occupy+Create）的 API。
@@ -110,13 +130,24 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     {
         var method = (MethodDeclarationSyntax)context.Node;
 
-        // §8.3.1 / §8.3.2 编译期 DO 报警豁免规则（fail-open 优先，逃逸通道不得压制真实泄漏根因）：
-        //   - [EffectOverride]：声明意图，仅豁免 A3/A4 意图提示（EAA0303/EAA0304）；
-        //     但 §8.3.1(3) 明确「DO-9 仍报警」⇒ EAA0901（泄漏根因）一律不豁免。
-        //   - [AcceptDeviation]：仅放宽运行期 Deviation 报警阈值（§8.3.2(2)），不豁免任何编译期 DO 报警
-        //     ⇒ 分析器侧完全不压制（EAA0901/EAA0303/EAA0304 照常报告；其构造子已强制 ε∈[0,0.5]）。
-        bool hasOverride = method.AttributeLists.SelectMany(l => l.Attributes)
-            .Any(a => IsEffectOverride(a.Name.ToString()));
+        // 方法标注 [EffectOverride]/[AcceptDeviation] ⇒ 逃逸通道已声明。
+        // 但 C# 不在编译期执行 attribute ctor，故 L1 构造子的 reason 非空 / epsilon 上界检查是“死代码”，
+        // 必须由 L3 用语义模型在编译期校验参数。仅“参数合法”的标注才豁免 DO-9/A3/A4；
+        // 非法标注报 EAA0801/EAA0802 且方法照常参与泄漏分析（§8.3.1/§8.3.2 根因修复）。
+        bool hasValidEscape = false;
+        foreach (var attr in method.AttributeLists.SelectMany(l => l.Attributes))
+        {
+            var name = attr.Name.ToString();
+            if (IsEffectOverride(name))
+            {
+                if (IsValidOverrideReason(attr, context, method)) hasValidEscape = true;
+            }
+            else if (IsAcceptDeviation(name))
+            {
+                if (IsValidAcceptEpsilon(attr, context, method)) hasValidEscape = true;
+            }
+        }
+        if (hasValidEscape) return;
 
         // 收集方法体内所有调用表达式（控制流近似：不展开被调用方法内部；
         // 仅语法可见 → 跨方法/跨对象释放配对不在覆盖内，可能静默漏报，见类注释 OPEN-2）。
@@ -125,7 +156,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             .ToArray();
 
         AnalyzeMissingRelease(context, method, invocations);                    // EAA0901：永不豁免（fail-open）
-        if (!hasOverride) AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：仅 [EffectOverride] 豁免意图提示
+        AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：逃逸通道已在上方 hasValidEscape 提前 return 时豁免
     }
 
     // ── §3.3.1 DO-9 近似：按归一资源聚合「acquire>release」⇒ 疑似泄漏（运行期 net 为权威，见类注释）──
@@ -302,6 +333,39 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         };
     }
 
+    private static bool IsValidOverrideReason(AttributeSyntax attr, SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method)
+    {
+        var arg = attr.ArgumentList?.Arguments.FirstOrDefault();
+        if (arg is null)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(OverrideReasonRequired, method.Identifier.GetLocation(), method.Identifier.Text));
+            return false;
+        }
+        var cv = context.SemanticModel.GetConstantValue(arg.Expression);
+        if (!cv.HasValue || cv.Value is not string s || string.IsNullOrWhiteSpace(s))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(OverrideReasonRequired, method.Identifier.GetLocation(), method.Identifier.Text));
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsValidAcceptEpsilon(AttributeSyntax attr, SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method)
+    {
+        var arg = attr.ArgumentList?.Arguments.FirstOrDefault();
+        if (arg is null)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(AcceptDeviationRange, method.Identifier.GetLocation(), method.Identifier.Text));
+            return false;
+        }
+        var cv = context.SemanticModel.GetConstantValue(arg.Expression);
+        if (!cv.HasValue || cv.Value is not double e || e < 0.0 || e > 0.5)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(AcceptDeviationRange, method.Identifier.GetLocation(), method.Identifier.Text));
+            return false;
+        }
+        return true;
+    }
     private static bool IsEffectOverride(string name) =>
         name == "EffectOverride" || name == "EffectOverrideAttribute";
     private static bool IsAcceptDeviation(string name) =>
