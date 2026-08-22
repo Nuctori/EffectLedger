@@ -27,7 +27,7 @@ namespace Cosmos.EffectAlgebra.Analyzer;
 /// DO-9 / A3 / A4 近似边界（诚实声明，迭代09 OPEN-2 + 迭代29 补）：本近似**仅扫描同一方法体内语法上可见的调用表达式**，
 ///   且按 canonical API 名（去 `.`/`_`、小写）匹配，不区分接收者。故：
 ///   - 带接收者前缀（如 `node.QueueFree()`、`GetTree().Free()`）与裸调用（如 `QueueFree()`、`this.QueueFree()`）
-///     均被 canonical 名匹配，**同方法内**的配对可见；
+///     与白名单键（含 Audio.Play 的方法名部分 Play）双重匹配，故接收者限定写法不再漏报（R6 修复）；
 ///   - 但**跨方法**（释放/配对发生在被调用助手/不同方法中）、**跨对象**（发生在另一实例且经由参数/字段传递）
 ///     的配对**不在本静态近似覆盖内**，可能静默漏报（false negative，不误报）；
 ///   - 本分析为 flow-insensitive（不追踪控制流分支/条件），仅做"方法体内是否同时出现"。
@@ -86,12 +86,20 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     private static string Canonical(string name) =>
         name.ToLowerInvariant().Replace(".", "").Replace("_", "");
 
+    // 白名单键的方法名部分：Audio.Play ⇒ Play；AddChild ⇒ AddChild。
+    // 用于以方法名（去接收者）二次匹配，修复接收者限定调用的漏报（见 R6）。
+    private static string MethodPart(string godotApi) =>
+        godotApi.Contains(".") ? godotApi.Substring(godotApi.LastIndexOf('.') + 1) : godotApi;
+
     private static ImmutableHashSet<string> BuildAcquireNames()
     {
         var set = ImmutableHashSet.CreateBuilder<string>();
         foreach (var m in GodotApiWhitelist.All)
             if (m.Claims.Any(c => c.Mode == Mode.Create))
+            {
                 set.Add(Canonical(m.GodotApi));
+                set.Add(Canonical(MethodPart(m.GodotApi)));
+            }
         return set.ToImmutable();
     }
 
@@ -100,7 +108,10 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         var set = ImmutableHashSet.CreateBuilder<string>();
         foreach (var m in GodotApiWhitelist.All)
             if (m.Claims.Any(c => c.Mode == Mode.Release))
+            {
                 set.Add(Canonical(m.GodotApi));
+                set.Add(Canonical(MethodPart(m.GodotApi)));
+            }
         // §8.1 release-class：Godot 方法名（snake_case 源）规范化为 C# PascalCase 匹配键。
         foreach (var r in ReleaseClass.Names)
             set.Add(Canonical(r));
@@ -143,13 +154,17 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         var firstAcquire = "";
         foreach (var inv in invocations)
         {
-            var canon = CanonicalOfInvocation(inv);
-            if (AcquireApiNames.Contains(canon))
+            // 全名 + 方法名（去接收者）双重匹配：node.AddChild / Audio.Play 都能命中。
+            var full = Canonical(RawName(inv));
+            var methodKey = Canonical(MethodName(inv));
+            bool isAcquire = AcquireApiNames.Contains(full) || AcquireApiNames.Contains(methodKey);
+            bool isRelease = ReleaseApiNames.Contains(full) || ReleaseApiNames.Contains(methodKey);
+            if (isAcquire)
             {
                 hasAcquire = true;
                 if (firstAcquire.Length == 0) firstAcquire = RawName(inv);
             }
-            if (ReleaseApiNames.Contains(canon)) hasRelease = true;
+            if (isRelease) hasRelease = true;
         }
 
         if (hasAcquire && !hasRelease)
@@ -261,20 +276,21 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     }
 
     // 调用 canonical 名 → §7 白名单条目（null 表示不在白名单，本近似不处理）。
+    // 匹配键既看全名（Audio.Play ⇒ audioplay）也看方法名（去接收者：node.QueueFree ⇒ queuefree），
+    // 以修复"带接收者的 Godot 主流写法"被静默漏报的 false negative（见 R6 对抗审计）。
     private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv)
     {
-        var canon = CanonicalOfInvocation(inv);
+        var full = Canonical(RawName(inv));
+        var method = Canonical(MethodName(inv));
         foreach (var m in GodotApiWhitelist.All)
-            if (Canonical(m.GodotApi) == canon)
-                return m;
+        {
+            var c = Canonical(m.GodotApi);
+            if (c == full || c == method) return m;
+        }
         return null;
     }
 
-    // 调用的 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
-    // 不区分接收者（node.QueueFree / this.QueueFree / 裸 QueueFree 同归 queuefree）。
-    private static string CanonicalOfInvocation(InvocationExpressionSyntax inv) =>
-        Canonical(RawName(inv));
-
+    // 调用的全名 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
     private static string RawName(InvocationExpressionSyntax inv)
     {
         return inv.Expression switch
@@ -284,6 +300,26 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             _ => inv.Expression.ToString()
         };
     }
+
+    // 方法名（去接收者 / 泛型参数）：MemberAccess "node.QueueFree" ⇒ "QueueFree"；
+    // 裸 "AddChild" ⇒ "AddChild"；泛型 "QueueFree<T>" ⇒ "QueueFree"。
+    // R6 修复：以方法名二次匹配白名单键，使 Godot 主流"接收者限定调用"不再漏报。
+    private static string MethodName(InvocationExpressionSyntax inv) =>
+        inv.Expression switch
+        {
+            MemberAccessExpressionSyntax ma => NameText(ma.Name),
+            GenericNameSyntax g => g.Identifier.Text,
+            IdentifierNameSyntax id => id.Identifier.Text,
+            _ => inv.Expression.ToString()
+        };
+
+    private static string NameText(SimpleNameSyntax name) =>
+        name switch
+        {
+            GenericNameSyntax g => g.Identifier.Text,
+            IdentifierNameSyntax i => i.Identifier.Text,
+            _ => name.ToString()
+        };
 
     private static bool IsEffectOverride(string name) =>
         name == "EffectOverride" || name == "EffectOverrideAttribute";
