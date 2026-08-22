@@ -172,9 +172,10 @@ public class Leaker
         Assert.Contains(diags, d => d.Id == "EAA0901");
     }
 
-    /// <summary>§8.3 — 仅 acquire 但标 [EffectOverride]（逃逸通道）⇒ analyzer 不报 EAA0901。</summary>
+    /// <summary>§8.3.1(3) — 仅 acquire 但标 [EffectOverride]（逃逸通道）⇒ EAA0901（泄漏根因）仍报；
+    /// 逃逸标注仅豁免 A3/A4 意图提示，不掩盖真实泄漏。</summary>
     [Fact]
-    public async Task OverrideExempt_NoAnalyzerWarning()
+    public async Task Override_DoesNotExemptLeak_StillReportsEAA0901()
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
@@ -194,7 +195,6 @@ public class Intended
         Assert.Contains(diags, d => d.Id == "EAA0901");
     }
 
-    /// <summary>§14 L2 — 生成代码真委托 L1（非桩）：含 GodotApiWhitelist.All + Signature.Union，
     /// <summary>§14 L2 — 生成代码真委托 L1（非桩）：含 GodotApiWhitelist.All + Signature.Union，
     /// 且反射 ComputeAddChild 返回非空 Signature（含 occupy Claim）。</summary>
     [Fact]
