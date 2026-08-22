@@ -194,8 +194,7 @@ public class Intended
         Assert.Contains(diags, d => d.Id == "EAA0901");
     }
 
-    /// <summary>§14 L2
-
+    /// <summary>§14 L2 — 生成代码真委托 L1（非桩）：含 GodotApiWhitelist.All + Signature.Union，
     /// <summary>§14 L2 — 生成代码真委托 L1（非桩）：含 GodotApiWhitelist.All + Signature.Union，
     /// 且反射 ComputeAddChild 返回非空 Signature（含 occupy Claim）。</summary>
     [Fact]
