@@ -25,18 +25,33 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // ① 识别标注：收集带 [EffectOverride] / [AcceptDeviation] 的 MethodDeclarationSyntax。
+        // ① 识别标注：收集带 [EffectOverride] / [AcceptDeviation] 的 MethodDeclarationSyntax（含声明类型名用于消歧）。
         var methods = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is MethodDeclarationSyntax m && m.AttributeLists.Count > 0,
                 static (ctx, _) => GetAnnotatedMethod(ctx))
             .Where(static m => m is not null)
             .Select(static (m, _) => m!);
 
-        // ② 生成每方法 Signature 组合代码（§L2 翻译层；真委托 L1 非桩）。
-        context.RegisterSourceOutput(methods, static (spc, method) =>
+        // ② 收集全部标注方法，按方法名判定是否重名（跨类同名在真实工程中常见）；
+        //    重名时以「类型名+序号」消歧，避免 AddSource 同名 hint 被 Roslyn 丢弃（R1.8：否则整层生成静默丢失），
+        //    且避免 emit 期同名 Compute{Method} 成员冲突。非重名保持裸 Compute{Method}（兼容既有调用契约）。
+        var collected = methods.Collect();
+        context.RegisterSourceOutput(collected, static (spc, all) =>
         {
-            var source = GenerateMethodSignature(method);
-            spc.AddSource($"{method.MethodName}.g.cs", SourceText.From(source, Encoding.UTF8));
+            var dupCount = all.GroupBy(m => m.MethodName).ToDictionary(g => g.Key, g => g.Count());
+            var seen = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var method in all)
+            {
+                var suffix = string.Empty;
+                if (dupCount[method.MethodName] > 1)
+                {
+                    seen.TryGetValue(method.MethodName, out int idx);
+                    suffix = $"_{method.TypeName}_{idx}";
+                    seen[method.MethodName] = idx + 1;
+                }
+                var source = GenerateMethodSignature(method, suffix);
+                spc.AddSource($"{method.TypeName}_{method.MethodName}{suffix}.g.cs", SourceText.From(source, Encoding.UTF8));
+            }
         });
     }
 
@@ -51,9 +66,15 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
             if (HasAttributeName(attr.Name, EffectOverrideName)) hasOverride = true;
             else if (HasAttributeName(attr.Name, AcceptDeviationName)) hasAccept = true;
         }
+        // 取声明类型名（用于跨类同名消歧；嵌套/泛型类型取最近非方法声明名）。
+        string typeName = "Global";
+        for (var p = method.Parent; p is not null; p = p.Parent)
+        {
+            if (p is TypeDeclarationSyntax tds) { typeName = tds.Identifier.Text; break; }
+        }
         return !hasOverride && !hasAccept
             ? null
-            : new AnnotatedMethod(method.Identifier.Text, hasOverride, hasAccept);
+            : new AnnotatedMethod(method.Identifier.Text, typeName, hasOverride, hasAccept);
     }
 
     /// <summary>按简单名匹配特性（含 `X` 与 `XAttribute` 两种写法）。等价于 Roslyn 常见 IsOrHasName 语义，本地实现以保证零依赖编译。</summary>
@@ -70,8 +91,9 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
 
     /// <summary>§14 L2 — 生成「每标注方法 → 其效应 Signature 组合」代码。
     /// 生成代码真引用 L1：遍历 <c>GodotApiWhitelist.All</c>，按方法名规范化（去 `.`/`_` 小写）匹配白名单键，
-    /// 用 <c>Signature.Union</c> 把匹配到的 <c>Claim</c> 组合进 <c>Compute_{method}</c> 的返回签名。数学在 L1（§3.1–§3.3）。</summary>
-    private static string GenerateMethodSignature(AnnotatedMethod m)
+    /// 用 <c>Signature.Union</c> 把匹配到的 <c>Claim</c> 组合进 <c>Compute{method}</c> 的返回签名。数学在 L1（§3.1–§3.3）。
+    /// <param name="suffix">重名消歧后缀（非空仅当跨类同名，避免 hint/成员名冲突）；非重名为空串维持裸名契约。</param></summary>
+    private static string GenerateMethodSignature(AnnotatedMethod m, string suffix)
     {
         var tags = (m.HasOverride ? "[EffectOverride] " : "") + (m.HasAccept ? "[AcceptDeviation] " : "");
         // 规范化方法名（与 §14 L2 / L3 的 Canonical 一致：去 . 和 _，小写）用于白名单键匹配。
@@ -86,11 +108,11 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         sb.AppendLine("public static partial class EffectAlgebraGenerated");
         sb.AppendLine("{");
         sb.AppendLine($"    /// <summary>§14 L2：方法 {m.MethodName}（{tags}）的效应签名 = baseSig ∪ §7 白名单中同名 API 的 Claims 组合（L1 数学在运行期 Σnet 权威）。</summary>");
-        sb.AppendLine($"    public static global::Cosmos.EffectAlgebra.Signature Compute{m.MethodName}(global::Cosmos.EffectAlgebra.Signature baseSig)");
-        sb.AppendLine($"        => global::Cosmos.EffectAlgebra.Signature.Union(baseSig, {m.MethodName}_Claims());");
+        sb.AppendLine($"    public static global::Cosmos.EffectAlgebra.Signature Compute{m.MethodName}{suffix}(global::Cosmos.EffectAlgebra.Signature baseSig)");
+        sb.AppendLine($"        => global::Cosmos.EffectAlgebra.Signature.Union(baseSig, {m.MethodName}{suffix}_Claims());");
         sb.AppendLine();
         sb.AppendLine($"    /// <summary>§7 / §14 L2 — 从 GodotApiWhitelist.All 取方法名（规范化后）匹配的 Claims，组合成该方法的 Signature（真委托 L1，非桩）。</summary>");
-        sb.AppendLine($"    private static global::Cosmos.EffectAlgebra.Signature {m.MethodName}_Claims()");
+        sb.AppendLine($"    private static global::Cosmos.EffectAlgebra.Signature {m.MethodName}{suffix}_Claims()");
         sb.AppendLine("    {");
         sb.AppendLine("        var s = global::Cosmos.EffectAlgebra.Signature.Empty;");
         sb.AppendLine("        foreach (var m in global::Cosmos.EffectAlgebra.GodotApiWhitelist.All)");
@@ -104,5 +126,5 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private sealed record AnnotatedMethod(string MethodName, bool HasOverride, bool HasAccept);
+    private sealed record AnnotatedMethod(string MethodName, string TypeName, bool HasOverride, bool HasAccept);
 }
