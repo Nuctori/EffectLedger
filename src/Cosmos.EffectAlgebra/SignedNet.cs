@@ -71,7 +71,11 @@ public readonly record struct SignedInterval
     /// 任一端 IsTop（未知）⇒ 视为需人工界定 ⇒ 返回 false（fail-closed，§3.3.1 DO-9）。</summary>
     public bool ContainsZero => (Lo.IsTop || Hi.IsTop) ? false : (Lo.Value <= 0 && Hi.Value >= 0);
 
-    /// <summary>§3.3.1 — merge 为 join：min/max 内嵌 ZStar ⊤ 律（合并同向净效应）。</summary>
+    /// <summary>§3.3.1 — 有符号 net 求和：同资源多 Claim 的净效应 = 区间逐端相加 [lo+o.lo, hi+o.hi]（create(+) 与 release(−) 符号相反，自然抵消）。
+    /// 任一端 IsTop（未知）⇒ 整体 ⊤（ fail-closed，不谎称守恒）。这是 net 聚合的「真·求和」，区别于 <see cref="Merge"/>（min/max 仅用于单 Claim size 不确定区间）。</summary>
+    public SignedInterval Add(SignedInterval o) => new(Lo + o.Lo, Hi + o.Hi);
+
+    /// <summary>§3.3.1 — merge 为 join：min/max 内嵌 ZStar ⊤ 律（合并同向净效应 / size 不确定区间，非 net 求和）。</summary>
     public SignedInterval Merge(SignedInterval o) => new(Lo.Min(o.Lo), Hi.Max(o.Hi));
 
     /// <summary>§9.1/§3.3.1 — 当两端均有限时算 mid=(lo+hi)/2 与 range=(hi−lo) 返回 true；任一端 IsTop ⇒ false（调用方据此判 ⊤，整体 Deviation 标 ⊤）。</summary>

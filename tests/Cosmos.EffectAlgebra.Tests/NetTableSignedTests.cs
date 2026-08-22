@@ -15,13 +15,13 @@ public class NetTableSignedTests
         Signature.Of(new Claim(Kind.Occupy, _mem, mode, _scope, size));
 
     [Fact]
-    public void OPEN1_Create1_Release1_NotNet_Zero_AndConserved() // create[1,1] + release[1,1] ⇒ [-1,1]，含 0 ⇒ 守恒
+    public void OPEN1_Create1_Release1_NotNet_Zero_AndConserved() // create[1,1] + release[1,1] ⇒ signed sum = [0,0]，含 0 ⇒ 守恒
     {
         var s = Signature.Union(Occupy(Mode.Create, Interval.Exact(1)), Occupy(Mode.Release, Interval.Exact(1)));
         var net = NetTable.Compute(s, _scope);
         var v = net.Get(_mem);
-        Assert.Equal(ZStar.Of(-1), v.Lo);   // 真取负
-        Assert.Equal(ZStar.Of(1), v.Hi);
+        Assert.Equal(ZStar.Of(0), v.Lo);   // 有符号求和：+1 + (-1) = 0
+        Assert.Equal(ZStar.Of(0), v.Hi);
         Assert.True(net.IsConserved(_mem));      // 含 0 ⇒ 不误报
     }
 
@@ -37,16 +37,16 @@ public class NetTableSignedTests
     }
 
     [Fact]
-    public void OPEN2_Create12_Release11_ContainsZero_Conserved() // create[1,2] + release[1,1] ⇒ [-1,2]，含 0 ⇒ 守恒
+    public void OPEN2_Create12_Release11_SignedSum_Conserved() // create[1,2] + release[1,1] ⇒ signed sum = [0,1]，含 0 ⇒ 守恒
     {
         var s = Signature.Union(
             Occupy(Mode.Create, new Interval(NatStar.Of(1), NatStar.Of(2))),
             Occupy(Mode.Release, Interval.Exact(1)));
         var net = NetTable.Compute(s, _scope);
         var v = net.Get(_mem);
-        Assert.Equal(ZStar.Of(-1), v.Lo);
-        Assert.Equal(ZStar.Of(2), v.Hi);
-        Assert.True(net.IsConserved(_mem)); // 区间含 0 ⇒ 可能闭合
+        Assert.Equal(ZStar.Of(0), v.Lo);
+        Assert.Equal(ZStar.Of(1), v.Hi);
+        Assert.True(net.IsConserved(_mem)); // [0,1] 含 0 ⇒ 可能闭合
     }
 
     [Fact]
