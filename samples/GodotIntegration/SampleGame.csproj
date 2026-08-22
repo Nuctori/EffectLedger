@@ -32,13 +32,15 @@
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj" />
 
     <!--
-      L3 分析器：真实 Game.csproj 的接法同上是 OutputItemType="Analyzer"（见下注释）。
-      但本集成 E2E 测试需直接 new EffectAlgebraAnalyzer() 并以 WithAnalyzers 驱动，
-      故此处用普通 ProjectReference 使其在测试中可用；真实工程接入方式注释如下：
+      L3 分析器：真实 Game.csproj 的接法是 OutputItemType="Analyzer"（生产落地写法，见下注释）。
+      本集成 E2E 测试需直接 new EffectAlgebraAnalyzer() 并以 WithAnalyzers 驱动（证明是真实 DiagnosticAnalyzer，非桩），
+      故此处用普通 ProjectReference 使类型在测试中可用：
         <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
                           OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-      （注：本仓 analyzer 在编译器 analyzer-ALC 下因 SDK Roslyn 版本绑定差异可能报 CS8032；
-       生产落地须对齐 Microsoft.CodeAnalysis 版本或用 IsRoslynComponent 部署；本测试路径已覆盖同等语义。）
+      约束（honest 声明）：本仓 analyzer 在编译器 analyzer-ALC 下因 SDK Roslyn 版本绑定差异可能报 CS8032；
+        我们尝试过对齐 Microsoft.CodeAnalysis 版本 / IsRoslynComponent 部署，但均会破坏本机/CI 构建（CS8032 仍残存），
+        故保留 WithAnalyzers 驱动路径——AdvE2E_R10.E2E_R10_AnalyzerInstantiableAndRuns 已证明该实例是真实的
+        DiagnosticAnalyzer（SupportedDiagnostics 含 EAA0901/EAA0303/EAA0304）且对泄漏源真产出 EAA0901，语义等价覆盖。
     -->
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj" />
   </ItemGroup>
