@@ -110,10 +110,13 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     {
         var method = (MethodDeclarationSyntax)context.Node;
 
-        // 方法已标 [EffectOverride] / [AcceptDeviation] ⇒ 逃逸通道已声明，跳过 DO-9 / A3 / A4 近似（§8.3）。
-        bool hasEscape = method.AttributeLists.SelectMany(l => l.Attributes)
-            .Any(a => IsEffectOverride(a.Name.ToString()) || IsAcceptDeviation(a.Name.ToString()));
-        if (hasEscape) return;
+        // §8.3.1 / §8.3.2 编译期 DO 报警豁免规则（fail-open 优先，逃逸通道不得压制真实泄漏根因）：
+        //   - [EffectOverride]：声明意图，仅豁免 A3/A4 意图提示（EAA0303/EAA0304）；
+        //     但 §8.3.1(3) 明确「DO-9 仍报警」⇒ EAA0901（泄漏根因）一律不豁免。
+        //   - [AcceptDeviation]：仅放宽运行期 Deviation 报警阈值（§8.3.2(2)），不豁免任何编译期 DO 报警
+        //     ⇒ 分析器侧完全不压制（EAA0901/EAA0303/EAA0304 照常报告；其构造子已强制 ε∈[0,0.5]）。
+        bool hasOverride = method.AttributeLists.SelectMany(l => l.Attributes)
+            .Any(a => IsEffectOverride(a.Name.ToString()));
 
         // 收集方法体内所有调用表达式（控制流近似：不展开被调用方法内部；
         // 仅语法可见 → 跨方法/跨对象释放配对不在覆盖内，可能静默漏报，见类注释 OPEN-2）。
@@ -121,8 +124,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             .OfType<InvocationExpressionSyntax>()
             .ToArray();
 
-        AnalyzeMissingRelease(context, method, invocations);
-        AnalyzeKindMixAndCompat(context, method, invocations);
+        AnalyzeMissingRelease(context, method, invocations);                    // EAA0901：永不豁免（fail-open）
+        if (!hasOverride) AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：仅 [EffectOverride] 豁免意图提示
     }
 
     // ── §3.3.1 DO-9 近似：按归一资源聚合「acquire>release」⇒ 疑似泄漏（运行期 net 为权威，见类注释）──

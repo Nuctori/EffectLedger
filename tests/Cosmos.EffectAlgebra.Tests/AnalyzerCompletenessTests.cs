@@ -111,9 +111,9 @@ public class Sample
     }
 }";
         var diags = await RunAnalyzer(source);
-        Assert.DoesNotContain(diags, d => d.Id == "EAA0303");
-        Assert.DoesNotContain(diags, d => d.Id == "EAA0304");
-        Assert.DoesNotContain(diags, d => d.Id == "EAA0901");
+        Assert.DoesNotContain(diags, d => d.Id == "EAA0303");   // 意图提示豁免
+        Assert.DoesNotContain(diags, d => d.Id == "EAA0304");   // 意图提示豁免
+        Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("MixedWithOverride"));  // §8.3.1(3) DO-9 不豁免
     }
 
     // §14.3 A3/A4 近似护栏：单条 API 内部天然跨 kind（AddChild 含 Write+Occupy）或重复同模式（Load 含两次 Occupy(Create)）
