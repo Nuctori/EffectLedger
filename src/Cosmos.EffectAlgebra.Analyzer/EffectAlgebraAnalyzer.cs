@@ -130,24 +130,19 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     {
         var method = (MethodDeclarationSyntax)context.Node;
 
-        // 方法标注 [EffectOverride]/[AcceptDeviation] ⇒ 逃逸通道已声明。
-        // 但 C# 不在编译期执行 attribute ctor，故 L1 构造子的 reason 非空 / epsilon 上界检查是“死代码”，
-        // 必须由 L3 用语义模型在编译期校验参数。仅“参数合法”的标注才豁免 DO-9/A3/A4；
-        // 非法标注报 EAA0801/EAA0802 且方法照常参与泄漏分析（§8.3.1/§8.3.2 根因修复）。
-        bool hasValidEscape = false;
+        bool hasValidOverride = false;
         foreach (var attr in method.AttributeLists.SelectMany(l => l.Attributes))
         {
             var name = attr.Name.ToString();
             if (IsEffectOverride(name))
             {
-                if (IsValidOverrideReason(attr, context, method)) hasValidEscape = true;
+                if (IsValidOverrideReason(attr, context, method)) hasValidOverride = true;
             }
             else if (IsAcceptDeviation(name))
             {
-                if (IsValidAcceptEpsilon(attr, context, method)) hasValidEscape = true;
+                IsValidAcceptEpsilon(attr, context, method); // 仅校验并报告 EAA0802，不豁免
             }
         }
-        if (hasValidEscape) return;
 
         // 收集方法体内所有调用表达式（控制流近似：不展开被调用方法内部；
         // 仅语法可见 → 跨方法/跨对象释放配对不在覆盖内，可能静默漏报，见类注释 OPEN-2）。
@@ -155,8 +150,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             .OfType<InvocationExpressionSyntax>()
             .ToArray();
 
-        AnalyzeMissingRelease(context, method, invocations);                    // EAA0901：永不豁免（fail-open）
-        AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：逃逸通道已在上方 hasValidEscape 提前 return 时豁免
+        AnalyzeMissingRelease(context, method, invocations);                    // EAA0901：永不豁免（fail-open，§8.3.1(3)）
+        if (!hasValidOverride) AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：仅合法逃逸豁免意图提示
     }
 
     // ── §3.3.1 DO-9 近似：按归一资源聚合「acquire>release」⇒ 疑似泄漏（运行期 net 为权威，见类注释）──
@@ -172,7 +167,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 
         foreach (var inv in invocations)
         {
-            var canon = CanonicalOfInvocation(inv);
+            var canon = Canonical(RawName(inv));
             var m = FindWhitelistEntry(inv);
             if (m is null)
             {
@@ -309,20 +304,21 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     }
 
     // 调用 canonical 名 → §7 白名单条目（null 表示不在白名单，本近似不处理）。
+    // 匹配键既看全名（Audio.Play ⇒ audioplay）也看方法名（去接收者：node.QueueFree ⇒ queuefree），
+    // 以修复「带接收者的 Godot 主流写法」被静默漏报的 false negative（见 R6/R7 对抗审计）。
     private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv)
     {
-        var canon = CanonicalOfInvocation(inv);
+        var full = Canonical(RawName(inv));
+        var method = Canonical(MethodName(inv));
         foreach (var m in GodotApiWhitelist.All)
-            if (Canonical(m.GodotApi) == canon)
-                return m;
+        {
+            var c = Canonical(m.GodotApi);
+            if (c == full || c == method) return m;
+        }
         return null;
     }
 
-    // 调用的 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
-    // 不区分接收者（node.QueueFree / this.QueueFree / 裸 QueueFree 同归 queuefree）。
-    private static string CanonicalOfInvocation(InvocationExpressionSyntax inv) =>
-        Canonical(RawName(inv));
-
+    // 调用的全名 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
     private static string RawName(InvocationExpressionSyntax inv)
     {
         return inv.Expression switch
@@ -332,6 +328,25 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             _ => inv.Expression.ToString()
         };
     }
+
+    // 方法名（去接收者 / 泛型参数）：MemberAccess "node.QueueFree" ⇒ "QueueFree"；裸 "AddChild" ⇒ "AddChild"。
+    // R6 修复：以方法名二次匹配白名单键，使 Godot 主流「接收者限定调用」不再漏报（Audio.Play 仍走全名匹配）。
+    private static string MethodName(InvocationExpressionSyntax inv) =>
+        inv.Expression switch
+        {
+            MemberAccessExpressionSyntax ma => NameText(ma.Name),
+            GenericNameSyntax g => g.Identifier.Text,
+            IdentifierNameSyntax id => id.Identifier.Text,
+            _ => inv.Expression.ToString()
+        };
+
+    private static string NameText(SimpleNameSyntax name) =>
+        name switch
+        {
+            GenericNameSyntax g => g.Identifier.Text,
+            IdentifierNameSyntax i => i.Identifier.Text,
+            _ => name.ToString()
+        };
 
     private static bool IsValidOverrideReason(AttributeSyntax attr, SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method)
     {
