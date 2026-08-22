@@ -25,7 +25,8 @@ namespace Cosmos.EffectAlgebra.Analyzer;
 ///   写不出该命名参数（编译器先报 CS0117）。因此 L3 不重检该约束（冗余护栏已删，迭代09 OPEN-1）。
 ///
 /// DO-9 / A3 / A4 近似边界（诚实声明，迭代09 OPEN-2 + 迭代29 补）：本近似**仅扫描同一方法体内语法上可见的调用表达式**，
-///   且按 canonical API 名（去 `.`/`_`、小写）匹配，不区分接收者。故：
+///   且按 canonical API 名（去 `.`/`_`、小写）匹配；实例接收者仅取方法名与白名单裸键一致，
+///   §7 qualified 键（Audio.Play 等）的限定接收者保留为 qualified 键。故：
 ///   - 带接收者前缀（如 `node.QueueFree()`、`GetTree().Free()`）与裸调用（如 `QueueFree()`、`this.QueueFree()`）
 ///     均被 canonical 名匹配，**同方法内**的配对可见；
 ///   - 但**跨方法**（释放/配对发生在被调用助手/不同方法中）、**跨对象**（发生在另一实例且经由参数/字段传递）
@@ -270,10 +271,32 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
-    // 调用的 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
-    // 不区分接收者（node.QueueFree / this.QueueFree / 裸 QueueFree 同归 queuefree）。
+    // 调用的 canonical 键：与 §7 白名单键一致，且与 L2 方法名规范化一致（见 §14 L2）。
+    //   - 裸调用（QueueFree() / AddChild(x)）⇒ 裸键 "queuefree"/"addchild"。
+    //   - 限定接收者（Audio.Play / Anim.Stop / Position.get 等 §7 qualified 键）⇒ 保留 "audio.play" 等。
+    //   - 实例接收者（node.QueueFree / this.QueueFree / GetTree().Free()）⇒ 仅取方法名 "queuefree"/"free"，
+    //     与白名单裸键一致。修复（R7）：旧的 RawName 把接收者并入键 ⇒ nodequeuefree ≠ queuefree ⇒ 漏报（false negative）。
+    private static readonly HashSet<string> QualifiedApiPrefixes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "audio", "anim", "position", "rotation", "scale", "globalposition"
+    };
+
     private static string CanonicalOfInvocation(InvocationExpressionSyntax inv) =>
-        Canonical(RawName(inv));
+        Canonical(ApiKeyOfInvocation(inv));
+
+    // §7 qualified 键（Audio.Play / Anim.Play / Position.get / GlobalPosition.get / Rotation.getset / Scale.getset）
+    // 的接收者为已知限定前缀 ⇒ 保留 前缀.方法；其余（node/this/GetTree() 等实例接收者）仅取方法名。
+    private static string ApiKeyOfInvocation(InvocationExpressionSyntax inv)
+    {
+        if (inv.Expression is MemberAccessExpressionSyntax ma)
+        {
+            var receiver = ma.Expression.ToString();
+            return QualifiedApiPrefixes.Contains(receiver)
+                ? receiver + "." + ma.Name.Identifier.Text
+                : ma.Name.Identifier.Text;
+        }
+        return RawName(inv);
+    }
 
     private static string RawName(InvocationExpressionSyntax inv)
     {
