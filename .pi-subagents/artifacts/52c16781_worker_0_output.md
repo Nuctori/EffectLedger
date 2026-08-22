@@ -1,1 +1,0 @@
-Build is green. All three files written, Class1.cs deleted, 0 errors, 0 warnings.

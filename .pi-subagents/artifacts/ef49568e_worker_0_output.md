@@ -1,1 +1,0 @@
-#17 verified. Continuing — #18 (writes only iter18.md):

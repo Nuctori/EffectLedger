@@ -1,1 +1,0 @@
-BUILD_OK. Build succeeds with 0 errors, 0 warnings.

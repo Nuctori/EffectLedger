@@ -1,1 +1,0 @@
-Now let me read Algebra.cs (Net/Peak/Compatible implementation) and the existing EffectScript tests to compare against the "old" full-recompute semantics.

@@ -1,1 +1,0 @@
-iter-code05.md 已写入；open 项 3（OPEN-1 NegateCore 在 ℕ* 下未取负破坏 §3.3.1 有符号 net；OPEN-2 IsConserved 要求精确 0,0 误报；OPEN-3 Peak 漏 mode≠release 过滤）；终止判定=需继续(3)。

@@ -17,3 +17,7 @@ TestResults/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Agent session infra (pi / subagents) — not project code
+.pi/
+.pi-subagents/

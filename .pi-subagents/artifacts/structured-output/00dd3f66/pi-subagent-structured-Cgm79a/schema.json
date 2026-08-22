@@ -1,1 +1,0 @@
-{"type":"object","properties":{"audit_file":{"type":"string"},"wrote":{"type":"boolean"}},"required":["audit_file","wrote"]}

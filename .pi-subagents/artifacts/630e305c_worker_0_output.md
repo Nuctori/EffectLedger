@@ -1,1 +1,0 @@
-TEST_OK 失败数=0，已写 IntervalArithmeticTests.cs（Exact/Dynamic/Default + Merge 全 ⊤ 组合 + 非法构造 + 随机 1000 组，§3.1.5a/§3.1.5b）。

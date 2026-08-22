@@ -1,1 +1,0 @@
-38 `items.Add(M(` mapping entries (covering all §7.1–§7.10 APIs — some APIs have multiple overloads/claims). Release-class has 7 names. Build green.

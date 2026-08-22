@@ -1,1 +1,0 @@
-All work complete. Here is the acceptance report.

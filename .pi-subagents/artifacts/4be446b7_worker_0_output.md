@@ -1,1 +1,0 @@
-iter-code02.md 已写入；open 项 1（OPEN-1：ScopeId_Transitive 名实不符，未真测 §3.1.3b 传递性，亦缺反对称）；终止判定=需继续（1）。

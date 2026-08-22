@@ -1,1 +1,0 @@
-iter-code13.md 已写入；open 项 2（OPEN-1: Kind enum 引 §3.2.3 应为 §3.1.1/§3.1.4b；OPEN-2: Interval.Default 引 §3.1.5(d) 应为 §3.1.5(a)）；终止判定=需继续(2)。
