@@ -80,20 +80,11 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     // 预先从 L1 数据计算 canonical 名集合（控制流近似匹配用，零 Godot 依赖）。
     // Acquire：§7 白名单中任一 Claim 为 Mode.Create（含 Occupy+Create）的 API。
     // Release：§7 中任一 Claim 为 Mode.Release 的 API，并并上 §8.1 release-class（queue_free/... 等）。
-    private static readonly ImmutableHashSet<string> AcquireApiNames = BuildAcquireNames();
+    // §8.1 release-class（含不在 §7 白名单的泛型释放名，如 free/remove_from_group）：用于泛型释放兜底，避免误报（见 AnalyzeMissingRelease）。
     private static readonly ImmutableHashSet<string> ReleaseApiNames = BuildReleaseNames();
 
     private static string Canonical(string name) =>
         name.ToLowerInvariant().Replace(".", "").Replace("_", "");
-
-    private static ImmutableHashSet<string> BuildAcquireNames()
-    {
-        var set = ImmutableHashSet.CreateBuilder<string>();
-        foreach (var m in GodotApiWhitelist.All)
-            if (m.Claims.Any(c => c.Mode == Mode.Create))
-                set.Add(Canonical(m.GodotApi));
-        return set.ToImmutable();
-    }
 
     private static ImmutableHashSet<string> BuildReleaseNames()
     {
@@ -134,31 +125,54 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         AnalyzeKindMixAndCompat(context, method, invocations);
     }
 
-    // ── §3.3.1 DO-9 近似：acquire 且无 release ⇒ 疑似泄漏（运行期 net 为权威，见类注释）──
+    // ── §3.3.1 DO-9 近似：按归一资源聚合「acquire>release」⇒ 疑似泄漏（运行期 net 为权威，见类注释）──
+    // R8 对抗审计改进：逐资源计数，可捕获「跨资源错配释放」「部分释放（acquire 多于 release）」，
+    // 而非旧版仅全局布尔（会漏报跨类型/部分释放）。§8.1 release-class-only 泛型释放（如 free）作兜底，避免误报。
     private static void AnalyzeMissingRelease(SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method,
         InvocationExpressionSyntax[] invocations)
     {
-        bool hasAcquire = false;
-        bool hasRelease = false;
-        var firstAcquire = "";
+        var acquire = new Dictionary<ResourceId, int>();
+        var release = new Dictionary<ResourceId, int>();
+        var firstAcquireName = new Dictionary<ResourceId, string>();
+        bool hasReleaseClassOnly = false; // §8.1 泛型释放（不在 §7 白名单），可能覆盖任意资源
+
         foreach (var inv in invocations)
         {
             var canon = CanonicalOfInvocation(inv);
-            if (AcquireApiNames.Contains(canon))
+            var m = FindWhitelistEntry(inv);
+            if (m is null)
             {
-                hasAcquire = true;
-                if (firstAcquire.Length == 0) firstAcquire = RawName(inv);
+                // §8.1 release-class 但不在 §7 白名单：作为泛型释放兜底（避免误报，运行期 net 为权威）。
+                if (ReleaseApiNames.Contains(canon)) hasReleaseClassOnly = true;
+                continue;
             }
-            if (ReleaseApiNames.Contains(canon)) hasRelease = true;
+            foreach (var c in m.Value.Claims)
+            {
+                var key = ResourceId.Normalize(c.Resource);
+                if (c.Mode == Mode.Create)
+                {
+                    acquire.TryGetValue(key, out var a); acquire[key] = a + 1;
+                    if (!firstAcquireName.ContainsKey(key)) firstAcquireName[key] = RawName(inv);
+                }
+                else if (c.Mode == Mode.Release)
+                {
+                    release.TryGetValue(key, out var r); release[key] = r + 1;
+                }
+            }
         }
 
-        if (hasAcquire && !hasRelease)
+        // §3.3.1 DO-9 近似：存在归一资源 net 获取（acquire>release）⇒ 报告。
+        // 除非存在 §8.1 泛型释放（可能覆盖该资源，运行期 net 为权威，避免误报）。
+        if (hasReleaseClassOnly) return;
+        foreach (var kv in acquire)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                MissingReleaseForAcquire,
-                method.Identifier.GetLocation(),
-                method.Identifier.Text,
-                firstAcquire));
+            release.TryGetValue(kv.Key, out var r);
+            if (kv.Value > r)
+                context.ReportDiagnostic(Diagnostic.Create(
+                    MissingReleaseForAcquire,
+                    method.Identifier.GetLocation(),
+                    method.Identifier.Text,
+                    firstAcquireName[kv.Key]));
         }
     }
 
