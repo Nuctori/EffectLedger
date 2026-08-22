@@ -456,8 +456,13 @@ public class EffectScriptEdgeTests
     [Fact]
     public void PublicApi_HasSectionCitations()
     {
-        var path = @"D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/EffectScript.cs";
-        Assert.True(File.Exists(path), "EffectScript.cs 应存在");
+        // 仓库相对路径（跨平台）：从测试输出目录向上定位仓库根，再指向源码。
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Cosmos.EffectAlgebra.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var path = Path.Combine(dir!.FullName, "src", "Cosmos.EffectAlgebra", "EffectScript.cs");
+        Assert.True(File.Exists(path), "EffectScript.cs 应存在: " + path);
         var lines = File.ReadAllLines(path);
         int missing = 0;
         for (int i = 0; i < lines.Length; i++)
