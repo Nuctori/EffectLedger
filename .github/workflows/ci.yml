@@ -18,3 +18,5 @@ jobs:
         run: dotnet build Cosmos.EffectAlgebra.slnx -c Release --no-restore -warnaserror
       - name: Test (审计 + 代数 + L2/L3 端到端；任何失败=红)
         run: dotnet test Cosmos.EffectAlgebra.slnx -c Release --no-build --verbosity normal
+      - name: E2E integration harness (真实 Godot 风格工程：L2 生成器 + L3 分析器)
+        run: dotnet test samples/GodotIntegration/SampleGame.csproj -c Release --verbosity normal

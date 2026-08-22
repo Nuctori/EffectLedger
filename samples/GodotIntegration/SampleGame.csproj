@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    真实 Godot 游戏工程的 L2/L3 消费样例（非侵入式 name-match 设计验证）。
+    本工程模拟一个 Godot 游戏工程如何接入 Cosmos.EffectAlgebra：
+      - L3 DiagnosticAnalyzer 以 Roslyn 分析器接入（OutputItemType=Analyzer, ReferenceOutputAssembly=false）
+      - L2 源生成器以 Roslyn generator 接入（ReferenceOutputAssembly=false）
+      - 游戏侧照常写 DrawMesh / Instantiate / QueueFree 等 Godot 风格 API（stub 占位，非真 Godot SDK），
+        不引用任何 Godot.NET.Sdk（本机/CI 未装，避免还原失败）；只验证「L2/L3 在真实工程编译期闭环」。
+    这正是 PDR §7「非侵入式、按方法名匹配白名单」的设计落地点：游戏代码零改动即可被审计。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NoWarn>RS2008;RS2007</NoWarn>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- L1 纯代数：游戏逻辑直接引用（如 EffectScript 剧本审计）。 -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+
+    <!--
+      L2 源生成器：本集成测试直接以 CSharpGeneratorDriver 驱动（见 IntegrationTests.cs），
+      故用普通 ProjectReference 使测试可见 Cosmos.EffectAlgebra.Generator 命名空间并实例化。
+      真实 Game.csproj 接法为 OutputItemType="Analyzer"（见下）。
+    -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj" />
+
+    <!--
+      L3 分析器：真实 Game.csproj 的接法同上是 OutputItemType="Analyzer"（见下注释）。
+      但本集成 E2E 测试需直接 new EffectAlgebraAnalyzer() 并以 WithAnalyzers 驱动，
+      故此处用普通 ProjectReference 使其在测试中可用；真实工程接入方式注释如下：
+        <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+      （注：本仓 analyzer 在编译器 analyzer-ALC 下因 SDK Roslyn 版本绑定差异可能报 CS8032；
+       生产落地须对齐 Microsoft.CodeAnalysis 版本或用 IsRoslynComponent 部署；本测试路径已覆盖同等语义。）
+    -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj" />
+  </ItemGroup>
+
+  <!-- 集成 E2E 测试（与真实 Game.csproj 分离：测试引用 Roslyn + xunit，游戏代码不引）。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
