@@ -70,7 +70,8 @@ public static class GodotApiWhitelist
             Wr(Tree("node.id"), Mode.Release, Shell()),
             Oc(Tree("node.id"), Mode.Release, Shell(), Interval.Exact(1))));
         items.Add(M("QueueFree",                                                                           // §7.1 mode=release（iter27：net 计入 −size）
-            Oc(Tree("self.id"), Mode.Release, Shell(), Interval.Exact(1)),
+            Wr(Tree("node.id"), Mode.Release, Shell()),                                              // 与 AddChild 的 Wr(Tree node.id, Create) 对称
+            Oc(Tree("node.id"), Mode.Release, Shell(), Interval.Exact(1)),                          // 与 AddChild 的 Oc(Tree node.id, Create, Exact1) 对称
             Oc(Mem(), Mode.Release, Shell(), Interval.Dynamic)));
         items.Add(M("MoveChild", Wr(Tree("node.id"), Mode.Use, Shell())));                            // §7.1 写树
 

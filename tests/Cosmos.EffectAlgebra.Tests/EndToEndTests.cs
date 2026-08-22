@@ -189,8 +189,12 @@ public class Intended
     }
 }";
         var diags = await RunAnalyzer(source);
-        Assert.DoesNotContain(diags, d => d.Id == "EAA0901");
+        // §8.3.1(3) DO-9 仍报警：EAA0901（泄漏根因）一律不豁免 [EffectOverride]；
+        // 逃逸标注仅豁免 A3/A4 意图提示，不掩盖真实泄漏。
+        Assert.Contains(diags, d => d.Id == "EAA0901");
     }
+
+    /// <summary>§14 L2
 
     /// <summary>§14 L2 — 生成代码真委托 L1（非桩）：含 GodotApiWhitelist.All + Signature.Union，
     /// 且反射 ComputeAddChild 返回非空 Signature（含 occupy Claim）。</summary>

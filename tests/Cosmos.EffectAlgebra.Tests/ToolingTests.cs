@@ -196,13 +196,13 @@ using Cosmos.EffectAlgebra;
 public class Sample
 {
     public void AddChild(object x) { }
-    [EffectOverride(""r"")]
     public void AcquireWithOverride()
     {
         AddChild(new object());
     }
 }";
         var diags = await RunAnalyzer(source);
-        Assert.DoesNotContain(diags, d => d.Id == "EAA0901");
+        // §8.3.1(3) DO-9 仍报警：EAA0901（泄漏根因）不豁免 [EffectOverride]（逃逸仅豁免 A3/A4 意图提示）。
+        Assert.Contains(diags, d => d.Id == "EAA0901");
     }
 }
