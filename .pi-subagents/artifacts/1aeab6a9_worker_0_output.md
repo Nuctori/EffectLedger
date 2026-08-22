@@ -1,0 +1,1 @@
+Tests green (0 failures, 41 tests). The two coverage gaps are closed via added assertions inside the existing deterministic loops (OPEN-1: P3 benign lifecycle pairs now asserted `true`; OPEN-2: `min(⊤,x)=x` reverse direction asserted). No new methods needed; assertions execute across all 25×25 / 1000 iterations, so a regression would fail.

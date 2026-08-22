@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- RS2008/RS2007 = Roslyn 发布追踪（release-tracking）分析器；本迭代聚焦数学层与类型护栏，
+         发布追踪属打包/版本管理范畴，非代码正确性，故显式 NoWarn 以免阻塞 0 错误 0 警告构建。
+         真实诊断质量由 RS1033（描述句法）等已强制。 -->
+    <NoWarn>RS2008;RS2007</NoWarn>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- L3 是 Roslyn DiagnosticAnalyzer；仅依赖 Roslyn + L1 纯代数。不引用 Godot.NET.Sdk（本机未装，会还原失败）。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <ProjectReference Include="..\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+  </ItemGroup>
+
+</Project>

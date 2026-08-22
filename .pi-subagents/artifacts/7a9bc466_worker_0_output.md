@@ -1,0 +1,3 @@
+`iter05.md` rewritten this turn (the harness routed the #5 delegated task to me directly). Header now contains "本轮重跑" and content is grounded in actual §4 line numbers.
+
+Summary: §4 audit complete — EntityId monotonicity (construct-encapsulation-gated discharged), Component immutability (surface discharged, recursive ImmutableArray<T> open), World.version (discharged but L235 "9.7 亿年" is a factual error → ~309 years), System purity (open, contract-only), Command Signature consistency (open), and EA-001..007 convergence audit (EA-002/005/006 are asserted not discharged).

@@ -1,0 +1,1 @@
+iter-effect01.md 已写入；结论=需修订 1 项 open（OPEN-N1：residentExempt 单遍顺序依赖致泄漏 false-negative）。

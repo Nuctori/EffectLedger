@@ -1,0 +1,195 @@
+// Objects.cs — PDR §3.1.1/§3.1.2/§3.1.3b/§3.1.4a/§3.1.4b 实现：Claim 五元组、ResourceId 单点真相、ScopeId 偏序、Signature 三桶量纲隔离。LANDING_PLAN §3.1：L1 纯代数核心。
+using System.Collections.Immutable;
+
+namespace Cosmos.EffectAlgebra;
+
+// L1 纯代数核心：Godot 类型（Rid/StringName）以内部原语别名替代，保持零 Godot 依赖。
+// 映射层（§7）负责在 Godot 实际类型与这些原语间转换（见 LANDING_PLAN §3.11）。
+
+/// <summary>Godot RID 的内部原语别名（§7 映射层负责与 Godot.Rid 转换）。</summary>
+public readonly record struct Rid(string Value);
+
+/// <summary>Godot StringName 的内部原语别名（§7 映射层负责与 Godot.StringName 转换）。</summary>
+public readonly record struct StringName(string Value);
+
+/// <summary>
+/// §3.1.2 + §3.1.2b — ResourceId 判别联合。
+/// 结构相等（record）直接给出「构造子标签 + 字段逐位相等」(§3.1.4a(4))，类型保证标签完整性。
+/// 字段类型即数学边界；跨字段归一由 <see cref="ResourceId.Normalize"/> 承载（类型给不了，见注释）。
+/// </summary>
+public abstract record ResourceId
+{
+    // §3.1.2 基础构造子
+    public sealed record Tree(NodePathOrUnknown Path) : ResourceId; // §3.1.2 场景树资源
+    public sealed record Self(string Component) : ResourceId; // §3.1.2 自身资源
+    public sealed record Physics(Rid BodyId) : ResourceId; // §3.1.2 物理资源
+    public sealed record Memory(ulong Uid) : ResourceId;           // §7 裸 'memory' ⇒ Memory(uid="mem")
+    public sealed record Disk(string Path) : ResourceId; // §3.1.2 磁盘资源
+    public sealed record Signal(StringName Name) : ResourceId; // §3.1.2 信号资源
+    public sealed record Gpu(Rid BufferId) : ResourceId; // §3.1.2 GPU 资源
+    public sealed record AudioMixer(int ChannelId) : ResourceId; // §3.1.2 音频混音资源
+    public sealed record Occupancy(string Channel) : ResourceId;   // §7 audio_channel / animation_state
+    public sealed record Callback(string Id) : ResourceId;         // §7 Connect callback
+    public sealed record Network(int PeerId, string Method) : ResourceId; // §3.1.2 网络资源
+    public sealed record Input(string Action) : ResourceId;        // §7.8 input
+    public sealed record Custom(string Name) : ResourceId; // §3.1.2 自定义资源
+
+    // §3.1.2b 合成命名空间
+    public sealed record CommandBuffer(string Channel) : ResourceId;  // §3.1.2 命令缓冲资源（裸 command_buffer ⇒ §7）
+    public sealed record SignalBus(StringName Name) : ResourceId;     // §3.1.2 信号总线（统一 signal_bus / "signal_"+s，§3.1.4a）
+
+    /// <summary>
+    /// §3.1.4a — 归一化函数（非结构相等）。Two Claims 相等 ⇔ 二者 Resource 经 Normalize 后相等。
+    /// 映射表（与 §7 白名单裸名一一对应）：
+    ///   signal_bus / "signal_"+s / Self("signal_"+s) ⇒ SignalBus(s)
+    ///   gpu / command_buffer ⇒ CommandBuffer("gpu")
+    ///   memory⇒Memory("mem") disk⇒Disk(p) physics⇒Physics(b) audio_mixer⇒AudioMixer(c)
+    ///   audio_channel⇒Occupancy("audio") animation_state⇒Occupancy("animation") callback⇒Callback("cb")
+    ///   network⇒Network(...) input⇒Input(a) self⇒Self(c) tree⇒Tree(p)
+    /// Unknown 处理（§3.1.4a）：resource 为 Unknown 当且仅当静态不可判定；Unknown ≢ 已知，Unknown=Unknown（由 Tree(NodePathOrUnknown.Unknown) 结构相等保证）。
+    /// </summary>
+    public static ResourceId Normalize(ResourceId r) => r switch
+    {
+        // §3.1.2b / ST-02：Self("signal_"+s) ≡ SignalBus(s)
+        Self s when s.Component.StartsWith("signal_", StringComparison.Ordinal)
+            => new SignalBus(new StringName(s.Component["signal_".Length..])),
+        // §3.1.2b：Signal("signal_"+s) 也归一到 SignalBus(s)（PDR §3.1.4a "signal_"+s ≡ SignalBus(s)）
+        Signal sig when sig.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
+            => new SignalBus(new StringName(sig.Name.Value["signal_".Length..])),
+        // §3.1.2b：SignalBus("signal_"+s) 内部也剥 signal_ 前缀，自洽（PDR §3.1.4a）
+        SignalBus bus when bus.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
+            => new SignalBus(new StringName(bus.Name.Value["signal_".Length..])),
+        // 其余构造子已为规范形式，原样返回
+        _ => r
+    };
+}
+
+/// <summary>§3.1.2 Tree 路径：可为具体 NodePath 或 Unknown（静态不可判定）。</summary>
+public readonly record struct NodePathOrUnknown
+{
+    /// <summary>true 表示路径静态不可判定（§3.1.4a Unknown 处理）。</summary>
+    public bool IsUnknown { get; }
+
+    /// <summary>§3.1.4a — 仅当 !IsUnknown 有效（具体路径）。</summary>
+    public string Path { get; }
+
+    private NodePathOrUnknown(bool isUnknown, string path) { IsUnknown = isUnknown; Path = path; }
+
+    /// <summary>静态不可判定路径（结构相等保证 Unknown=Unknown，§3.1.4a）。</summary>
+    public static readonly NodePathOrUnknown Unknown = new(true, string.Empty);
+
+    /// <summary>§3.1.4a — 从具体路径构造。</summary>
+    public static NodePathOrUnknown Of(string path) => new(false, path);
+}
+
+/// <summary>
+/// §3.1.3 + §3.1.3b — ScopeId 偏序 ⊆* = (a ⊑ b) ∨ (b == Global)。
+/// IncludedIn 方法内嵌 §3.1.3b 查表；跨标签（如 Method(m) vs Scene(s), m≠s）返回 false（不可比较）。
+/// </summary>
+public abstract record ScopeId
+{
+    public sealed record Method(string Name) : ScopeId; // §3.1.3b 方法作用域
+    public sealed record Type(string Name) : ScopeId; // §3.1.3b 类型作用域
+    public sealed record Scene(string Name) : ScopeId; // §3.1.3b 场景作用域
+    public sealed record Global : ScopeId;                 // §3.1.3b 最大元
+    public sealed record Shell : ScopeId;                  // §3.1.3b shell 作用域（ST-04 收口：shell_scope ⇒ Shell）
+    public sealed record Loop(string Id) : ScopeId; // §3.1.3b 循环作用域
+    public sealed record Conditional(string Branch) : ScopeId; // §3.1.3b 条件作用域
+    public sealed record Async(string Id) : ScopeId; // §3.1.3b 异步作用域
+
+    /// <summary>§3.1.3b ⊆*：自反（同构造子同字段）、反对称、传递；Global 为最大元（含一切）。</summary>
+    public bool IncludedIn(ScopeId other)
+    {
+        if (Equals(other)) return true;          // 自反
+        if (other is Global) return true;        // Global 含一切
+        // 跨标签不可比较 ⇒ false（仅同标签同字段已在 Equals 命中）
+        return false;
+    }
+}
+
+/// <summary>§3.1.1（Claim 的 kind ∈ {read,write,occupy} 定义）/ §3.1.4b（Signature 按 kind 分三桶量纲隔离，DO-7）。enum 保证穷举，无未定义值。</summary>
+public enum Kind { Read, Write, Occupy }
+
+/// <summary>
+/// §3.2.3 — 模式。Unknown 按 Use 处理（fail-closed 最弱兼容，§3.2.3 P4）。
+/// </summary>
+public enum Mode { Use, Create, Release, Move, Unknown }
+
+/// <summary>
+/// §3.1.1 — Claim = (kind, resource, mode, scope, size)。position-record 给结构相等。
+/// 类型层强制（用户铁律：类型能约束的用类型）：五参位置记录 ⇒ 五字段构造时全必填，
+///   不存在「漏字段」的 Claim（构造即合法，不靠运行时 if 漏判；位置参数不可缺省）。
+///   位置式 <c>new Claim(kind, res, mode, scope, size)</c> 与 <c>with</c> 均保留全字段。
+/// 不变量：集合运算（∪ / net 分组 / Deviation 对齐）须用 <see cref="Normalize"/> 后的键（§3.1.4a）。
+/// resource 必须归一、size 缺省 ⇒ Default，否则同资源多 Claim 不被合并（§3.1.4a 后果）。
+/// </summary>
+public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, ScopeId Scope, Interval Size)
+{
+    /// <summary>§3.1.4a 归一化：resource 走 ResourceId.Normalize，size 缺省 ⇒ Default。</summary>
+    public Claim Normalize() => this with
+    {
+        Resource = ResourceId.Normalize(Resource),
+        Size = Size == default ? Interval.Default : Size
+    };
+
+    /// <summary>§3.2.3 全函数 Compatible 的单元调用（对称）。</summary>
+    public bool CompatibleWith(Claim other) => Compatible.IsCompatible(Mode, other.Mode);
+}
+
+/// <summary>
+/// §3.1.4b — Signature 按 kind 分三不相交桶（DO-7 量纲隔离）。
+/// 跨桶聚合须显式 <see cref="Weight"/>，否则 KIND_MIX（L3 诊断，§3.3.2b）。
+/// 类型暴露三桶；运行时集异质使跨桶聚合无法纯类型静态护栏，故由 Analyzer 补（注释契约）。
+/// </summary>
+public sealed class Signature
+{
+    private ImmutableHashSet<Claim> _read = ImmutableHashSet<Claim>.Empty;
+    private ImmutableHashSet<Claim> _write = ImmutableHashSet<Claim>.Empty;
+    private ImmutableHashSet<Claim> _occupy = ImmutableHashSet<Claim>.Empty;
+
+    public ImmutableHashSet<Claim> ReadClaims => _read; // §3.1.4b 读桶（量纲隔离）
+    public ImmutableHashSet<Claim> WriteClaims => _write; // §3.1.4b 写桶（量纲隔离）
+    public ImmutableHashSet<Claim> OccupyClaims => _occupy; // §3.1.4b 占用桶（量纲隔离；net 仅含此桶）
+
+    private Signature() { }
+
+    /// <summary>§3.2.1 — 空签名（⊔ 单位元）。</summary>
+    public static readonly Signature Empty = new();
+
+    /// <summary>§3.2.1 — 从一组 Claim 构造签名（自动按 Normalize 键去重分桶）。</summary>
+    public static Signature Of(params Claim[] claims)
+    {
+        var s = new Signature();
+        foreach (var c in claims) s = s.Add(c);
+        return s;
+    }
+
+    private Signature Add(Claim c)
+    {
+        var n = c.Normalize();
+        var s = new Signature { _read = _read, _write = _write, _occupy = _occupy };
+        switch (n.Kind)
+        {
+            case Kind.Read: s._read = s._read.Add(n); break;
+            case Kind.Write: s._write = s._write.Add(n); break;
+            case Kind.Occupy: s._occupy = s._occupy.Add(n); break;
+        }
+        return s;
+    }
+
+    /// <summary>§3.2.1/§3.2.2 ∪：并集，按 Normalize 键去重（幂等由结构相等保证，§3.1.4a）。</summary>
+    public static Signature Union(Signature a, Signature b)
+    {
+        var s = new Signature { _read = a._read, _write = a._write, _occupy = a._occupy };
+        foreach (var c in b._read) s = s.Add(c);
+        foreach (var c in b._write) s = s.Add(c);
+        foreach (var c in b._occupy) s = s.Add(c);
+        return s;
+    }
+
+    /// <summary>§3.2.4 ⊔：join-semilattice 合并（幂等/交换/结合，非半环）。同 Claim 取 size merge_I。</summary>
+    public static Signature Join(Signature a, Signature b) => Union(a, b);
+
+    /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
+    public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
+}

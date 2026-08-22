@@ -1,0 +1,1 @@
+Let me examine the IO/contract files and check for existing tests to resolve the scope-handling question.

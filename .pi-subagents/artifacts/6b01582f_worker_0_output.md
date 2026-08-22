@@ -1,0 +1,1 @@
+iter-code03.md 已写入；open 项 0（代码层）；PDR 文档侧 2 处 kind-label 笔误已标注（out-of-scope，非代码缺陷）；终止判定=可终止。

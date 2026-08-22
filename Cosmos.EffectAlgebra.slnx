@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cosmos.EffectAlgebra.Analyzer/Cosmos.EffectAlgebra.Analyzer.csproj" />
+    <Project Path="src/Cosmos.EffectAlgebra.Generator/Cosmos.EffectAlgebra.Generator.csproj" />
+    <Project Path="src/Cosmos.EffectAlgebra/Cosmos.EffectAlgebra.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cosmos.EffectAlgebra.Tests/Cosmos.EffectAlgebra.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,1 @@
+BUILD_OK 错误数=0，已写 EffectAlgebraGenerator.cs（IIncrementalGenerator 骨架）+ 删 Class1.cs + .csproj 改依赖。

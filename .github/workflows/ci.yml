@@ -1,0 +1,20 @@
+name: CI - Effect Cost Algebra Audit Gate
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+jobs:
+  audit-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Cosmos.EffectAlgebra.slnx
+      - name: Build (编译期门禁：TreatWarningsAsErrors 使警告=错误)
+        run: dotnet build Cosmos.EffectAlgebra.slnx -c Release --no-restore -warnaserror
+      - name: Test (审计 + 代数 + L2/L3 端到端；任何失败=红)
+        run: dotnet test Cosmos.EffectAlgebra.slnx -c Release --no-build --verbosity normal

@@ -1,0 +1,1 @@
+BUILD_OK 错误数=0，已写 DerivedMetrics.cs（LoopCount + Combination + Derived 便利封装）。

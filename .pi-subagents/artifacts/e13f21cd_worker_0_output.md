@@ -1,0 +1,1 @@
+iter-code18.md 已写入；open 项 1（OPEN-1：KnownReleaseSemanticsCanon 重写 7 串与自身注释/NoHardcodedSevenStrings 名自相矛盾，应派生自 ReleaseClass.Names）；终止判定=需继续(1)。

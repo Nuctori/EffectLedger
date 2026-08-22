@@ -1,0 +1,1 @@
+iter-code04.md 已写入；open 项 1（可闭：注释误述"包含全部 Claim"，实际仅 occupy 桶）；终止判定=需继续（1）。

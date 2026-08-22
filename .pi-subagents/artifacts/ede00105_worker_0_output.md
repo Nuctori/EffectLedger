@@ -1,0 +1,1 @@
+✦ 一键生成 PDR §6 层独立审计（iter07.md）完成：L1 为唯一真可证层（语言保证 discharged），L2/L3 完备性全未证致全文「已收敛」实为 asserted；TS-009 反射 new 隐藏为 open；TS-011 性能证据缺失。共立 6 条 PO、7 条 I7- 缺口。

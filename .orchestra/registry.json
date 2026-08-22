@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "tasks": {},
+  "batches": {},
+  "dispatchQueue": [],
+  "events": [
+    {
+      "at": 1787165263854,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787166101133,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787179055248,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787181911367,
+      "kind": "scope",
+      "detail": "scope=orchestra subtasks=3 deps=无（各轮独立）"
+    },
+    {
+      "at": 1787181964906,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787182403714,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787194652414,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787215011504,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    },
+    {
+      "at": 1787219845501,
+      "kind": "scope",
+      "detail": "scope=single subtasks=1 deps=无"
+    }
+  ],
+  "seq": 0,
+  "scope": {
+    "mode": "single",
+    "shape": {
+      "subtasks": 1,
+      "deps": "无",
+      "handoffs": "code/audit 文件",
+      "acceptance": "evidence"
+    },
+    "decidedAt": 1787219845501,
+    "decidedBy": "agent"
+  }
+}

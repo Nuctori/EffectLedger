@@ -1,0 +1,1 @@
+The independent `hy3` subagent mechanism is confirmed working — Iter01's file now shows genuine subagent-style output (`独立审计 pass 1/20`). I was wrong before; now I'll run all 20 as genuinely separate serial subagent passes, each writing only its own file. Continuing with Iter02.

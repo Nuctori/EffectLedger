@@ -1,0 +1,102 @@
+# Task for worker
+
+You are a delegated subagent running from a fork of the parent session. Treat the inherited conversation as reference-only context, not a live thread to continue. Do not continue or answer prior messages as if they are waiting for a reply. Your sole job is to execute the task below and return a focused result for that task using your tools.
+
+Task:
+你是实现 subagent，负责「迭代01：L1 纯代数核心骨架」。在 `D:/Godot/Cosmos` 的 .NET 10 solution 中落地 PDR（PDR_Effect_Cost_Algebra_v3_FINAL.md）§3.1–§3.3 的 L1 类型层。
+
+**关键环境事实（必读，否则必失败）：**
+- 已用 `dotnet new sln/classlib/xunit` 建好 solution：`D:/Godot/Cosmos/Cosmos.EffectAlgebra.slnx` + 工程 `src/Cosmos.EffectAlgebra`（L1 核心）、`src/Cosmos.EffectAlgebra.Generator`、`src/Cosmos.EffectAlgebra.Analyzer`、`tests/Cosmos.EffectAlgebra.Tests`。
+- **构建命令必须用 PowerShell 且先 `$env:MSBUILD_EXE_PATH = $null`**，否则 dotnet 会调起一个坏的 VS2019 MSBuild 报 NuGet 任务加载失败：
+  `cd D:/Godot/Cosmos/src/Cosmos.EffectAlgebra; $env:MSBUILD_EXE_PATH = $null; dotnet build -clp:ErrorsOnly`
+- 当前 `src/Cosmos.EffectAlgebra/` 下有我之前手写的 `Numeric.cs`/`Objects.cs`/`Algebra.cs`（含若干编译错误与盲目编辑漂移）。**你用 `write` 工具整体覆盖重写这三个文件**（不要增量 edit，避免漂移），并保证编译通过。
+
+**用户铁律（最高优先级）：每个符号都要有明确数学边界定义 + 明确语义；类型系统能约束的用类型，类型约束不了的写在注释上（带 §x.y 出处）。不留技术债。**
+
+**落地内容（严格对应 PDR，类型边界内嵌、残留写注释）：**
+1. `Numeric.cs`：
+   - `NatStar`（§3.1.5a）：`readonly record struct`，`IsTop`+`Value(ulong)`；`Top`/`Of(ulong)`；运算符 `+`/`*` 内嵌 ⊤ 律（x+⊤=⊤；0×⊤=⊤ 保守）；`Max`/`Min` 内嵌 ⊤ 律；`CompareToFinite` 帮助器（先判 IsTop）。注释标 MA-002。
+   - `Interval`（§3.1.5/§3.1.5b）：`readonly record struct`，`Lo`/`Hi: NatStar`；构造子校验 lo≤hi（⊤ 合法）；`Default=[1,1]`、`Dynamic=[1,⊤]`、`Exact(ulong)`；`Merge`（join-semilattice，min/max 内嵌 ⊤ 律）。
+   - `DeviationVal`（§3.1.5c）：`readonly record struct`，`IsTop`+`Value(double)`；`Top`/`Of(double)`；`ExceedsThreshold(double)` 先判 IsTop 再比数值（§9.1 修正）。
+2. `Objects.cs`：
+   - `using System.Collections.Immutable;` 在顶部。
+   - L1 零 Godot 依赖：用内部原语 `public readonly record struct Rid(string Value);` 和 `public readonly record struct StringName(string Value);` 替代 Godot 类型（注释说明映射层 §7 负责转换）。
+   - `ResourceId`（§3.1.2+§3.1.2b）：`abstract record`，判别联合构造子 Tree/Self/Physics/Memory/Disk/Signal/Gpu/AudioMixer/Occupancy/Callback/Network/Input/Custom/CommandBuffer/SignalBus，字段类型即边界。
+   - `ResourceId.Normalize(ResourceId)` 静态函数（§3.1.4a）：signal_bus/"signal_"+s/Self("signal_"+s)⇒SignalBus(s)；gpu/command_buffer⇒CommandBuffer("gpu")；其余原样。注释列全裸名映射表（memory/disk/...）。
+   - `NodePathOrUnknown`（§3.1.2 Tree 路径 Unknown）。
+   - `ScopeId`（§3.1.3+§3.1.3b）：抽象记录 + 构造子 Method/Type/Scene/Global/Shell/Loop/Conditional/Async；`IncludedIn(ScopeId)` 方法内嵌 ⊆*（自反 + Global 最大元 + 跨标签 false）。
+   - `Kind`/`Mode` enum（§3.2.3，Mode 含 Unknown）。
+   - `Claim`（§3.1.1）：`readonly record struct (Kind, ResourceId, Mode, ScopeId, Interval Size)`；`Normalize()` 归一 resource + 缺省 size⇒Default。
+   - `Signature`（§3.1.4b）：`sealed class`，三不相交桶 `_read/_write/_occupy`（非 readonly 字段，有 `ReadClaims/WriteClaims/OccupyClaims` 公开属性）；`Empty`；`Union`(∪ 按 Normalize 去重)；`Join`(⊔)；`Net(ScopeId)`→NetTable。
+3. `Algebra.cs`：
+   - `Compatible` 静态类（§3.2.3）：`IsCompatible(Mode,Mode)` 全函数 + 对称；Unknown⇒Use；CONFLICT={(C,C),(M,M),(R,R)}。注释标 P1-P4。
+   - `Weight` 静态类（§3.3.2b）：`Of(Kind,Kind)` 同 kind⇒1.0，跨 kind⇒double.NaN（约定 ⊥ 编码，注释）。
+   - `NetTable`（§3.3.1）：`private readonly Dictionary<ResourceId,Interval> _net`；`Compute(Signature,ScopeId)` 仅含 ⊆* 过滤、按归一资源分组、create 加 release 减（release 取 [−hi,−lo] 负向）；`this[ResourceId]` 索引器；`IsConserved` 守恒判定（net 跨 0⇒闭合，缺省 [1,1]⇒不守恒触发 DO-9）。
+   - `Peak` 静态类（§3.3.2/§3.2.5）：`Compute(Signature,ScopeId)` size 求和；任一 ⊤⇒⊤。
+   - `SignatureExtensions.AllClaims(this Signature)` 枚举三桶。
+
+**验证（必须做，附 exit code）：**
+- 删掉 `src/Cosmos.EffectAlgebra/Class1.cs`（若有）。
+- `$env:MSBUILD_EXE_PATH = $null; dotnet build -clp:ErrorsOnly` 在 `src/Cosmos.EffectAlgebra` 目录返回 0 错误。
+- 若仍有错，用 `write` 修对应文件直到绿。绝不用增量 edit 修（会漂移）。
+
+**完成后回复（一行）：** 迭代01 L1 实现完成，dotnet build 错误数=N（应为0），产出 Numeric.cs/Objects.cs/Algebra.cs。
+
+## Acceptance Contract
+Acceptance level: checked
+Completion is not accepted from prose alone. End with a structured acceptance report.
+
+Criteria:
+- criterion-1: Implement the requested change without widening scope
+- criterion-2: Return evidence sufficient for an independent acceptance review
+
+Required evidence: changed-files, tests-added, commands-run, residual-risks, no-staged-files
+
+Review gate: required by reviewer.
+
+Finish with a fenced JSON block tagged `acceptance-report` in this shape:
+Use empty arrays when no items apply; array fields contain strings unless object entries are shown.
+`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.
+`commandsRun[].result` must be exactly one of: passed, failed, not-run.
+`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "specific proof"
+    },
+    {
+      "id": "criterion-2",
+      "status": "satisfied",
+      "evidence": "specific proof"
+    }
+  ],
+  "changedFiles": [
+    "src/file.ts"
+  ],
+  "testsAddedOrUpdated": [
+    "test/file.test.ts"
+  ],
+  "commandsRun": [
+    {
+      "command": "command",
+      "result": "passed",
+      "summary": "short result"
+    }
+  ],
+  "validationOutput": [
+    "validation output or concise summary"
+  ],
+  "residualRisks": [
+    "none"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "short description of the diff",
+  "reviewFindings": [
+    "blocker: file.ts:12 - issue found, or no blockers"
+  ],
+  "manualNotes": "anything else the parent should know"
+}
+```

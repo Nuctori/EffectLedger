@@ -1,0 +1,1 @@
+BUILD_OK 错误数=0 警告数=0，已加固 Claim 位置记录（五字段构造必填）+ Nullable enable（4 工程）+ TreatWarningsAsErrors（src 三工程）+ 全解构建（4 工程入 slnx）。
