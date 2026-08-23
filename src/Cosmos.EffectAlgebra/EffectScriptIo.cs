@@ -121,7 +121,7 @@ public static class EffectScriptIo
             var v = prop.Value;
             if (name == "gpu") return new ResourceId.Gpu(new Rid(Extract(v, "bufferId")));
             if (name == "commandBuffer") return new ResourceId.CommandBuffer(Extract(v, "channel", "gpu"));
-            if (name == "memory") return new ResourceId.Memory(0);
+            if (name == "memory") return new ResourceId.Memory(ExtractUInt64(v, 0)); // 修 auditR：消费 JSON uid，与 Contract/L1 Memory(uid) 一致，不再硬编码 Memory(0)
             if (name == "tree") return new ResourceId.Tree(NodePathOrUnknown.Of(Extract(v, "path", "root")));
             if (name == "self") return new ResourceId.Self(Extract(v, "component", "self"));
             if (name == "physics") return new ResourceId.Physics(new Rid(Extract(v, "bodyId", "b")));
@@ -158,6 +158,15 @@ public static class EffectScriptIo
             throw new ArgumentException($"未知 scope 形状: {name}", nameof(s));
         }
         throw new ArgumentException("scope 对象为空", nameof(s));
+    }
+
+    // 取资源子字段中的 ulong（兼容「数字」「{uid:N}」「字符串数字」）；缺省/非数字 ⇒ fallback。
+    private static ulong ExtractUInt64(JsonElement e, ulong fallback = 0)
+    {
+        if (e.ValueKind == JsonValueKind.Number) return e.GetUInt64();
+        if (e.ValueKind == JsonValueKind.String && ulong.TryParse(e.GetString(), out var n)) return n;
+        if (e.TryGetProperty("uid", out var u) && u.ValueKind == JsonValueKind.Number) return u.GetUInt64();
+        return fallback;
     }
 
     // 取资源/作用域子字段：兼容「对象 {field: "x"}」与「字符串 "x"」两种简写。

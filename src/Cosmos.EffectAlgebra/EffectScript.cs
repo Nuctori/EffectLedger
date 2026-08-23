@@ -168,7 +168,16 @@ public sealed partial class EffectScript
                     {
                         bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                         if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
-                        else peakSum[r] = NatStar.Of(peakSum.GetValueOrDefault(r, NatStar.Of(0)).Value + (c.Size ?? Interval.Default).Hi.Value * e.Loop.Count.Value);
+                        else
+                        {
+                            // 保守 ⊤：×/＋ 溢出（ulong 环绕）即标 ⊤，不静默低估峰值（与 exit 路径一致，补 auditR 仅修 exit 漏修 enter 的裸 ulong* 回卷）。
+                            var hi = (c.Size ?? Interval.Default).Hi;
+                            var w = e.Loop.Count;
+                            var curSum = peakSum.GetValueOrDefault(r, NatStar.Of(0));
+                            var mul = (!hi.IsTop && !w.IsTop && hi.Value <= ulong.MaxValue / w.Value) ? hi.Value * w.Value : ulong.MaxValue;
+                            peakSum[r] = (curSum.IsTop || mul == ulong.MaxValue || curSum.Value > ulong.MaxValue - mul)
+                                ? NatStar.Top : NatStar.Of(curSum.Value + mul);
+                        }
                     }
                 }
                 else
