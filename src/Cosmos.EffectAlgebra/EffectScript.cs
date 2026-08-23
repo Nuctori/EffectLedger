@@ -152,7 +152,7 @@ public sealed partial class EffectScript
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
-                    net[r] = net.TryGetValue(r, out var cur) ? cur.Merge(contrib) : contrib;
+                    net[r] = net.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
             // gate(2) peak + gate(3) grp：enter(+) / exit(−)。
@@ -251,7 +251,7 @@ public sealed partial class EffectScript
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
-                    closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Merge(contrib) : contrib;
+                    closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
             foreach (var kv in closureNet)

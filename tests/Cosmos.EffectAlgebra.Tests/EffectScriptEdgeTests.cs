@@ -620,7 +620,7 @@ public class EffectScriptEdgeTests
                 var contrib = c.Mode == Mode.Release
                     ? new SignedInterval(ZNeg(scaled.Hi), ZNeg(scaled.Lo))
                     : new SignedInterval(ZTo(scaled.Lo), ZTo(scaled.Hi));
-                closure[r] = closure.TryGetValue(r, out var cur) ? cur.Merge(contrib) : contrib;
+                closure[r] = closure.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
             }
         }
         foreach (var kv in closure) if (!kv.Value.ContainsZero)
@@ -641,7 +641,7 @@ public class EffectScriptEdgeTests
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(ZNeg(scaled.Hi), ZNeg(scaled.Lo))
                         : new SignedInterval(ZTo(scaled.Lo), ZTo(scaled.Hi));
-                    cum[r] = cum.TryGetValue(r, out var cur) ? cur.Merge(contrib) : contrib;
+                    cum[r] = cum.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
             foreach (var kv in cum) if (!kv.Value.Hi.IsTop && kv.Value.Hi.Value < 0)

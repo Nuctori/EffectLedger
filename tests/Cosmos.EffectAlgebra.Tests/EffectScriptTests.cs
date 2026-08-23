@@ -210,6 +210,20 @@ public class EffectScriptTests
         Assert.Contains(result.Violations, v => v.Kind == "Leak");
     }
 
+    // 部分重叠净效应：create[+5] 与 release[−3] 真实净和 = [+2,+2]（不含 0）⇒ 必须报 Leak。
+    // 审计器若用 Merge(min/max join) 聚合 net，会得 [−3,+5]（含 0），吞掉泄漏（false-negative，HIGH）。
+    // 正确聚合必须用 SignedInterval.Add（区间逐端求和，见 SignedNet.Add）。
+    [Fact]
+    public void Audit_PartialOverlapNet_ReportedLeak()
+    {
+        var create = Ev(Interval.Exact(0), Gpu("tex"), Mode.Create, Scene("S"), Interval.Exact(5));
+        var release = Ev(new Interval(NatStar.Of(10), NatStar.Of(100)), Gpu("tex"), Mode.Release, Scene("S"), Interval.Exact(3));
+        var script = new EffectScript(ImmutableArray.Create(create, release));
+        var result = script.Audit(Budget.None);
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Kind == "Leak" && v.Resource.Equals(ResourceId.Normalize(Gpu("tex"))));
+    }
+
     // ════════════ OPEN-N1 回归：residentExempt 顺序无关（两遍法修正） ════════════
     [Fact]
     public void Audit_ResidentExempt_OrderIndependent()
