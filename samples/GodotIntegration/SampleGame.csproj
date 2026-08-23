@@ -35,11 +35,10 @@
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj" />
 
     <!--
-      L3 分析器：真实 Game.csproj 的生产接法 = OutputItemType="Analyzer"（编译器在隔离 ALC 加载）。
-      CS8032 已根治（分析器自包含：直接 Compile L1 纯代数源，零程序集依赖，隔离 ALC 可实例化），
-      故改回生产接法，不再用 WithAnalyzers-only 的普通 ProjectReference（后者会导入分析器内嵌的 L1 类型，
-      与 L1 自身的 ResourceId/Signature 冲突 ⇒ CS0433）。
-      E2E 测试通过 AnalyzerFileReference + AnalyzerAssemblyLoader 反射加载分析器并以 WithAnalyzers 驱动（见 AnalyzerTestLoader）。
+      L3 分析器两部分接法：
+      (1) OutputItemType="Analyzer" ReferenceOutputAssembly="false"：生产接法，编译器在隔离 ALC 加载分析器（CS8032 已根治：分析器自包含嵌入 L1 纯代数）。
+      (2) 普通 ProjectReference（ReferenceOutputAssembly=true）：使分析器 DLL 复制到本 E2E 测试输出目录，供 AnalyzerTestLoader 反射加载并以 WithAnalyzers 驱动（见 AnalyzerTestLoader.cs）。
+          注：CS0433（ResourceId/Signature 同名冲突）由分析器内嵌 L1 类型的命名空间改写（Cosmos.EffectAlgebra.Analyzer.Shared）规避，与是否引用此 ProjectReference 无关。
     -->
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

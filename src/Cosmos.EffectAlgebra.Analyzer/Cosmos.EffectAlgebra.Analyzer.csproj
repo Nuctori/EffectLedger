@@ -38,7 +38,6 @@
     <ShareSource Include="..\Cosmos.EffectAlgebra\Algebra.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\Numeric.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\SignedNet.cs" />
-    <ShareSource Include="..\Cosmos.EffectAlgebra\IsExternalInit.cs" />
   </ItemGroup>
 
   <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Analyzer.Shared[.X]，
