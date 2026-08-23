@@ -12,6 +12,15 @@
     <NoWarn>RS1041;RS2008;RS2007</NoWarn>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- NuGet 打包元数据（P0-2：生产可分发）。分析器 DLL 经 Roslyn 目标自动落入 analyzers/dotnet/cs/。 -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Cosmos.EffectAlgebra.Analyzer</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Nuctori</Authors>
+    <Company>Cosmos</Company>
+    <Description>资源效应代价代数 L3 编译期分析器：资源泄漏 (EAA0901) / 量纲隔离 (EAA0303) / 兼容冲突 (EAA0304) / 逃逸参数校验 (EAA0801/0802) 早期根因诊断（§3.3.1 / §3.1.4b / §3.2.3 / §8.3）。零 Godot 依赖。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>roslyn-analyzer;effect-algebra;leak;godot</PackageTags>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -44,5 +53,10 @@
       <Compile Include="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs" />
     </ItemGroup>
   </Target>
+
+  <!-- 分析器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。 -->
+  <ItemGroup>
+    <None Include="bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+  </ItemGroup>
 
 </Project>

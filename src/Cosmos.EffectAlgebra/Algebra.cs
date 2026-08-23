@@ -90,7 +90,7 @@ public sealed class NetTable
     /// <summary>按归一化资源键取净效应有符号区间；缺省 ⇒ <see cref="SignedInterval.Zero"/>。供 §9.1 Deviation 资源对齐使用。</summary>
     public SignedInterval Get(ResourceId r) => _net.TryGetValue(ResourceId.Normalize(r), out var v) ? v : SignedInterval.Zero;
 
-    /// <summary>§3.3.1 守恒判定：资源必须出现在净效应中且区间跨 0（lo<=0<=hi）⇒ 生命周期闭合（DO-9 不报警）。
+    /// <summary>§3.3.1 守恒判定：资源必须出现在净效应中且区间跨 0（下界 ≤ 0 ≤ 上界）⇒ 生命周期闭合（DO-9 不报警）。
     /// 未出现在 net 中的资源 ⇒ 无任何净效应记录 ⇒ 视为未闭合，fail-closed 返回 false（触发 DO-9 报警，不静默漏报）。
     /// 任一端 ⊤（未知上界）⇒ 视为「需人工界定」⇒ 不守恒（fail-closed，§3.3.1 DO-9）。</summary>
     public bool IsConserved(ResourceId r)

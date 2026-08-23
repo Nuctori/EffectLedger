@@ -6,6 +6,15 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- NuGet 打包元数据（P0-2：生产可分发）。源生成器须落入 analyzers/dotnet/cs/ 以供消费方编译期加载。 -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Cosmos.EffectAlgebra.Generator</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Nuctori</Authors>
+    <Company>Cosmos</Company>
+    <Description>资源效应代价代数 L2 源生成器：将 Godot API 调用真委托到 L1 净代数 Signature（§7 / §14）。零 Godot 依赖。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>source-generator;effect-algebra;godot;roslyn</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <LangVersion>latest</LangVersion>
@@ -15,6 +24,11 @@
     <!-- L2 是 Roslyn source generator；仅依赖 Roslyn + L1 纯代数。不引用 Godot.NET.Sdk（本机未装，会还原失败）。 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
     <ProjectReference Include="..\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+  </ItemGroup>
+
+  <!-- 生成器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。 -->
+  <ItemGroup>
+    <None Include="bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
   </ItemGroup>
 
 </Project>

@@ -31,7 +31,7 @@ public readonly record struct EffectEvent
     public Signature Footprint { get; }
 
     /// <summary>§3.2.5 — 并发实例数 ω∈ℕ∪{⊤}。ω 表示「同一时刻有多少个该元素并发存在」（并发副本，非时间重复）；
-    /// 默认 <see cref="LoopCount.Of(1)"/> = 单实例。ω=⊤ ⇒ 上界开放（常驻）。</summary>
+    /// 默认单实例（<see cref="LoopCount"/> 的 1 值）。ω=⊤ ⇒ 上界开放（常驻）。</summary>
     public LoopCount Loop { get; }
 
     /// <summary>§2.1 — 全字段构造（含 ω）。</summary>
