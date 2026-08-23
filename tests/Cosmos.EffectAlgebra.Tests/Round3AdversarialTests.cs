@@ -4,10 +4,13 @@ using Xunit;
 namespace Cosmos.EffectAlgebra.Tests;
 
 /// <summary>
-/// Round 3 对抗审计（自审闭环，D-014）：跨层一致性 — L2 生成器 emit 的
-/// 「Compute{X} = Signature.Union(baseSig, {X}_Claims())」逻辑必须等价于 L1 对 §7 白名单 Claims 的代数组合。
-/// 本测试锁死该跨层契约：L2 只是把白名单 Claims 经 Signature.Of + Signature.Union 组合，
-/// 数学全在 L1（§3.1–§3.3），生成层不得重算/扭曲。若 L2 改去 Union 或改匹配键导致丢 Claim，此测试红。
+/// Round 3 对抗审计（自审闭环，D-014）：跨层一致性代数保真 — L2 生成器 emit 的
+/// 「Compute{X} = Signature.Union(baseSig, {X}_Claims())」其数学运算全在 L1（§3.1–§3.3），
+/// 生成层不得重算/扭曲白名单 Claims。
+/// 本测试锁死该代数保真：对任一 §7 白名单条目，其 Claims 经 L1 Signature.Of + Signature.Union 组合后
+/// 不丢 Claim、且规范化键可被 L2/L3 共用的「去 ._ 小写」规则命中（§14 对称，R6 修复对等契约）。
+/// 注：直接驱动 L2 生成器输出真实源码的端到端契约由 EndToEndTests / IntegrationTests 覆盖；
+/// 本测试聚焦「生成层复用的 L1 运算 + 规范化匹配键」不可被改坏，属回归守卫。
 /// </summary>
 public class Round3AdversarialTests
 {
@@ -15,8 +18,9 @@ public class Round3AdversarialTests
     public void L2_GeneratedSignature_Equals_L1_WhitelistUnion()
     {
         // L2 生成器对每个标注方法：遍历 GodotApiWhitelist.All，按规范化方法名匹配，
-        // 用 Signature.Union 把匹配到的 Claims 组合进返回值。这里在 L1 层复现同一组合，
-        // 断言：任一 §7 白名单条目的 Claims 经 Signature.Of + 累积 Union 后仍可还原其 Claim 数（代数忠实）。
+        // 用 Signature.Union 把匹配到的 Claims 组合进返回值。这里在 L1 层复现同一组合（代数保真守卫），
+        // 断言：任一 §7 白名单条目的 Claims 经 Signature.Of + 累积 Union 后仍可还原其 Claim 数（代数忠实），
+        // 即生成层所用的 L1 运算不被改坏。
         foreach (var entry in GodotApiWhitelist.All)
         {
             var sig = Signature.Empty;
