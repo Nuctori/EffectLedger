@@ -815,4 +815,24 @@ public class EffectScriptEdgeTests
         var at = s.At(NatStar.Of(5));
         Assert.True(at.OccupyClaims.Count(c => ResourceId.Normalize(c.Resource).Equals(Gpu("tex")) && c.Scope is ScopeId.Global) >= 1);
     }
+
+    // ── auditR5 F1 回归：EffectScript.Budget 为不可变构造参数（非可变属性），值语义无隐藏状态 ──
+    [Fact]
+    public void EffectScript_Budget_IsImmutableValue()
+    {
+        // 闭合事件（create+release）避免 Leak，专注验证 Budget 不可变 + 值语义确定性。
+        var create = Ev(Interval.Exact(0), Gpu("tex"), Mode.Create, Scene("S"), Interval.Exact(1));
+        var release = Ev(Interval.Exact(1), Gpu("tex"), Mode.Release, Scene("S"), Interval.Exact(1));
+        var evs = ImmutableArray.Create(create, release);
+        var cap = new Dictionary<ResourceId, NatStar> { [Gpu("tex")] = NatStar.Of(2) };
+        var budget = new Budget(cap);
+        var s = new EffectScript(evs, budget);
+        Assert.Equal(budget, s.Budget);
+        var sDefault = new EffectScript(evs);
+        Assert.Equal(Budget.None, sDefault.Budget);
+        var r1 = s.Audit();
+        var r2 = s.Audit();
+        Assert.Equal(new HashSet<Violation>(r1.Violations), new HashSet<Violation>(r2.Violations));
+        Assert.True(r1.Passed); // 闭合 + 预算 2≥1 ⇒ 通过
+    }
 }

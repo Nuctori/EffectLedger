@@ -33,7 +33,7 @@ public static class EffectScriptContract
         if (root.TryGetProperty("budget", out var bud) && bud.ValueKind == JsonValueKind.Object)
             caps = ParseBudget(bud);
 
-        return new EffectScript(events.ToImmutableArray()) { Budget = new Budget(caps) };
+        return new EffectScript(events.ToImmutableArray(), new Budget(caps));
     }
 
     /// <summary>§4 — 序列化 <see cref="EffectScript"/> 为契约 JSON（round-trip 用）。</summary>
@@ -239,9 +239,6 @@ public static class EffectScriptContract
 /// <summary>§2.3 — 预算可附着在剧本上（便捷：Parse 后直接 Audit）。</summary>
 public sealed partial class EffectScript
 {
-    /// <summary>§2.3 — 剧本级预算（默认无上限）。Parse 时由 JSON 'budget' 填充。</summary>
-    public Budget Budget { get; init; } = Budget.None;
-
-    /// <summary>§3 — 用自带 <see cref="Budget"/> 审计。</summary>
+    /// <summary>§3 — 用自带 <see cref="Budget"/> 审计（Budget 在主 EffectScript 定义为不可变构造参数，修 auditR5 F1）。</summary>
     public AuditResult Audit() => Audit(Budget);
 }

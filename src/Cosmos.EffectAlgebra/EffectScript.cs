@@ -57,11 +57,19 @@ public sealed partial class EffectScript
     /// <summary>§2.2 — 剧本内所有视觉事件（有限集）。</summary>
     public ImmutableArray<EffectEvent> Events { get; }
 
-    /// <summary>§2.2 — 从事件集构造剧本。</summary>
-    public EffectScript(ImmutableArray<EffectEvent> events) { Events = events; }
+    /// <summary>§2.3 — 剧本级预算（默认无上限）。构造即固定，使 EffectScript 为不可变值对象（修 auditR5 F1：原 { get; init; } 可被改写 ⇒ 同实例 Audit 结果依赖可变状态）。</summary>
+    public Budget Budget { get; }
+
+    /// <summary>§2.2 — 从事件集构造剧本（预算默认无上限）。</summary>
+    public EffectScript(ImmutableArray<EffectEvent> events, Budget budget = default)
+    {
+        Events = events;
+        Budget = budget.Caps != null ? budget : Budget.None;
+    }
 
     /// <summary>§2.2 — 从事件集构造剧本（IEnumerable 便捷）。</summary>
-    public EffectScript(IEnumerable<EffectEvent> events) { Events = events.ToImmutableArray(); }
+    public EffectScript(IEnumerable<EffectEvent> events, Budget budget = default)
+        : this(events.ToImmutableArray(), budget) { }
 
     /// <summary>
     /// §2.2 / §3 — At(t)：t 时刻屏幕总签名 = 所有 Lifetime∋t 的 Event 各取
