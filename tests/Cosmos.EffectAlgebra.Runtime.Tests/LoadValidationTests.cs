@@ -118,8 +118,11 @@ public class LoadValidationTests
     [Fact]
     public void VerifyNetClosure_Throws_WhenFiberNotConserved()
     {
+        // §3.3.1：net 仅含 Kind.Occupy 桶；Write/Read 不进 net（量纲隔离）。
+        // 正确构造“非闭合”纤维：提供 Memory(0)（Occupy/Create）但无任何释放 ⇒ net 正区间不跨 0 ⇒ 闸门必须抛。
         var shell = new ScopeId.Shell();
-        var f = new Fiber(new FiberId("x"), Signature.Of(new Claim(ClaimKind.Write, new ResourceId.Memory(0), shell, Interval.Default)),
+        var f = new Fiber(new FiberId("x"),
+            Signature.Of(new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Create, shell, Interval.Default)),
             new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
         Assert.Throws<LoadValidationException>(() => LoadValidation.VerifyNetClosure(new[] { f }));
     }
@@ -127,10 +130,11 @@ public class LoadValidationTests
     [Fact]
     public void VerifyNetClosure_Pass_WhenFiberConserved()
     {
+        // 闭合纤维：提供 Memory(0)（Occupy/Create）+ 对应释放（Occupy/Release）⇒ net 含 0 ⇒ 闸门不抛。
         var shell = new ScopeId.Shell();
         var s = Signature.Of(
-            new Claim(ClaimKind.Write, new ResourceId.Memory(0), shell, Interval.Default),
-            new Claim(ClaimKind.Read, new ResourceId.Memory(0), shell, Interval.Default));
+            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Create, shell, Interval.Default),
+            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Release, shell, Interval.Default));
         var f = new Fiber(new FiberId("x"), s,
             new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
         LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ §5 闸门接线生效

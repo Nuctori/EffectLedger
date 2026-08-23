@@ -112,4 +112,25 @@ public class PluginRuntimeTests
         Assert.True(released);
         Assert.Equal(FiberState.Dead, p.State);
     }
+
+    [Fact]
+    public void AddDependency_BackfillsProviderDependents() // reviewer #185 medium #3：否则 Godot 壳级联遍历空集 no-op
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        rt.AddDependency(d, p, EdgeKind.Soft);
+        Assert.Contains(d.Id, p.Dependents); // provider 的 Dependents 被回填（供 Godot 壳 ProcessMode 级联）
+    }
+
+    [Fact]
+    public void ShouldDispatch_OnlyWhenActive() // reviewer #185 medium #4：仅 Active 派发门控
+    {
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        rt.LoadAll();
+        Assert.True(PluginRuntime.ShouldDispatch(f));   // Active ⇒ 可派发
+        rt.BeginTeardown(f);                            // → TearingDown（级联）
+        Assert.False(PluginRuntime.ShouldDispatch(f));  // 非 Active ⇒ 不派发
+    }
 }
