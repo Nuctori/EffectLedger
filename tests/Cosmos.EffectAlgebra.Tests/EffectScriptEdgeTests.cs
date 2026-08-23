@@ -800,7 +800,7 @@ public class EffectScriptEdgeTests
         var json = EffectScriptContract.ToJson(script);
         Assert.Contains("\"type\": \"global\"", json);
         var back = EffectScriptContract.Parse(json); // 修改前：ParseScope 强制 scene ⇒ 此处抛 FormatException。
-        Assert.Equal(1, back.Events.Length);
+        Assert.Single(back.Events);
         Assert.IsType<ScopeId.Global>(back.Events[0].Scope);
     }
 
