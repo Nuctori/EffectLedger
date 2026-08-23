@@ -767,4 +767,52 @@ public class EffectScriptEdgeTests
         // 正确检测到大量 create×create 冲突
         Assert.Contains(r1.Violations, v => v.Kind == "CompatibleConflict");
     }
+
+    // ── auditR3b OPEN-2 回归：ToJson 须序列化 read/write 三桶，round-trip 不丢桶 ──
+    [Fact]
+    public void Contract_RoundTrip_PreservesReadWriteBuckets()
+    {
+        var ev = new EffectEvent(
+            new Interval(NatStar.Of(0), NatStar.Of(10)),
+            Scene("S"),
+            Signature.Of(
+                new Claim(Kind.Read, Gpu("tex"), Mode.Use, Scene("S"), Interval.Exact(1)),
+                new Claim(Kind.Write, Gpu("tex"), Mode.Use, Scene("S"), Interval.Exact(1)),
+                Oc(Gpu("tex"), Mode.Create, Scene("S"), Interval.Exact(1))),
+            LoopCount.Of(1));
+        var script = new EffectScript(ImmutableArray.Create(ev));
+        // 修改前：ToJson 仅写 OccupyClaims ⇒ 反解析后 read/write 桶为空。
+        var json = EffectScriptContract.ToJson(script);
+        Assert.Contains("\"kind\": \"read\"", json);
+        Assert.Contains("\"kind\": \"write\"", json);
+        var back = EffectScriptContract.Parse(json);
+        Assert.Equal(ev.Footprint.ReadClaims.Count, back.Events[0].Footprint.ReadClaims.Count);
+        Assert.Equal(ev.Footprint.WriteClaims.Count, back.Events[0].Footprint.WriteClaims.Count);
+        Assert.Equal(ev.Footprint.OccupyClaims.Count, back.Events[0].Footprint.OccupyClaims.Count);
+    }
+
+    // ── auditR3b OPEN-1 回归：gate(3) 冲突分组 scope 须与 At 投影(e.Scope) 一致，不按 claim 自带 c.Scope 分裂 ──
+    [Fact]
+    public void Audit_ConflictScope_MatchesAtProjection()
+    {
+        // 两事件：event scope=Global，但 claim 自带 scope=Scene("Battle")。
+        // 修改前：Audit 用 c.Scope=Scene 报冲突，而 At 经 Combination.Loop 投影到 e.Scope=Global ⇒ 视角错位。
+        var mk = (ScopeId evScope, ScopeId claimScope) => new EffectEvent(
+            new Interval(NatStar.Of(0), NatStar.Of(10)),
+            evScope,
+            Signature.Of(Oc(Gpu("tex"), Mode.Create, claimScope, Interval.Exact(1))),
+            LoopCount.Of(1));
+        var s = new EffectScript(ImmutableArray.Create(
+            mk(Global(), Scene("Battle")),
+            mk(Global(), Scene("Battle"))));
+        var r = s.Audit(Budget.None);
+        var conflicts = r.Violations.Where(v => v.Kind == "CompatibleConflict").ToImmutableArray();
+        // 冲突须归因到 At 视角所用的事件 scope(Global)，而非 claim 自带 scope(Scene)。
+        Assert.All(conflicts, v => Assert.IsType<ScopeId.Global>(v.Scope));
+        Assert.All(conflicts, v => Assert.False(v.Scope is ScopeId.Scene));
+        // At 投影签名也含该冲突资源（Combination.Loop 改写到 e.Scope=Global，与冲突归因 scope 一致）；
+        // 注：两事件 claim 经 Normalize 后相等，Union 去重 ⇒ 计 1，不掩 scope 对齐。
+        var at = s.At(NatStar.Of(5));
+        Assert.True(at.OccupyClaims.Count(c => ResourceId.Normalize(c.Resource).Equals(Gpu("tex")) && c.Scope is ScopeId.Global) >= 1);
+    }
 }

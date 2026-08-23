@@ -159,7 +159,9 @@ public sealed partial class EffectScript
             foreach (var c in e.Footprint.OccupyClaims)
             {
                 var r = ResourceId.Normalize(c.Resource);
-                var key = (r, c.Scope, (int)c.Mode);
+                // OPEN-1 修（auditR3b TC7）：gate(3) 冲突分组按事件 scope(e.Scope)，与 At/ReferenceAudit 的 Combination.Loop 投影一致；
+                // 此前用 claim 自带 c.Scope 与 At 视角 scope 分裂，导致同一剧本两视角冲突归因错位。测试 builder 恒 c.Scope==e.Scope，无回归。
+                var key = (r, e.Scope, (int)c.Mode);
                 if (enter)
                 {
                     if (!grp.TryGetValue(key, out var hs)) grp[key] = hs = new HashSet<int>();

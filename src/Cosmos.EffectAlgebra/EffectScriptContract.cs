@@ -178,7 +178,10 @@ public static class EffectScriptContract
         ["lifetime"] = new object[] { e.Lifetime.Lo.IsTop ? "⊤" : (object)e.Lifetime.Lo.Value, e.Lifetime.Hi.IsTop ? "⊤" : (object)e.Lifetime.Hi.Value },
         ["scope"] = SerializeScope(e.Scope),
         ["loop"] = e.Loop.Count.IsTop ? "⊤" : (object)e.Loop.Count.Value,
-        ["footprint"] = e.Footprint.OccupyClaims.Select(SerializeClaim).ToArray()
+        // OPEN-2 修（auditR3b TC5）：序列化为完整 footprint，含 read/write/occupy 三桶；
+        // 仅 Occupy 会丢桶破坏 round-trip（Parse 已按 claim.kind 路由三桶，故对称）。
+        ["footprint"] = e.Footprint.ReadClaims.Concat(e.Footprint.WriteClaims).Concat(e.Footprint.OccupyClaims)
+            .Select(SerializeClaim).ToArray()
     };
 
     static object SerializeScope(ScopeId s) => s switch
