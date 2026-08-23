@@ -30,30 +30,31 @@ public sealed class PluginRuntime
         return fiber;
     }
 
-    /// <summary>§3 — 批量建立显式依赖边（同 Scope Requires⊇Provides）。</summary>
+    /// <summary>§3 — 批量建立显式依赖边（同 Scope Requires⊇Provides）；软边同时回填 provider.Dependents（medium #3：否则 Godot 壳 ProcessMode 级联遍历空集 no-op）。</summary>
     public void AddDependency(Fiber dependent, Fiber provider, EdgeKind kind)
     {
         if (kind == EdgeKind.Hard) _graph.AddHardEdge(dependent, provider);
         else _graph.AddSoftEdge(dependent, provider);
+        provider.Dependents = provider.Dependents.Add(dependent.Id); // 回填依赖者集合（供 Godot 壳级联）
     }
 
-    /// <summary>§3 — 全部装载（仅 Inactive → Active）；装载前执行 §3 step2b/§7.1 装载期校验（防双重释放/死锁）。</summary>
+    /// <summary>§3 — 全部装载（仅 Inactive → Active）；装载前执行 §3 step2b/§7.1/§5 校验（R5-6 双重释放 / §5 net 闭合 / scale 校验运行时真正生效）。</summary>
     public void LoadAll()
     {
-        foreach (var f in _fibers.Values) LoadValidation.ValidateForLoad(f); // R1：运行时真正调用装载校验
-        foreach (var f in _fibers.Values) f.Load();
+        var all = _fibers.Values.ToArray();
+        foreach (var f in all) LoadValidation.ValidateForLoad(f, all); // R1+R5-6：运行时真正调用装载校验（含跨 Fiber 双重释放交叉判定）
+        LoadValidation.VerifyNetClosure(all);                          // §5 blocker 2：per-Fiber net 闭合闸门接线生效
+        foreach (var f in all) f.Load();
     }
 
     /// <summary>§3/§6 — 触发单 provider teardown：标记 TearingDown + provider-first 通知依赖者 → Suspending（级联 staged）+ 入队自身逆回放。
-    /// 依赖者仅被通知(wind-down)，其实际 teardown 由调用方显式 BeginTeardown 或调度器级联触发（不在此同步递归）。</summary>
+    /// 级联：provider 的 dependent 也经此递归入队（Suspending→TearingDown 由 Fiber.Unload 放行，reviewer MEDIUM 防资源泄漏），dedup 由 TeardownEnqueued 守卫。</summary>
     public void BeginTeardown(Fiber provider)
     {
         if (provider.TeardownEnqueued) return; // 防二次入队
         provider.Unload();                       // → TearingDown + 标志 enqueued
         _graph.NotifyDependents(provider);       // provider-first-notify → dependent Suspending（R4-4 幂等）
         _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider)));
-        // §6 级联：provider 的 dependent 也须 teardown（依赖者先于 provider 释放）。
-        // 递归入队，dedup 由 TeardownEnqueued 守卫；Suspending→TearingDown 由 Fiber.Unload 放行（修 reviewer MEDIUM 资源泄漏）。
         foreach (var dep in _graph.DependentsOf(provider.Id))
             if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
                 BeginTeardown(d);
@@ -95,6 +96,9 @@ public sealed class PluginRuntime
     }
 
     public IReadOnlyCollection<Fiber> Fibers => _fibers.Values.ToImmutableArray();
+
+    /// <summary>§7 medium #4 — 仅 Active 派发门控：Fiber 处于 Active 态才允许派发（Godot 壳调度器据此 gate，避免 Suspending/TearingDown 态误派发）。</summary>
+    public static bool ShouldDispatch(Fiber fiber) => fiber.State == FiberState.Active;
 }
 
 /// <summary>§3 — 装载期 Fiber 规格（纯数据，无 Godot 依赖）。</summary>

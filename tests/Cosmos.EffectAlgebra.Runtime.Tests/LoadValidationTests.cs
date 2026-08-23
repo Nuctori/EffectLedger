@@ -81,6 +81,58 @@ public class LoadValidationTests
         var other = new ScopeId.Scene("other");
         var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), other, "queue_free"));
         var f = Fiber(inv, shell); // scope 不闭合 +（tag 合法但仍 scope 错）
-        Assert.Throws<LoadValidationException>(() => LoadValidation.ValidateForLoad(f));
+        Assert.Throws<LoadValidationException>(() => LoadValidation.ValidateForLoad(f, System.Array.Empty<Fiber>()));
+    }
+
+    // ───────────── reviewer #185 blocker 1 (R5-6 双重释放交叉判定) ─────────────
+
+    static Fiber Fiber(ImmutableStack<InverseClaim> inv, ScopeId scope, Coeffect coeffect)
+        => new(new FiberId("f"), Signature.Empty, coeffect, inv);
+
+    [Fact]
+    public void ValidateDoubleRelease_Fails_WhenInverseReleasesOtherProvidersResource_WithoutTags()
+    {
+        var shell = new ScopeId.Shell();
+        var provider = Fiber(ImmutableStack<InverseClaim>.Empty, shell);
+        var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), shell));
+        var releaser = new Fiber(new FiberId("r"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), inv);
+        var all = new[] { provider, releaser };
+        Assert.Throws<LoadValidationException>(() => LoadValidation.ValidateForLoad(releaser, all));
+    }
+
+    [Fact]
+    public void ValidateDoubleRelease_Pass_WhenInverseReleasesOtherProvidersResource_WithValidReleaseTag()
+    {
+        var shell = new ScopeId.Shell();
+        var provider = Fiber(ImmutableStack<InverseClaim>.Empty, shell);
+        var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), shell, "queue_free"));
+        var releaser = new Fiber(new FiberId("r"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), inv);
+        var all = new[] { provider, releaser };
+        LoadValidation.ValidateForLoad(releaser, all); // 合法 release-class 标签 ⇒ 通过
+    }
+
+    // ───────────── reviewer #185 blocker 2 (§5 net 收益闭合接线) ─────────────
+
+    [Fact]
+    public void VerifyNetClosure_Throws_WhenFiberNotConserved()
+    {
+        var shell = new ScopeId.Shell();
+        var f = new Fiber(new FiberId("x"), Signature.Of(new Claim(ClaimKind.Write, new ResourceId.Memory(0), shell, Interval.Default)),
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
+        Assert.Throws<LoadValidationException>(() => LoadValidation.VerifyNetClosure(new[] { f }));
+    }
+
+    [Fact]
+    public void VerifyNetClosure_Pass_WhenFiberConserved()
+    {
+        var shell = new ScopeId.Shell();
+        var s = Signature.Of(
+            new Claim(ClaimKind.Write, new ResourceId.Memory(0), shell, Interval.Default),
+            new Claim(ClaimKind.Read, new ResourceId.Memory(0), shell, Interval.Default));
+        var f = new Fiber(new FiberId("x"), s,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
+        LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ §5 闸门接线生效
     }
 }

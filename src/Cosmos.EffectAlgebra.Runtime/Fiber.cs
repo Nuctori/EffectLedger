@@ -39,7 +39,7 @@ public sealed class Fiber
     public Signature Effect { get; }
     public Coeffect Coeffect { get; }
     public ImmutableStack<InverseClaim> Inverses { get; }
-    public IReadOnlySet<FiberId> Dependents { get; internal set; } = ImmutableHashSet<FiberId>.Empty;
+    public ImmutableHashSet<FiberId> Dependents { get; internal set; } = ImmutableHashSet<FiberId>.Empty;
     public bool TeardownEnqueued { get; internal set; }
 
     public Fiber(FiberId id, Signature effect, Coeffect coeffect, ImmutableStack<InverseClaim> inverses)
