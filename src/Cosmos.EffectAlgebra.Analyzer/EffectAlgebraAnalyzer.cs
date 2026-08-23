@@ -97,26 +97,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         ImmutableArray.Create(MissingReleaseForAcquire, KindMixOnSameResource, CompatConflictOnSameResource,
             OverrideReasonRequired, AcceptDeviationRange);
 
-    // 预先从 L1 数据计算 canonical 名集合（控制流近似匹配用，零 Godot 依赖）。
-    // Acquire：§7 白名单中任一 Claim 为 Mode.Create（含 Occupy+Create）的 API。
-    // Release：§7 中任一 Claim 为 Mode.Release 的 API，并并上 §8.1 release-class（queue_free/... 等）。
-    // §8.1 release-class（含不在 §7 白名单的泛型释放名，如 free/remove_from_group）：用于泛型释放兜底，避免误报（见 AnalyzeMissingRelease）。
-    private static readonly ImmutableHashSet<string> ReleaseApiNames = BuildReleaseNames();
-
+    // §3.3.1 DO-9 / §14.3 A3 / §14.3 A4：以方法声明为分析单元（控制流近似：仅方法内调用可见性）。
     private static string Canonical(string name) =>
         name.ToLowerInvariant().Replace(".", "").Replace("_", "");
-
-    private static ImmutableHashSet<string> BuildReleaseNames()
-    {
-        var set = ImmutableHashSet.CreateBuilder<string>();
-        foreach (var m in GodotApiWhitelist.All)
-            if (m.Claims.Any(c => c.Mode == Mode.Release))
-                set.Add(Canonical(m.GodotApi));
-        // §8.1 release-class：Godot 方法名（snake_case 源）规范化为 C# PascalCase 匹配键。
-        foreach (var r in ReleaseClass.Names)
-            set.Add(Canonical(r));
-        return set.ToImmutable();
-    }
 
     public override void Initialize(AnalysisContext context)
     {

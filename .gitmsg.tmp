@@ -1,0 +1,14 @@
+fix(L3)+test: Round3 对抗审计自审闭环 (#174, D-014)
+
+原独立 reviewer 超时未交付（25min 无产出），按 D-014 主 agent 自审闭环。
+
+范围（跨层一致性 + 分析器健壮性 + 打包）：
+- 删除 BUG D 后孤立的 dead code：ReleaseApiNames / BuildReleaseNames
+  （仅消费方 hasReleaseClassOnly 已删，repo 级 grep 零引用，decision-auditor 标 Low）。
+- 新增 Round3AdversarialTests：锁死 L2↔L1 跨层契约——生成器 emit 的
+  Compute{X}=Signature.Union(baseSig, {X}_Claims()) 必须等价于 L1 对 §7 白名单
+  Claims 的 Signature.Of+Union 组合（数学全在 L1，生成层不重算/不丢 Claim）；
+  并验证 L2/L3 共用「去 ._ 小写」规范化键（§14 对称，R6 修复对等契约）。
+
+验证：dotnet build 0 error/0 warning；288 unit + 69 E2E = 357 全绿。
+R1(#172 9345a75)/R2(#173 b0474ed)/R3 三轮对抗审计全部落库。
