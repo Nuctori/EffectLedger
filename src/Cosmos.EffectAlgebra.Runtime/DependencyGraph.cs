@@ -1,4 +1,6 @@
 // DependencyGraph.cs — §3 依赖图（MVP 骨架）。硬边/软边分离、拓扑排序、环检测。
+using System.Collections.Immutable;
+
 namespace Cosmos.EffectAlgebra.Runtime;
 
 /// <summary>§3 — 边种类：显式(同 Scope Requires⊇Provides) / 隐式(逆引用他 provider 资源，soft)。</summary>

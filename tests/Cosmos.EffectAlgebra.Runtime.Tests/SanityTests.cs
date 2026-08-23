@@ -1,5 +1,8 @@
 // SanityTests.cs — 脚手架冒烟测试（TDD 起点）。后续轮次填充 §2–§7 真实用例。
+using System.Collections.Immutable;
+using Cosmos.EffectAlgebra;
 using Cosmos.EffectAlgebra.Runtime;
+using Xunit;
 
 namespace Cosmos.EffectAlgebra.Runtime.Tests;
 

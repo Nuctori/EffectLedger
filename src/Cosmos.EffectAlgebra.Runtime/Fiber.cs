@@ -1,6 +1,8 @@
 // Fiber.cs — 空间可逆插件系统核心类型（MVP 骨架）。
 // 来源：docs/spatial-plugin-shell-design.md v7 §1/§2 + audit/runtime-mvp-spec.md。
 // 零 Godot 依赖：Godot 交互经 IHost 抽象（§7）。本文件仅定义纯数据/状态类型。
+using System.Collections.Immutable;
+
 namespace Cosmos.EffectAlgebra.Runtime;
 
 /// <summary>§2 — Fiber 生命周期状态机（五态）。</summary>
@@ -17,7 +19,7 @@ public enum FiberState
 public sealed record Coeffect(ResourceId Requires, ResourceId Provides, ScopeId Scope);
 
 /// <summary>
-/// §1 — 结构化逆：声明维度(ResourceId/ScopeId/Mode.Release 等价)齐全；Scope 须 == Coeffect.Scope。
+/// §1 — 结构化逆：声明维度(ResourceId/ScopeId)齐全；Scope 须 == Coeffect.Scope（装载期校验）。
 /// ReleaseApiTags：逆 Action 涉及的释放类 API 名（§7.1/§3 step2b 装载期双重释放判定用）；
 /// 因 Action 是裸委托无 API 名元数据，须显式标注（audit/runtime-mvp-spec.md E）。
 /// </summary>
@@ -27,7 +29,7 @@ public sealed record InverseClaim(
     Action Execute,
     IReadOnlySet<string>? ReleaseApiTags = null);
 
-/// <summary>§1 — 插件组件（Fiber）。MVP 骨架：纯数据 + 状态字段；逻辑在后续 TDD 轮次填充。</summary>
+/// <summary>§1 — 插件组件（Fiber）。MVP：状态机 + 幂等守卫 + 看门狗转移。</summary>
 public sealed class Fiber
 {
     public FiberId Id { get; }
@@ -47,8 +49,13 @@ public sealed class Fiber
         Inverses = inverses;
     }
 
-    /// <summary>§2 — 装载（幂等守卫：Active/Suspending/TearingDown 直接 return）。</summary>
-    public bool Load() => State == FiberState.Inactive && (State = FiberState.Active) == FiberState.Active;
+    /// <summary>§2 — 装载（幂等守卫：非 Inactive 直接 return false）。</summary>
+    public bool Load()
+    {
+        if (State != FiberState.Inactive) return false;
+        State = FiberState.Active;
+        return true;
+    }
 
     /// <summary>§2 — 卸载（幂等守卫：Suspending/TearingDown/Dead 直接 return；TeardownEnqueued 防二次入队）。</summary>
     public void Unload()
@@ -59,9 +66,25 @@ public sealed class Fiber
         State = FiberState.TearingDown;
     }
 
-    /// <summary>§2 — provider 通知 dependent 进入 Suspending（幂等：仅 Active → Suspending）。</summary>
+    /// <summary>§2 — provider 通知 dependent 进入 Suspending（幂等：仅 Active → Suspending，其它态 no-op，防 R4-4 振荡）。</summary>
     public void NotifyProviderTeardown()
     {
         if (State == FiberState.Active) State = FiberState.Suspending;
+    }
+
+    /// <summary>§2 R4-9 — 看门狗帧计数强转 TearingDown（超时未 Dead 兜底；仅 Active/Suspending 可转）。</summary>
+    public void ForceTeardownOnWatchdog()
+    {
+        if (State is FiberState.Active or FiberState.Suspending)
+        {
+            if (!TeardownEnqueued) TeardownEnqueued = true;
+            State = FiberState.TearingDown;
+        }
+    }
+
+    /// <summary>§4 — 标记完成逆回放（dead）。仅 TearingDown → Dead。</summary>
+    public void MarkDead()
+    {
+        if (State == FiberState.TearingDown) State = FiberState.Dead;
     }
 }
