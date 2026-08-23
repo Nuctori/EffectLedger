@@ -84,9 +84,11 @@ public static class EffectScriptContract
 
     static ScopeId ParseScope(JsonElement el)
     {
-        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("scene", out var sc))
-            throw new FormatException("scope 须为 {\"scene\":\"Name\"} 等");
-        var name = sc.GetString() ?? throw new FormatException("scope.name 缺失");
+        if (el.ValueKind != JsonValueKind.Object)
+            throw new FormatException("scope 须为对象");
+        // Global 无 name（修 auditR4 CRITICAL：SerializeScope 输出 {"type":"global"} 无 scene，原 Parse 强制 scene ⇒ round-trip 必炸）。
+        var hasScene = el.TryGetProperty("scene", out var sc);
+        var name = hasScene ? sc.GetString() ?? throw new FormatException("scope.name 缺失") : "";
         return el.TryGetProperty("type", out var ty) ? ty.GetString() switch
         {
             "method" => new ScopeId.Method(name),
@@ -143,11 +145,12 @@ public static class EffectScriptContract
             !el.TryGetProperty("memory", out g) && !el.TryGetProperty("occupancy", out g) &&
             !el.TryGetProperty("signalBus", out g))
             throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus 之一");
-        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(gpu.GetString() ?? ""));
-        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(cb.GetString() ?? "gpu");
-        if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number ? mem.GetUInt64() : 0);
-        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(occ.GetString() ?? "");
-        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(sb.GetString() ?? ""));
+        // 修 auditR2/R4 C2：resource 值缺失/类型错 ⇒ fail-fast（原静默兜底 "gpu"/""/0 会静默改写数据，比报错更危险）。
+        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, "gpu")));
+        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, "commandBuffer"));
+        if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number ? mem.GetUInt64() : throw new FormatException("memory 须为数字 uid（如 {\"memory\":42}）"));
+        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, "occupancy"));
+        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, "signalBus")));
         throw new FormatException("resource 形状非法");
     }
 
@@ -234,6 +237,11 @@ public static class EffectScriptContract
         if (!e.TryGetProperty(prop, out var v)) throw new FormatException($"缺少字段: {prop}");
         return v;
     }
+
+    // 资源值 fail-fast 提取（修 auditR2/R4 C2）：空串/非字符串 ⇒ 抛，不静默兜底。
+    static string ReqStr(JsonElement v, string field) => v.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(v.GetString())
+        ? v.GetString()!
+        : throw new FormatException($"resource.{field} 须为非空字符串");
 }
 
 /// <summary>§2.3 — 预算可附着在剧本上（便捷：Parse 后直接 Audit）。</summary>

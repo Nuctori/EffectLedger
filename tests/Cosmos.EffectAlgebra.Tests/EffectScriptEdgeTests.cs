@@ -791,6 +791,32 @@ public class EffectScriptEdgeTests
         Assert.Equal(ev.Footprint.OccupyClaims.Count, back.Events[0].Footprint.OccupyClaims.Count);
     }
 
+    // ── auditR4 CRITICAL 回归：Global scope round-trip 不再必炸（SerializeScope 输出 {"type":"global"} 无 scene） ──
+    [Fact]
+    public void Contract_RoundTrip_GlobalScope_Preserves()
+    {
+        var ev = Ev(Interval.Exact(0), Gpu("tex"), Mode.Create, Global(), Interval.Exact(1));
+        var script = new EffectScript(ImmutableArray.Create(ev));
+        var json = EffectScriptContract.ToJson(script);
+        Assert.Contains("\"type\": \"global\"", json);
+        var back = EffectScriptContract.Parse(json); // 修改前：ParseScope 强制 scene ⇒ 此处抛 FormatException。
+        Assert.Equal(1, back.Events.Length);
+        Assert.IsType<ScopeId.Global>(back.Events[0].Scope);
+    }
+
+    // ── auditR2/R4 C2 回归：resource 值缺失/类型错 ⇒ fail-fast，不静默改写（memory 类型错曾静默成 0） ──
+    [Fact]
+    public void Contract_Parse_ResourceBadValue_Throws()
+    {
+        // memory 须数字；字符串/缺失 ⇒ 抛（修改前静默成 Memory(0)）。
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse("{\"events\":[{\"lifetime\":[0,10],\"scope\":{\"type\":\"global\"},\"footprint\":[{\"kind\":\"occupy\",\"resource\":{\"memory\":\"oops\"},\"mode\":\"create\",\"scope\":{\"type\":\"global\"}}]}]}"));
+        // gpu 空串 ⇒ 抛（修改前静默成 Gpu("")）。
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse("{\"events\":[{\"lifetime\":[0,10],\"scope\":{\"type\":\"global\"},\"footprint\":[{\"kind\":\"occupy\",\"resource\":{\"gpu\":\"\"},\"mode\":\"create\",\"scope\":{\"type\":\"global\"}}]}]}"));
+        // 合法数字 memory 仍解析为对应 uid。
+        var s = EffectScriptContract.Parse("{\"events\":[{\"lifetime\":[0,10],\"scope\":{\"type\":\"global\"},\"footprint\":[{\"kind\":\"occupy\",\"resource\":{\"memory\":42},\"mode\":\"create\",\"scope\":{\"type\":\"global\"}}]}]}");
+        Assert.Equal(new ResourceId.Memory(42UL), s.Events[0].Footprint.OccupyClaims.First().Resource);
+    }
+
     // ── auditR3b OPEN-1 回归：gate(3) 冲突分组 scope 须与 At 投影(e.Scope) 一致，不按 claim 自带 c.Scope 分裂 ──
     [Fact]
     public void Audit_ConflictScope_MatchesAtProjection()
