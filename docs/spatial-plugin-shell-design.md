@@ -180,6 +180,14 @@ Inactive ──load()──▶ Active ──provider-notify──▶ Suspending 
 | R6-2 | 中(Blocker) | §7 误称 `ProcessMode=Disabled` 抑制「所有 _Notification」 | 限定抑制范围(process/physics/input + pause 类通知)，显式豁免 READY/EXIT_TREE/PREDELETE |
 | R6-3 | 低(非阻塞) | §3:82「_ExitTree 前」措辞不准 | 改「自身 _ExitTree 内同步排空」+ dependent-first 顺序说明 |
 
+### L1 对抗审计收尾（第7轮代码审计，治理双解析器债务，已落地 HEAD=ec772fc）
+
+| 编号 | 严重度 | 缺陷 | 修正 |
+| --- | --- | --- | --- |
+| C7-1 | 高 | `EffectScriptIo.cs` 是与 `EffectScriptContract.cs` 矛盾的**第二个** JSON 解析器（budget：caps 数组 vs 扁平键；资源：14 vs 5 种）→ 同一 AI 剧本按走哪个解析器结果不同，违反「统一契约」 | 删除 `EffectScriptIo.cs`（`git rm`），4 个 JSON 契约测试收敛到单一 `EffectScriptContract` 解析器（SampleJson 改用 Contract 资源/scope/loop 形状，budget 扁平 `commandBuffer:gpu` 键，断言 `FormatException`）；csproj 移除其 net9.0 `Compile Remove` 行 |
+| C7-2 | 中 | `memory` uid 硬编码 `Memory(0)`（B1） | 随 `EffectScriptIo` 删除一并移除冗余实现，仅保留 Contract 单一口径（`Memory(GetUInt64())`） |
+| C7-3 | 注 | 决策审计 B4（gate3 scope vs At Event.Scope）：**误报** | `Combination.Loop`（DerivedMetrics.cs:31-47）已将每 Claim scope 改写为 `e.Scope`；`gate(3)` 分组 `key=(r, c.Scope, mode)` 中 `c` 即已改写后的 claim ⇒ 两处 scope 来源一致 |
+
 ## 10. MVP 实现清单（第6轮收敛判定 → v7 最终）
 
 **必须落地（核心正确性）**：§1 Fiber 模型 + 跨 Fiber 所有权契约(R4-3) + **装载期逆释放拒绝(R5-6)**、§2 状态机 + 幂等守卫(Blocker) + notify 幂等(R4-4) + 看门狗帧计数(#1/R4-9)、§3 拓扑 + 每批 DAG 重排 + notify + Suspending(硬/软边分离 #2) + **关闭路径(调度器祖先+同步排空+Action纯同步, R4-1/R5-2/R5-3)** + 软边环排序(R4-5)、§4 结构化逆回放 + 整任务异常捕获(#4) + 部分释放诊断(R4-6)、§6 故障处理(**含 N2 守卫+关路径硬拒绝(R5-7) + 级联期新装载 reject must-land**)、§7 Godot 入队 + `ProcessMode=Disabled` 门控(#3/R4-2) + **`Defer()` 包装(R5-4) + 回调边界声明**、§8 结构不变量(调度器祖先)。
