@@ -139,4 +139,28 @@ public class LoadValidationTests
             new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
         LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ §5 闸门接线生效
     }
+
+    [Fact]
+    public void ValidateDoubleRelease_Pass_WhenInverseReleasesOwnProvidedResource() // reviewer #187 F2：释放自身提供的资源是合法逆，不误判双重释放
+    {
+        var shell = new ScopeId.Shell();
+        // fiber 提供 memory(0) 且逆释放 memory(0)（同一资源，自引用）——合法所有权逆，不应抛。
+        var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), shell, "queue_free")); // 合法 release tag ⇒ ValidateReleaseClass 通过
+        var f = Fiber(inv, shell); // Coeffect.Provides = Memory(0)（默认 Spec 提供同资源）
+        LoadValidation.ValidateForLoad(f, new[] { f }); // 自引用释放（同资源）⇒ R5-6 不误判 ⇒ 通过
+    }
+
+    [Fact]
+    public void ValidateDoubleRelease_Pass_WhenCrossScopeSameResource() // reviewer #187 F2：同资源但不同 Scope 不构成双重释放
+    {
+        var shell = new ScopeId.Shell();
+        var scene = new ScopeId.Scene("s");
+        // provider 在 shell 提供 memory(0)；另一 fiber 在 scene 逆释放 memory(0)——不同 Scope，不触发跨 provider 双重释放判定。
+        var provider = Fiber(ImmutableStack<InverseClaim>.Empty, shell);
+        var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), scene, "queue_free")); // 合法 release tag
+        var releaser = new Fiber(new FiberId("r"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), scene), inv);
+        var all = new[] { provider, releaser };
+        LoadValidation.ValidateForLoad(releaser, all); // provider 在 shell、releaser 在 scene（不同 Scope）⇒ R5-6 不误判 ⇒ 通过
+    }
 }

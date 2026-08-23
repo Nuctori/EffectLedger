@@ -47,9 +47,13 @@ public static class LoadValidation
     {
         foreach (var inv in fiber.Inverses)
         {
+            // 释放自身提供的资源是合法所有权逆（§1），不视为双重释放——排除自引用（reviewer #187 F2 假阳性修复）。
+            if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(fiber.Coeffect.Provides)) continue;
             foreach (var other in allFibers)
             {
                 if (other.Id == fiber.Id) continue;
+                // 须在「同 Scope」且「逆引用资源 == 他 provider 提供的资源」才构成跨 Fiber 双重释放风险（F2：守 Scope）。
+                if (inv.Scope != other.Scope) continue;
                 if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(other.Coeffect.Provides))
                 {
                     // 逆引用了他 provider 提供的资源 ⇒ 该逆必须是真正的 release-class 释放

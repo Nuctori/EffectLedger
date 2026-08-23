@@ -42,6 +42,11 @@ public sealed class PluginRuntime
     public void LoadAll()
     {
         var all = _fibers.Values.ToArray();
+        // §6（reviewer #187 blocker）：装载期硬环拒载——硬环会令 teardown 永久挂起（死锁/泄漏），须先于装载拒绝。
+        var cycle = _graph.DetectCycles();
+        if (cycle.HasHardCycle)
+            throw new LoadValidationException(
+                $"§6 装载期拒载硬环：{string.Join(" → ", cycle.HardCycle.Select(id => id.ToString()))} 构成硬依赖环（将导致 teardown 死锁）");
         foreach (var f in all) LoadValidation.ValidateForLoad(f, all); // R1+R5-6：运行时真正调用装载校验（含跨 Fiber 双重释放交叉判定）
         LoadValidation.VerifyNetClosure(all);                          // §5 blocker 2：per-Fiber net 闭合闸门接线生效
         foreach (var f in all) f.Load();
@@ -64,7 +69,8 @@ public sealed class PluginRuntime
     public void DrainTeardownBatch()
     {
         var cycle = _graph.DetectCycles();
-        if (cycle.HasHardCycle) return; // 环中止：跳过成环子集（调用方须先 ResolveHardCycles）
+        // §6（reviewer #187）：硬环不整批早退——跳过成环子集、其余按拓扑序排空（防止环中 fiber 永不 Dead）。
+        var cyclic = cycle.HasHardCycle ? new HashSet<FiberId>(cycle.HardCycle) : new HashSet<FiberId>();
         var order = _graph.TopoSortLeafFirst();   // dependent-first
         var batch = _teardownQueue.ToArray();      // 固定快照（重入仅 append）
         _teardownQueue.Clear();
@@ -72,10 +78,15 @@ public sealed class PluginRuntime
         var rank = new Dictionary<FiberId, int>();
         for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
         var ordered = batch.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
-        foreach (var (_, task) in ordered)
+        foreach (var (providerId, task) in ordered)
         {
+            if (cyclic.Contains(providerId)) continue; // 跳过成环子集（§6：其余重入队）
             try { task(); }
-            catch { /* R4-6：部分释放诊断已在 ReplayAndDead 内部；此处仅防止其余任务中断 */ }
+            catch (Exception ex) // §6（reviewer #187）：崩溃不再被 catch{} 吞掉——升级到 ProviderCrashCascade.Handle
+            {
+                if (_fibers.TryGetValue(providerId, out var pf))
+                    ProviderCrashCascade.Handle(this, pf, ex);
+            }
         }
     }
 
@@ -90,7 +101,11 @@ public sealed class PluginRuntime
     public void SynchronousExitDrain()
     {
         IsShuttingDown = true;
-        var ordered = _teardownQueue.OrderBy(e => 0).ToArray();
+        // §3（reviewer #187 F3）：关闭路径同步排空也按 dependent-first（TopoSortLeafFirst）顺序，与 DrainTeardownBatch 一致。
+        var order = _graph.TopoSortLeafFirst();
+        var rank = new Dictionary<FiberId, int>();
+        for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
+        var ordered = _teardownQueue.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
         _teardownQueue.Clear();
         foreach (var (_, task) in ordered) { try { task(); } catch { /* 同上 */ } }
     }
@@ -99,6 +114,14 @@ public sealed class PluginRuntime
 
     /// <summary>§7 medium #4 — 仅 Active 派发门控：Fiber 处于 Active 态才允许派发（Godot 壳调度器据此 gate，避免 Suspending/TearingDown 态误派发）。</summary>
     public static bool ShouldDispatch(Fiber fiber) => fiber.State == FiberState.Active;
+
+    /// <summary>§2 R4-9（reviewer #187 F5）— 看门狗帧时钟驱动：调度器每帧调用，对超时未达 Dead 的 Active/Suspending Fiber 强制 TearingDown（兜底回收）。
+    /// 纯逻辑层；真实帧时钟由 Godot 壳 _Process 驱动（deferred）。</summary>
+    public void TickWatchdog(Func<Fiber, bool> isTimedOut)
+    {
+        foreach (var f in _fibers.Values)
+            if (isTimedOut(f)) f.ForceTeardownOnWatchdog();
+    }
 }
 
 /// <summary>§3 — 装载期 Fiber 规格（纯数据，无 Godot 依赖）。</summary>
