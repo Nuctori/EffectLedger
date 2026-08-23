@@ -89,14 +89,18 @@ public static class EffectScriptContract
         // Global 无 name（修 auditR4 CRITICAL：SerializeScope 输出 {"type":"global"} 无 scene，原 Parse 强制 scene ⇒ round-trip 必炸）。
         var hasScene = el.TryGetProperty("scene", out var sc);
         var name = hasScene ? sc.GetString() ?? throw new FormatException("scope.name 缺失") : "";
-        return el.TryGetProperty("type", out var ty) ? ty.GetString() switch
+        // 缺 type ⇒ 默认 Scene(name)（与 SerializeScope 的 Scene 形态 {"scene":"S"} 一致）；
+        // 仅未知 type（如 "gloabl"）才抛，避免静默当成 Scene("")（修 reviewer LOW）。
+        if (!el.TryGetProperty("type", out var ty))
+            return new ScopeId.Scene(name);
+        return ty.GetString() switch
         {
             "method" => new ScopeId.Method(name),
             "type" => new ScopeId.Type(name),
             "global" => new ScopeId.Global(),
             "scene" => new ScopeId.Scene(name),
-            _ => new ScopeId.Scene(name)
-        } : new ScopeId.Scene(name);
+            _ => throw new FormatException($"未知 scope.type: {ty.GetString()}")
+        };
     }
 
     static LoopCount ParseLoop(JsonElement el)

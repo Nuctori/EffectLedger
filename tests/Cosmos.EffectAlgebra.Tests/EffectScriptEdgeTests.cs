@@ -860,5 +860,17 @@ public class EffectScriptEdgeTests
         var r2 = s.Audit();
         Assert.Equal(new HashSet<Violation>(r1.Violations), new HashSet<Violation>(r2.Violations));
         Assert.True(r1.Passed); // 闭合 + 预算 2≥1 ⇒ 通过
+        Assert.True(r1.Passed); // 闭合 + 预算 2≥1 ⇒ 通过
+    }
+
+    // ── reviewer LOW 回归：未知 scope.type ⇒ fail-fast；缺 type 仍按 Scene(name)（与序列化一致） ──
+    [Fact]
+    public void Contract_Parse_UnknownScopeType_Throws()
+    {
+        // 拼写错 "gloabl" ⇒ 抛（修改前静默成 Scene("")）。
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse("{\"events\":[{\"lifetime\":[0,10],\"scope\":{\"type\":\"gloabl\"},\"footprint\":[{\"kind\":\"occupy\",\"resource\":{\"gpu\":\"x\"},\"mode\":\"create\",\"scope\":{\"type\":\"gloabl\"}}]}]}"));
+        // 缺 type（仅 {"scene":"S"}）⇒ 仍为 Scene("S")，不抛（兼容序列化形态）。
+        var s = EffectScriptContract.Parse("{\"events\":[{\"lifetime\":[0,10],\"scope\":{\"scene\":\"S\"},\"footprint\":[{\"kind\":\"occupy\",\"resource\":{\"gpu\":\"x\"},\"mode\":\"create\",\"scope\":{\"scene\":\"S\"}}]}]}");
+        Assert.IsType<ScopeId.Scene>(s.Events[0].Scope);
     }
 }
