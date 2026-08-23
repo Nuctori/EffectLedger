@@ -1,8 +1,9 @@
-# 空间维度运行时壳层设计（Godot 壳 + 插件）— 对抗审计靶标 v6（收敛版）
+# 空间维度运行时壳层设计（Godot 壳 + 插件）— 对抗审计靶标 v7（收敛版）
 
 > 对齐论文 *A Programming Paradigm for Spatiotemporal Composability* (cordiverse/paper)。
-> 本文档是「3 轮 + 迭代3轮 对抗性审计」靶标。**v6 = v5 + 第5轮(Godot 4.6.3 API 可行性核实 + 措辞硬化)修正**。不修改 L1/L2/L3 代数核心；仅新增**运行时层**补论文 spatial 维度。
-> 第5轮判定：架构本身已收敛，剩余项均为「实现不变量 + 措辞硬化」，Round 6 收尾即可。
+> 本文档是「3 轮 + 迭代3轮 对抗性审计」靶标。**v7 = v6 + 第6轮(最终收敛审计)修正**。不修改 L1/L2/L3 代数核心；仅新增**运行时层**补论文 spatial 维度。
+> 第6轮判定：架构收敛，仅 2 项收尾（§7.1 白名单落位 + §7 ProcessMode 抑制范围纠错），无结构重构 → **v7 为最终收敛版**。
+> v6 标题「v6（收敛版）」因第6轮发现 2 项必须修复项，升级至 v7。
 
 ## 0. 术语对齐（论文 → Cosmos）
 
@@ -79,8 +80,8 @@ Inactive ──load()──▶ Active ──provider-notify──▶ Suspending 
 5. A 进 `TearingDown` → **provider-first-notify**（R4-4 幂等）：B 转 `Suspending`，B teardown 入队（`TeardownEnqueued` 防重）。
 6. **帧安全调度器（D3残/#4）**：每批对全部 pending **重新拓扑排序**（叶子优先/dependent-first）；排序前环检测，**仅硬边成环才中止并告警**，纯软边环降级告警并**退化为该软边不约束**（R4-5）。整任务 try/catch → `Dead` + 按拓扑序推进上游（R4-10）；环中止跳过成环子集、其余重入队 + 升级告警（不无限重试）。
 7. 全部 B 到 `Dead` → A 回放自身 `Inverses`（LIFO）→ A 到 `Dead`。
-8. **Godot 解耦（D7）+ 关闭/退出路径约束（R4-1/R5 核实）**：`_ExitTree`/`_Ready` 只入队。Godot 退出同步销毁节点树、调度器无后续帧则队列不排空 → 拓扑拆除静默退化。
-   - **结构不变量（R5）**：**所有业务 Fiber 节点必须是调度器节点的后代**（Godot `propagate_exit_tree` 子先于父，故调度器 `_ExitTree` 最后触发，可在自身 `_ExitTree` 前同步排空队列）；若业务 Fiber 与调度器为 root 下**兄弟**，销毁顺序不保证 → (a) 静默失败。该不变量为硬约束。
+8. **Godot 解耦（D7）+ 关闭/退出路径约束（R4-1/R5 核实）**：`_Ready`→`load()` 入队、`_ExitTree`→`unload()` 入队（只入队，D7）。Godot 退出同步销毁节点树、调度器无后续帧则队列不排空 → 拓扑拆除静默退化。
+   - **结构不变量（R5）**：**所有业务 Fiber 节点必须是调度器节点的后代**（Godot `propagate_exit_tree` 子先于父，故调度器 `_ExitTree` 最后触发，可在**自身 `_ExitTree` 处理内**（非「之前」）同步排空队列——排空循环执行各 Fiber 的 `InverseClaim` 释放 Action 按 dependent-first 顺序，而节点实际 `queue_free` 顺序由 Godot 决定，二者不一致由 §8 fail-open 缓解）。若业务 Fiber 与调度器为 root 下**兄弟**，销毁顺序不保证 → 静默失败。该不变量为硬约束。
    - 同步排空循环须**快照/可重入安全**（Action 重入队仅 append；循环处理固定快照），且退出路径 teardown `Action` **须纯同步**（无 `await`/Tween/Timer continuation，否则 `_ExitTree` 期间 continuation 不恢复 → 该 Fiber 挂起 fail-open）。
    - 退化路径（R5 措辞修正，非「GC 兜底」）：关闭/退出路径**不保证拓扑序**；真实保护仅为 refcount（`RefCounted`/`Resource`）+ §1 所有权契约；**非引用计数共享原生句柄在不确定退出序下仍 fail-open**（仅 R4-3 判空缓解）。写入 §8 弱化点。
 
@@ -119,9 +120,11 @@ Inactive ──load()──▶ Active ──provider-notify──▶ Suspending 
 
 - Godot 宿主：`Assembly.Load` 加载插件程序集，每插件 = 一个 `Fiber`。
 - `_Ready`→`load()` 入队；`_ExitTree`→`unload()` 入队（只入队，D7）。
-- **门控机制（R4-2，明确）**：壳对每个 Fiber 子树设 `ProcessMode = Disabled` 作为 `Suspending`/`TearingDown` 暂停手段。该枚举**实际抑制** `_Process`/`_PhysicsProcess`/`_Input`/`_UnhandledInput`/`_UnhandledKeyInput`/`_PhysicsInterpolation*` 及所有 `_Notification` 类（VISIBILITY_CHANGED/TRANSFORM_CHANGED/PAUSED/local_transform_changed…）回调的派发（级联）。仅 `State==Active` 派发 gameplay；`Suspending`/`TearingDown` 一律不派发。
+- **门控机制（R4-2，明确）**：壳对每个 Fiber 子树设 `ProcessMode = Disabled` 作为 `Suspending`/`TearingDown` 暂停手段。该枚举实际抑制 **`_Process`/`_PhysicsProcess`/`_Input`/`_UnhandledInput`/`_UnhandledKeyInput`/`_PhysicsInterpolation*` 以及 pause 相关 `_Notification`（`NOTIFICATION_PAUSED`/`VISIBILITY_CHANGED`/`TRANSFORM_CHANGED`/`LOCAL_TRANSFORM_CHANGED` 等）** 的派发（级联）。**不抑制** `NOTIFICATION_READY`/`NOTIFICATION_EXIT_TREE`/`NOTIFICATION_PREDELETE` 等内部通知（这些与对象生命周期绑定，与 `ProcessMode` 无关）——故 `Suspending` 期间 `_ExitTree` 仍触发（见 §3 step 8 同步排空即发生于 `_ExitTree` 内）。仅 `State==Active` 派发 gameplay；`Suspending`/`TearingDown` 一律不派发 process/physics/input/暂停类回调。
+- **§7.1 释放类操作白名单（R5-6 装载期双重释放拒绝的数据源）**：壳以 `ApiMapping` 中既有的 **release-class 白名单**（`free`/`dispose`/`queue_free`/`destroy`/`Close`/`Release`/`Dispose` 等释放语义 API，见 `ApiMapping` release-class 集）为判据：装载期若某 Fiber 的 `InverseClaim.Action` 引用了另一 provider 提供的资源 **且** 该 Action 命中 release-class 白名单 → **装载期 error**（拒绝「逆释放他 provider 资源」）。该白名单复用 L3 `EAA0901` 同款 release-class 分类，避免重复定义；软边派生（§3 step 2）提供「逆引用他 provider 资源」的保守过近似，二者交集即为装载期拒绝集。
 - **回调覆盖边界（R4-2/R5，诚实声明）**：Godot **无 API 禁用 signal / `await` continuation / `SceneTreeTimer` / `Tween.finished` / `call_deferred`**（这些不受 `ProcessMode` 控制）。`area_entered`、`body_entered`、自定义 signal、`await`、定时器、`call_deferred` 在 `Suspending` 期间仍执行并访问 provider 资源 → use-after-free。
   - **壳级缓解（R5）**：提供壳 `Defer()` 包装替代 `call_deferred`（注册入门控队列，Suspending 时丢弃/延后），并建议硬 lint 规则禁止插件直接调用 `call_deferred`；signal/`await`/Tween/Timer 仍属**开发者契约 + fail-open**（插件经壳注册异步回调、回调内自判 `State`）。
+  - 该限制写入 §8。
   - 该限制写入 §8。
 - `Suspending` 子态（N1）：Fiber 收 notify 后由壳暂停（`ProcessMode=Disabled`）。
 - 不对称/多次语义：`_ExitTree` 未 `_Ready` 也安全（D4/Blocker）；树重组由状态机吸收。
@@ -169,7 +172,15 @@ Inactive ──load()──▶ Active ──provider-notify──▶ Suspending 
 | R5-6 | 中 | R4-3 未用静态信息 | §3 step 2b 装载期拒逆释放他 provider 资源 |
 | R5-7 | 中 | N2「delay」在关闭路径=静默丢 | §6 关路径 `IsShuttingDown` 硬拒绝；#6 升级 MVP 周期快照 |
 
-## 10. MVP 实现清单（第5轮收敛判定）
+### 第6轮（R6-1~R6-3，最终收敛审计，已融入 v7）
+
+| 编号 | 严重度 | 缺陷 | 修正 |
+| --- | --- | --- | --- |
+| R6-1 | 中(Blocker) | §1/§3/§6 引用 `§7.1 release-class 白名单` 但该节不存在 → R5-6 装载期拒绝无落点 | 新增 §7.1 定义释放类白名单（复用 ApiMapping release-class 集 + 软边交集） |
+| R6-2 | 中(Blocker) | §7 误称 `ProcessMode=Disabled` 抑制「所有 _Notification」 | 限定抑制范围(process/physics/input + pause 类通知)，显式豁免 READY/EXIT_TREE/PREDELETE |
+| R6-3 | 低(非阻塞) | §3:82「_ExitTree 前」措辞不准 | 改「自身 _ExitTree 内同步排空」+ dependent-first 顺序说明 |
+
+## 10. MVP 实现清单（第6轮收敛判定 → v7 最终）
 
 **必须落地（核心正确性）**：§1 Fiber 模型 + 跨 Fiber 所有权契约(R4-3) + **装载期逆释放拒绝(R5-6)**、§2 状态机 + 幂等守卫(Blocker) + notify 幂等(R4-4) + 看门狗帧计数(#1/R4-9)、§3 拓扑 + 每批 DAG 重排 + notify + Suspending(硬/软边分离 #2) + **关闭路径(调度器祖先+同步排空+Action纯同步, R4-1/R5-2/R5-3)** + 软边环排序(R4-5)、§4 结构化逆回放 + 整任务异常捕获(#4) + 部分释放诊断(R4-6)、§6 故障处理(**含 N2 守卫+关路径硬拒绝(R5-7) + 级联期新装载 reject must-land**)、§7 Godot 入队 + `ProcessMode=Disabled` 门控(#3/R4-2) + **`Defer()` 包装(R5-4) + 回调边界声明**、§8 结构不变量(调度器祖先)。
 
@@ -177,4 +188,4 @@ Inactive ──load()──▶ Active ──provider-notify──▶ Suspending 
 
 **可推迟（tracked gaps/弱化）**：§5 监控硬化(fail-open)、§8 动态组合/`RecomputeTopology`(仅接缝)、多 Scope(#7)、游戏中期 mod 加载(#9)、关闭路径非引用计数句柄 fail-open(R4-1/R5-1)、signal/await/Timer/Tween 壳门控(R4-2/R5-4)。
 
-**收敛判定**：5+1 轮审计后，设计在 spatial 维度论题上**完全收敛**——安全/死锁/实现可行性/Godot API 可行性四维闭环。R5 全为措辞硬化 + 实现不变量，无结构重构；第6轮做最终收尾确认即可进入 MVP 实现。
+**收敛判定（v7 最终）**：6 轮（+3 迭代）审计后，设计在 spatial 维度论题上**完全收敛**——安全/死锁/实现可行性/Godot API 可行性四维闭环。第6轮仅 2 项收尾（§7.1 白名单落位 + §7 ProcessMode 抑制范围纠错）+ 1 项措辞，无结构重构。**v7 为最终收敛版**，可进入 MVP 实现。
