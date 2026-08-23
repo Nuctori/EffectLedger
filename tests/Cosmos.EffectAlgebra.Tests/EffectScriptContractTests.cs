@@ -79,49 +79,44 @@ public class EffectScriptContractTests
     {
       "events": [
         { "lifetime": [0, 120], "loop": 1,
-          "scope": { "scene": { "name": "Battle" } },
+          "scope": { "scene": "Battle" },
           "footprint": [
-            { "kind": "occupy", "resource": {"gpu": {"bufferId":"mesh1"}}, "mode": "create",
-              "scope": {"scene": {"name":"Battle"}}, "size": [1,1] },
+            { "kind": "occupy", "resource": {"gpu":"mesh1"}, "mode": "create",
+              "scope": {"scene":"Battle"}, "size": [1,1] },
             { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "create",
-              "scope": {"scene": {"name":"Battle"}}, "size": [1,1] }
+              "scope": {"scene":"Battle"}, "size": [1,1] }
           ] },
         { "lifetime": [60, 180], "loop": 0,
-          "scope": { "scene": {"name": "Battle" } },
+          "scope": { "scene": "Battle" },
           "footprint": [
             { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "release",
-              "scope": {"scene": {"name":"Battle"}}, "size": [1,1] }
+              "scope": {"scene":"Battle"}, "size": [1,1] }
           ] },
-        { "lifetime": [0, 0], "loop": "top",
-          "scope": { "scene": {"name": "Battle" } },
+        { "lifetime": [0, 0], "loop": "⊤",
+          "scope": { "scene": "Battle" },
           "footprint": [
-            { "kind": "occupy", "resource": {"gpu": {"bufferId":"bg"}}, "mode": "use",
-              "scope": {"scene": {"name":"Battle"}}, "size": 1 }
+            { "kind": "occupy", "resource": {"gpu":"bg"}, "mode": "use",
+              "scope": {"scene":"Battle"}, "size": [1,1] }
           ] }
       ],
-      "budget": { "caps": [ { "resource": {"commandBuffer":"gpu"}, "cap": 64 } ] }
+      "budget": { "commandBuffer:gpu": 64 }
     }
     """;
 
     [Fact]
     public void JsonRoundTrip_Parses()
     {
-        var script = EffectScriptIo.Parse(SampleJson);
-        // 三事件：mesh create[0,120]、cmd create[60,180]/release[60,180]、bg use ⊤(loop=top)。
+        var script = EffectScriptContract.Parse(SampleJson); // 单一契约解析器（删除冗余 EffectScriptIo）
         Assert.Equal(3, script.Events.Length);
-        // 解析 budget caps。
-        var budget = EffectScriptIo.ParseBudget(SampleJson);
-        Assert.True(budget.Caps.ContainsKey(ResourceId.Normalize(CmdBuf())));
-        Assert.Equal(NatStar.Of(64), budget.Caps[ResourceId.Normalize(CmdBuf())]);
+        Assert.True(script.Budget.Caps.ContainsKey(ResourceId.Normalize(CmdBuf())));
+        Assert.Equal(NatStar.Of(64), script.Budget.Caps[ResourceId.Normalize(CmdBuf())]);
     }
 
     [Fact]
     public void Json_ValidScript_PassesAudit()
     {
-        var script = EffectScriptIo.Parse(SampleJson);
-        var budget = EffectScriptIo.ParseBudget(SampleJson);
-        // mesh create 无 release + cmd create/release 配对 + bg use(常驻豁免) ⇒ 应报 mesh Leak（无配对 release）。
-        var r = script.Audit(budget);
+        var script = EffectScriptContract.Parse(SampleJson);
+        var r = script.Audit(); // 用 Parse 附着的 Budget
         Assert.False(r.Passed);
         Assert.Contains(r.Violations, v => v.Kind == "Leak" && v.Resource.Equals(ResourceId.Normalize(Gpu("mesh1"))));
     }
@@ -129,15 +124,15 @@ public class EffectScriptContractTests
     [Fact]
     public void Json_UnknownResource_Throws()
     {
-        var bad = """{"events":[{"lifetime":0,"footprint":[{"kind":"occupy","resource":{"alien":{}},"mode":"create"}]}]}""";
-        Assert.Throws<ArgumentException>(() => EffectScriptIo.Parse(bad));
+        var bad = """{"events":[{"lifetime":[0,10],"footprint":[{"kind":"occupy","resource":{"alien":{}},"mode":"create"}]}]}""";
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse(bad));
     }
 
     [Fact]
     public void Json_MissingLifetime_Throws()
     {
-        var bad = """{"events":[{"footprint":[{"kind":"occupy","resource":{"gpu":{"bufferId":"x"}},"mode":"create"}]}]}""";
-        Assert.Throws<ArgumentException>(() => EffectScriptIo.Parse(bad));
+        var bad = """{"events":[{"footprint":[{"kind":"occupy","resource":{"gpu":"x"},"mode":"create"}]}]}""";
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse(bad));
     }
 
     // ════════════ Iter21 (全 Compatible 矩阵：存活同组两两) ════════════

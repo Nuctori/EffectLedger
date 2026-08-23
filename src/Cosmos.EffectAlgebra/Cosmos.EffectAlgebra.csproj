@@ -29,7 +29,6 @@
     <Compile Remove="EffectAttributes.cs" />
     <Compile Remove="EffectScript.cs" />
     <Compile Remove="EffectScriptContract.cs" />
-    <Compile Remove="EffectScriptIo.cs" />
   </ItemGroup>
 
 </Project>
