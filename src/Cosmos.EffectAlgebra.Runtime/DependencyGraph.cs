@@ -39,6 +39,15 @@ public sealed class DependencyGraph
         _fibers.Remove(id);
     }
 
+    /// <summary>§3 — 依赖者查询（无需填充 Fiber.Dependents；直接从边集读取，供崩溃级联/可观测）。</summary>
+    public ImmutableArray<FiberId> DependentsOf(FiberId provider)
+    {
+        var res = ImmutableArray.CreateBuilder<FiberId>();
+        foreach (var (dep, prov) in _hard) if (prov == provider) res.Add(dep);
+        foreach (var (dep, prov) in _soft) if (prov == provider) res.Add(dep);
+        return res.ToImmutable();
+    }
+
     /// <summary>§3 — 环检测：仅硬边成环才中止（HasHardCycle=true）；软边成环仅记 SoftCycle 降级 warning。</summary>
     public CycleReport DetectCycles()
     {

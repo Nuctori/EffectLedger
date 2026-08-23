@@ -1,9 +1,11 @@
-// Fiber.cs — 空间可逆插件系统核心类型（MVP 骨架）。
-// 来源：docs/spatial-plugin-shell-design.md v7 §1/§2 + audit/runtime-mvp-spec.md。
-// 零 Godot 依赖：Godot 交互经 IHost 抽象（§7）。本文件仅定义纯数据/状态类型。
+// Fiber.cs — §1/§2 Fiber（状态机 + 幂等守卫 + 看门狗转移）+ 逆声明（InverseClaim）+ 协效应（Coeffect）。
 using System.Collections.Immutable;
+using Cosmos.EffectAlgebra;
 
 namespace Cosmos.EffectAlgebra.Runtime;
+
+/// <summary>§1 — Fiber 标识。</summary>
+public readonly record struct FiberId(string Value);
 
 /// <summary>§2 — Fiber 生命周期状态机（五态）。</summary>
 public enum FiberState
@@ -18,8 +20,7 @@ public enum FiberState
 /// <summary>§1 — 协效应：所需/所提供资源（同 Scope 内构成显式依赖边）。</summary>
 public sealed record Coeffect(ResourceId Requires, ResourceId Provides, ScopeId Scope);
 
-/// <summary>
-/// §1 — 结构化逆：声明维度(ResourceId/ScopeId)齐全；Scope 须 == Coeffect.Scope（装载期校验）。
+/// <summary>§1 — 结构化逆：声明维度(ResourceId/ScopeId)齐全；Scope 须 == Coeffect.Scope（装载期校验）。
 /// ReleaseApiTags：逆 Action 涉及的释放类 API 名（§7.1/§3 step2b 装载期双重释放判定用）；
 /// 因 Action 是裸委托无 API 名元数据，须显式标注（audit/runtime-mvp-spec.md E）。
 /// </summary>
@@ -57,16 +58,18 @@ public sealed class Fiber
         return true;
     }
 
-    /// <summary>§2 — 卸载（幂等守卫：Suspending/TearingDown/Dead 直接 return；TeardownEnqueued 防二次入队）。</summary>
+    /// <summary>§2 — 卸载（幂等守卫：TearingDown/Dead 直接 return；Suspending→TearingDown 允许（级联 teardown）；
+    /// TeardownEnqueued 防二次入队）。</summary>
     public void Unload()
     {
-        if (State is FiberState.Suspending or FiberState.TearingDown or FiberState.Dead) return;
-        if (TeardownEnqueued) return;
+        // Suspending 已进入“待卸载”态：级联显式 teardown 须推进到 TearingDown（不阻断）。
+        if (State is FiberState.TearingDown or FiberState.Dead) return;
+        if (TeardownEnqueued) return; // 防止重复入队（Suspending 经 NotifyProviderTeardown 后也走此路径）
         TeardownEnqueued = true;
         State = FiberState.TearingDown;
     }
 
-    /// <summary>§2 — provider 通知 dependent 进入 Suspending（幂等：仅 Active → Suspending，其它态 no-op，防 R4-4 振荡）。</summary>
+    /// <summary>§2 — provider 通知 dependent 进入 Suspending（幂等：仅 Active → Suspendeding，其它态 no-op，防 R4-4 振荡）。</summary>
     public void NotifyProviderTeardown()
     {
         if (State == FiberState.Active) State = FiberState.Suspending;

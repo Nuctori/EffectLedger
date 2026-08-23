@@ -26,7 +26,7 @@ public class PluginRuntimeTests
     }
 
     [Fact]
-    public void BeginTeardown_EnqueuesAndNotifiesDependent()
+    public void BeginTeardown_CascadesProviderAndDependentToTearingDown()
     {
         var rt = new PluginRuntime();
         var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
@@ -34,9 +34,27 @@ public class PluginRuntimeTests
         d.Load();
         rt.AddDependency(d, p, EdgeKind.Hard);
         rt.LoadAll();
-        rt.BeginTeardown(p);                  // provider 进入 TearingDown
+        rt.BeginTeardown(p);                  // provider 进入 TearingDown + 级联自动入队 dependent
         Assert.Equal(FiberState.TearingDown, p.State);
-        Assert.Equal(FiberState.Suspending, d.State); // provider-first-notify → dependent Suspending
+        Assert.True(d.TeardownEnqueued);      // 级联已将 dependent 入队（不泄漏）
+        Assert.Equal(FiberState.TearingDown, d.State); // 依赖者经级联推进至 TearingDown（Suspending→TearingDown 由 Unload 放行）
+    }
+
+    [Fact]
+    public void BeginTeardown_DependentThenDrain_ReachesDead()
+    {
+        bool released = false;
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => released = true)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        d.Load();
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+        rt.BeginTeardown(p);  // p→TearingDown，并级联 d→TearingDown
+        rt.DrainTeardownBatch();
+        Assert.True(released);          // p 释放
+        Assert.Equal(FiberState.Dead, d.State); // d 经级联 teardown 达 Dead
     }
 
     [Fact]

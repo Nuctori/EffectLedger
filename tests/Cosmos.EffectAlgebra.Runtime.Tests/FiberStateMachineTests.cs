@@ -36,15 +36,23 @@ public class FiberStateMachineTests
     }
 
     [Theory]
-    [InlineData(FiberState.Suspending)]
     [InlineData(FiberState.TearingDown)]
     [InlineData(FiberState.Dead)]
-    public void Unload_FromSuspendingTearingDownDead_DirectReturn(FiberState state)
+    public void Unload_FromTearingDownDead_DirectReturn(FiberState state)
     {
         var f = Make(state);
         var before = f.State;
         f.Unload();
         Assert.Equal(before, f.State);    // 不变（直接 return）
+    }
+
+    [Fact]
+    public void Unload_FromSuspending_AdvancesToTearingDown() // §2 级联：Suspending→TearingDown 允许
+    {
+        var f = Make(FiberState.Suspending);
+        f.Unload();
+        Assert.Equal(FiberState.TearingDown, f.State);
+        Assert.True(f.TeardownEnqueued);
     }
 
     [Fact]
