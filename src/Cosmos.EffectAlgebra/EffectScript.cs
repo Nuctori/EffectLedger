@@ -181,8 +181,15 @@ public sealed partial class EffectScript
                         else
                         {
                             var cur = peakSum.GetValueOrDefault(r, NatStar.Of(0));
-                            var sub = (c.Size ?? Interval.Default).Hi.Value * e.Loop.Count.Value;
-                            peakSum[r] = NatStar.Of(sub > cur.Value ? 0UL : cur.Value - sub);
+                            // 保守 ⊤：± 溢出（ulong 环绕）即标 ⊤，不静默低估峰值（修 auditR peakSum 裸 ulong* 回卷）。
+                            var hi = (c.Size ?? Interval.Default).Hi;
+                            var w = e.Loop.Count;
+                            var sub = (!hi.IsTop && !w.IsTop && hi.Value <= ulong.MaxValue / w.Value)
+                                ? NatStar.Of(hi.Value * w.Value) : NatStar.Top;
+                            var curSum = cur.IsTop ? NatStar.Top
+                                : (!hi.IsTop && !w.IsTop) ? NatStar.Of(cur.Value) : NatStar.Top;
+                            peakSum[r] = (curSum.IsTop || sub.IsTop) ? NatStar.Top
+                                : NatStar.Of(sub.Value <= curSum.Value ? curSum.Value - sub.Value : 0);
                         }
                     }
                 }
@@ -243,6 +250,8 @@ public sealed partial class EffectScript
             {
                 var e = Events[ei];
                 if (e.Loop.Count.IsTop) continue;       // 居民层豁免
+                if (e.Lifetime.Lo.IsTop) continue;       // Lo=⊤ 永不存活，不入累积
+                if (e.Lifetime.Lo.CompareToFinite(closureT) > 0) continue; // 修 auditR：仅纳入已开始（Lo≤closureT）事件，排除未来事件
                 if (e.Lifetime.Lo.IsTop) continue;       // Lo=⊤ 永不存活，不入累积
                 foreach (var c in e.Footprint.OccupyClaims)
                 {
