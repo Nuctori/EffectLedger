@@ -163,7 +163,6 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         var acquire = new Dictionary<ResourceId, int>();
         var release = new Dictionary<ResourceId, int>();
         var firstAcquireName = new Dictionary<ResourceId, string>();
-        bool hasReleaseClassOnly = false; // §8.1 泛型释放（不在 §7 白名单），可能覆盖任意资源
 
         foreach (var inv in invocations)
         {
@@ -171,8 +170,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             var m = FindWhitelistEntry(inv);
             if (m is null)
             {
-                // §8.1 release-class 但不在 §7 白名单：作为泛型释放兜底（避免误报，运行期 net 为权威）。
-                if (ReleaseApiNames.Contains(canon)) hasReleaseClassOnly = true;
+                // §8.1 release-class 但不在 §7 白名单：无对应资源映射，本近似不处理（运行期 net 为权威）。
+                // 不以「方法体内出现过任一 release-class-only 调用」整方法 blanket 抑制 EAA0901（§8.3.1(3) 永不抑制；
+                // 否则 RemoveFromGroup(仅释放组隶属)+AddChild(占用 Tree 未释放) 这类无关资源真实泄漏被漏报，BUG D）。
                 continue;
             }
             foreach (var c in m.Value.Claims)
@@ -190,9 +190,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             }
         }
 
-        // §3.3.1 DO-9 近似：存在归一资源 net 获取（acquire>release）⇒ 报告。
-        // 除非存在 §8.1 泛型释放（可能覆盖该资源，运行期 net 为权威，避免误报）。
-        if (hasReleaseClassOnly) return;
+        // §3.3.1 DO-9 近似：存在归一资源 net 获取（acquire>release）⇒ 报告（fail-open，§8.3.1(3) 永不抑制）。
         foreach (var kv in acquire)
         {
             release.TryGetValue(kv.Key, out var r);
@@ -373,16 +371,30 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(AcceptDeviationRange, method.Identifier.GetLocation(), method.Identifier.Text));
             return false;
         }
+        // BUG B 修复：Roslyn 对整数字面量 0 的 GetConstantValue 返回 boxed int（非 double），
+        // 须按 int/float/double 灵活拆箱，否则 [AcceptDeviation(0)] 被误报 EAA0802。
         var cv = context.SemanticModel.GetConstantValue(arg.Expression);
-        if (!cv.HasValue || cv.Value is not double e || e < 0.0 || e > 0.5)
+        double? e = cv.HasValue ? cv.Value switch
+        {
+            double d => d,
+            int i => i,
+            float f => f,
+            _ => null
+        } : null;
+        if (e is null || e < 0.0 || e > 0.5)
         {
             context.ReportDiagnostic(Diagnostic.Create(AcceptDeviationRange, method.Identifier.GetLocation(), method.Identifier.Text));
             return false;
         }
         return true;
     }
+    // BUG A 修复：特性名末段匹配（忽略 global:: / 命名空间限定），同时兼容 X 与 XAttribute 两种写法。
+    // 旧实现逐字比对 name=="EffectOverride"，导致 [Cosmos.EffectAlgebra.EffectOverride] /
+    // [global::Cosmos.EffectAlgebra.EffectOverride] 被漏识 ⇒ A3/A4 误报 + 逃逸通道失效。
     private static bool IsEffectOverride(string name) =>
-        name == "EffectOverride" || name == "EffectOverrideAttribute";
+        SimpleAttrName(name) is "EffectOverride" or "EffectOverrideAttribute";
     private static bool IsAcceptDeviation(string name) =>
-        name == "AcceptDeviation" || name == "AcceptDeviationAttribute";
+        SimpleAttrName(name) is "AcceptDeviation" or "AcceptDeviationAttribute";
+    private static string SimpleAttrName(string name) =>
+        name.Replace("global::", "", StringComparison.Ordinal).Split('.').Last();
 }
