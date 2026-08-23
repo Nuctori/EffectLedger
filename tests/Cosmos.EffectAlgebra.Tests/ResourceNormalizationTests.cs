@@ -37,13 +37,15 @@ public class ResourceNormalizationTests
         Assert.Equal(new ResourceId.Self("x"), self); // 不塌缩到 SignalBus
     }
 
-    // ── 4. SignalBus("signal_x") == SignalBus("x")（SignalBus 内部也剥 signal_ 前缀，自洽，§3.1.4a） ──
+    // ── 4. SignalBus 已是规范命名空间构造子：原样返回，不再二次剥 signal_ 前缀（保持 Normalize 幂等，§3.1.4a） ──
     [Fact]
-    public void SignalBus_SignalPrefix_Strips() // §3.1.4a：SignalBus("signal_"+s) ⇒ SignalBus(s)
+    public void SignalBus_IsCanonical_AndIdempotent() // §3.1.4a：SignalBus 为规范形，原样保留，幂等
     {
         var bus = ResourceId.Normalize(new ResourceId.SignalBus(new StringName("signal_x")));
-        Assert.Equal(new ResourceId.SignalBus(new StringName("x")), bus);
-        Assert.Equal(ResourceId.Normalize(new ResourceId.SignalBus(new StringName("x"))), bus);
+        Assert.Equal(new ResourceId.SignalBus(new StringName("signal_x")), bus); // 不再二次剥前缀
+        Assert.Equal(bus, ResourceId.Normalize(bus)); // 幂等（不动点）
+        Assert.Equal(ResourceId.Normalize(new ResourceId.SignalBus(new StringName("x"))),
+            new ResourceId.SignalBus(new StringName("x")));
     }
 
     // ── 5. Gpu / CommandBuffer 关系（按真实语义：独立构造子，PDR §3.1.4a 在本实现未强制同形） ──

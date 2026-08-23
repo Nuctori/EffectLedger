@@ -31,8 +31,8 @@ public class LoopCombinationTests
         Assert.Equal("L", l.Id);
 
         // size 端点按 ω 缩放：Scale([10,10],5) = [50,50]。
-        Assert.Equal(NatStar.Of(50), c.Size.Lo);
-        Assert.Equal(NatStar.Of(50), c.Size.Hi);
+        Assert.Equal(NatStar.Of(50), (c.Size ?? Interval.Default).Lo);
+        Assert.Equal(NatStar.Of(50), (c.Size ?? Interval.Default).Hi);
 
         // Peak 在 Global 下求和（Loop ⊆* Global 恒成立）→ 50。
         var peak = Peak.Compute(looped, G);
@@ -48,8 +48,8 @@ public class LoopCombinationTests
 
         // size 上界开放：Scale 把 Hi 拉到 ⊤，Lo 保持有限。
         var c = looped.OccupyClaims.Single();
-        Assert.Equal(NatStar.Of(10), c.Size.Lo);
-        Assert.True(c.Size.Hi.IsTop);
+        Assert.Equal(NatStar.Of(10), (c.Size ?? Interval.Default).Lo);
+        Assert.True((c.Size ?? Interval.Default).Hi.IsTop);
 
         // Peak.Compute 对任一 Hi=⊤ 直接返回 ⊤（不发散）。
         var peak = Peak.Compute(looped, G);

@@ -444,7 +444,7 @@ public class EffectScriptEdgeTests
         Assert.Equal(NatStar.Of(6), peak);
         // 对照：手动 Combination.Loop 缩放。
         var manual = Combination.Loop(e.Footprint, LoopCount.Of(3), e.Scope).OccupyClaims;
-        var manualPeak = manual.Where(c => c.Mode != Mode.Release).Aggregate(NatStar.Of(0UL), (acc, c) => acc + c.Size.Hi);
+        var manualPeak = manual.Where(c => c.Mode != Mode.Release).Aggregate(NatStar.Of(0UL), (acc, c) => acc + (c.Size ?? Interval.Default).Hi);
         Assert.Equal(NatStar.Of(6), manualPeak);
         // 无 release ⇒ 累积 net [6,6] 不含 0 ⇒ Leak。
         var r = s.Audit(Budget.None);
@@ -616,7 +616,7 @@ public class EffectScriptEdgeTests
             foreach (var c in e.Footprint.OccupyClaims)
             {
                 var r = ResourceId.Normalize(c.Resource);
-                var scaled = Scale(c.Size, e.Loop.Count);
+                var scaled = Scale(c.Size ?? Interval.Default, e.Loop.Count);
                 var contrib = c.Mode == Mode.Release
                     ? new SignedInterval(ZNeg(scaled.Hi), ZNeg(scaled.Lo))
                     : new SignedInterval(ZTo(scaled.Lo), ZTo(scaled.Hi));
@@ -637,7 +637,7 @@ public class EffectScriptEdgeTests
                 foreach (var c in e.Footprint.OccupyClaims)
                 {
                     var r = ResourceId.Normalize(c.Resource);
-                    var scaled = Scale(c.Size, e.Loop.Count);
+                    var scaled = Scale(c.Size ?? Interval.Default, e.Loop.Count);
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(ZNeg(scaled.Hi), ZNeg(scaled.Lo))
                         : new SignedInterval(ZTo(scaled.Lo), ZTo(scaled.Hi));
@@ -655,8 +655,8 @@ public class EffectScriptEdgeTests
                 {
                     if (c.Mode == Mode.Release) continue;
                     if (!ResourceId.Normalize(c.Resource).Equals(ResourceId.Normalize(kv.Key))) continue;
-                    if (c.Size.Hi.IsTop) { sum = NatStar.Top; break; }
-                    sum = sum + c.Size.Hi;
+                    if ((c.Size ?? Interval.Default).Hi.IsTop) { sum = NatStar.Top; break; }
+                    sum = sum + (c.Size ?? Interval.Default).Hi;
                 }
                 if (sum.CompareToFinite(kv.Value) > 0)
                     violations.Add(new Violation(t, kv.Key, new ScopeId.Global(), "PeakExceeded", ""));

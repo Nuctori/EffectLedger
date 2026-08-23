@@ -55,7 +55,7 @@ public class CrossLayerTests
         Assert.Equal(typeof(ResourceId), props["Resource"].PropertyType);
         Assert.Equal(typeof(Mode), props["Mode"].PropertyType);
         Assert.Equal(typeof(ScopeId), props["Scope"].PropertyType);
-        Assert.Equal(typeof(Interval), props["Size"].PropertyType);
+        Assert.Equal(typeof(Interval?), props["Size"].PropertyType); // §7.3.2 修复后 Size 可空：null=省略，Exact(0)=显式零尺寸（区别于默认 [1,1]）
     }
 
     // §3.2.3 — Compatible.IsCompatible(Mode,Mode)->bool 全函数必须存在且签名匹配（L3 引用）。
@@ -129,7 +129,7 @@ public class CrossLayerTests
                 Assert.NotNull(c.Resource);
                 Assert.True(c.Mode == Mode.Use || c.Mode == Mode.Create || c.Mode == Mode.Release || c.Mode == Mode.Move || c.Mode == Mode.Unknown);
                 Assert.NotNull(c.Scope);
-                Assert.True(c.Size.Lo.Value >= 1 && (c.Size.Hi.IsTop || c.Size.Hi.Value >= 1)); // 非 [0,0] 非法区间
+                Assert.True((c.Size ?? Interval.Default).Lo.Value >= 1 && ((c.Size ?? Interval.Default).Hi.IsTop || (c.Size ?? Interval.Default).Hi.Value >= 1)); // 非 [0,0] 非法区间
             }
         }
     }

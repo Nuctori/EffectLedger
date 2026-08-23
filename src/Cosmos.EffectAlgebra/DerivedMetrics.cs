@@ -38,11 +38,11 @@ public static class Combination
     {
         var result = Signature.Empty;
         foreach (var c in body.ReadClaims)
-            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size, ω.Count) }));
+            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size ?? Interval.Default, ω.Count) }));
         foreach (var c in body.WriteClaims)
-            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size, ω.Count) }));
+            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size ?? Interval.Default, ω.Count) }));
         foreach (var c in body.OccupyClaims)
-            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size, ω.Count) }));
+            result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size ?? Interval.Default, ω.Count) }));
         return result;
     }
 

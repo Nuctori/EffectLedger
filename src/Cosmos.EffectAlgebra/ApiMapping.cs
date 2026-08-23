@@ -47,9 +47,9 @@ public static class GodotApiWhitelist
     static ResourceId Net(int peer, string m) => new ResourceId.Network(peer, m);
     static ResourceId Inp(string a) => new ResourceId.Input(a);          // §7.8 input
 
-    static Claim Rd(ResourceId r, Mode m, ScopeId s, Interval sz = default) => new Claim(Kind.Read, r, m, s, sz).Normalize();
-    static Claim Wr(ResourceId r, Mode m, ScopeId s, Interval sz = default) => new Claim(Kind.Write, r, m, s, sz).Normalize();
-    static Claim Oc(ResourceId r, Mode m, ScopeId s, Interval sz = default) => new Claim(Kind.Occupy, r, m, s, sz).Normalize();
+    static Claim Rd(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Read, r, m, s, sz).Normalize();
+    static Claim Wr(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Write, r, m, s, sz).Normalize();
+    static Claim Oc(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Occupy, r, m, s, sz).Normalize();
 
     static ApiMapping M(string api, params Claim[] claims) => new(api, claims.ToImmutableArray());
 

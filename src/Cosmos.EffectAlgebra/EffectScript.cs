@@ -148,7 +148,7 @@ public sealed partial class EffectScript
                 foreach (var c in e.Footprint.OccupyClaims)
                 {
                     var r = ResourceId.Normalize(c.Resource);
-                    var scaled = ScaleSize(c.Size, e.Loop.Count);
+                    var scaled = ScaleSize(c.Size ?? Interval.Default, e.Loop.Count);
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
@@ -166,9 +166,9 @@ public sealed partial class EffectScript
                     hs.Add(ei);
                     if (c.Mode != Mode.Release) // §3.3.2 release 不贡献峰值
                     {
-                        bool top = c.Size.Hi.IsTop || e.Loop.Count.IsTop;
+                        bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                         if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
-                        else peakSum[r] = NatStar.Of(peakSum.GetValueOrDefault(r, NatStar.Of(0)).Value + c.Size.Hi.Value * e.Loop.Count.Value);
+                        else peakSum[r] = NatStar.Of(peakSum.GetValueOrDefault(r, NatStar.Of(0)).Value + (c.Size ?? Interval.Default).Hi.Value * e.Loop.Count.Value);
                     }
                 }
                 else
@@ -176,12 +176,12 @@ public sealed partial class EffectScript
                     if (grp.TryGetValue(key, out var hs)) { hs.Remove(ei); if (hs.Count == 0) grp.Remove(key); }
                     if (c.Mode != Mode.Release)
                     {
-                        bool top = c.Size.Hi.IsTop || e.Loop.Count.IsTop;
+                        bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                         if (top) { if (topCount.TryGetValue(r, out var tc) && tc > 0) topCount[r] = tc - 1; }
                         else
                         {
                             var cur = peakSum.GetValueOrDefault(r, NatStar.Of(0));
-                            var sub = c.Size.Hi.Value * e.Loop.Count.Value;
+                            var sub = (c.Size ?? Interval.Default).Hi.Value * e.Loop.Count.Value;
                             peakSum[r] = NatStar.Of(sub > cur.Value ? 0UL : cur.Value - sub);
                         }
                     }
@@ -247,7 +247,7 @@ public sealed partial class EffectScript
                 foreach (var c in e.Footprint.OccupyClaims)
                 {
                     var r = ResourceId.Normalize(c.Resource);
-                    var scaled = ScaleSize(c.Size, e.Loop.Count);
+                    var scaled = ScaleSize(c.Size ?? Interval.Default, e.Loop.Count);
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));

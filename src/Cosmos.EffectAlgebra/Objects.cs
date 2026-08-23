@@ -56,9 +56,9 @@ public abstract record ResourceId
         // §3.1.2b：Signal("signal_"+s) 也归一到 SignalBus(s)（PDR §3.1.4a "signal_"+s ≡ SignalBus(s)）
         Signal sig when sig.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
             => new SignalBus(new StringName(sig.Name.Value.Substring("signal_".Length))),
-        // §3.1.2b：SignalBus("signal_"+s) 内部也剥 signal_ 前缀，自洽（PDR §3.1.4a）
-        SignalBus bus when bus.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
-            => new SignalBus(new StringName(bus.Name.Value.Substring("signal_".Length))),
+        // §3.1.2b：SignalBus 已是规范命名空间构造子，原样返回（不再二次剥 signal_ 前缀，
+        // 否则 SignalBus("signal_signal_x") ⇒ SignalBus("x") 破坏 Normalize 幂等性，§3.1.4a）。
+        SignalBus bus => bus,
         // 其余构造子已为规范形式，原样返回
         _ => r
     };
@@ -123,13 +123,14 @@ public enum Mode { Use, Create, Release, Move, Unknown }
 /// 不变量：集合运算（∪ / net 分组 / Deviation 对齐）须用 <see cref="Normalize"/> 后的键（§3.1.4a）。
 /// resource 必须归一、size 缺省 ⇒ Default，否则同资源多 Claim 不被合并（§3.1.4a 后果）。
 /// </summary>
-public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, ScopeId Scope, Interval Size)
+public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, ScopeId Scope, Interval? Size)
 {
-    /// <summary>§3.1.4a 归一化：resource 走 ResourceId.Normalize，size 缺省 ⇒ Default。</summary>
+    /// <summary>§3.1.4a 归一化：resource 走 ResourceId.Normalize；size 缺省（null）⇒ Default([1,1])，
+    /// 显式 Exact(0)=[0,0] 与缺省 null 通过可空类型区分，不再被膨胀为 [1,1]（修复零 size 误报泄漏）。</summary>
     public Claim Normalize() => this with
     {
         Resource = ResourceId.Normalize(Resource),
-        Size = Size == default ? Interval.Default : Size
+        Size = Size ?? Interval.Default
     };
 
     /// <summary>§3.2.3 全函数 Compatible 的单元调用（对称）。</summary>

@@ -195,7 +195,7 @@ public static class EffectScriptContract
         ["resource"] = SerializeResource(ResourceId.Normalize(c.Resource)),
         ["mode"] = c.Mode.ToString().ToLowerInvariant(),
         ["scope"] = SerializeScope(c.Scope),
-        ["size"] = new object[] { c.Size.Lo.IsTop ? "⊤" : (object)c.Size.Lo.Value, c.Size.Hi.IsTop ? "⊤" : (object)c.Size.Hi.Value }
+        ["size"] = new object[] { (c.Size ?? Interval.Default).Lo.IsTop ? "⊤" : (object)(c.Size ?? Interval.Default).Lo.Value, (c.Size ?? Interval.Default).Hi.IsTop ? "⊤" : (object)(c.Size ?? Interval.Default).Hi.Value }
     };
 
     static object SerializeResource(ResourceId r) => r switch

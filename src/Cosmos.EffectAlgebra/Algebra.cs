@@ -60,7 +60,7 @@ public sealed class NetTable
             if (!c.Scope.IncludedIn(scope)) continue;  // §3.1.3b ⊆* 过滤
             var r = ResourceId.Normalize(c.Resource);
             // §3.3.1 有符号 size：release 取 size 的「负向」[-hi,-lo]；create/move 正号 [lo,hi]。
-            var signed = c.Mode == Mode.Release ? Negate(c.Size) : ToSigned(c.Size);
+            var signed = c.Mode == Mode.Release ? Negate(c.Size ?? Interval.Default) : ToSigned(c.Size ?? Interval.Default);
             // §3.3.1 有符号 net = 同资源多 Claim 净效应「求和」（Add），非 min/max 包络（Merge 会吞掉守恒判定，漏报泄漏）。
             t._net[r] = t._net.ContainsKey(r) ? t._net[r].Add(signed) : signed;
         }
@@ -71,8 +71,8 @@ public sealed class NetTable
     // 任一端 IsTop ⇒ 对应 ZStar.Top（net 未知 ⇒ IsConserved fail-closed 返回 false，交人工确认）。
     private static SignedInterval Negate(Interval s)
     {
-        var lo = s.Lo.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Lo.Value);
-        var hi = s.Hi.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Hi.Value);
+        var lo = s.Hi.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Hi.Value);  // -hi
+        var hi = s.Lo.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Lo.Value);  // -lo
         return new SignedInterval(lo, hi); // [-hi, -lo]
     }
 
@@ -118,8 +118,8 @@ public static class Peak
         {
             if (!c.Scope.IncludedIn(scope)) continue;
             if (c.Mode == Mode.Release) continue; // §3.3.2 c.mode≠release：release 不贡献峰值
-            if (c.Size.Hi.IsTop) return NatStar.Top; // ω=⊤ 兜底（§3.2.5）
-            sum = sum + c.Size.Hi;                    // 取 hi 作为峰值上界
+            if ((c.Size ?? Interval.Default).Hi.IsTop) return NatStar.Top; // ω=⊤ 兜底（§3.2.5）
+            sum = sum + (c.Size ?? Interval.Default).Hi;                    // 取 hi 作为峰值上界
         }
         return sum;
     }
