@@ -1,0 +1,12 @@
+root = false
+
+# 采样工程（AnalyzerConsumer / GodotIntegration）刻意触发 EAA* 诊断以演示分析器行为。
+# 此处把根 .editorconfig 的 EAA*=error 降级为 warning：构建可通过，且警告仍可见（证明分析器真在编译期触发）；
+# 真实生产工程沿用根策略（EAA*=error），对任何泄漏提示必须显式 [EffectOverride(reason)] 或修正配对，否则构建失败。
+
+[*.cs]
+dotnet_diagnostic.EAA0901.severity = warning
+dotnet_diagnostic.EAA0303.severity = warning
+dotnet_diagnostic.EAA0304.severity = warning
+dotnet_diagnostic.EAA0801.severity = warning
+dotnet_diagnostic.EAA0802.severity = warning

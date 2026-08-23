@@ -1,0 +1,38 @@
+root = true
+
+# Cosmos.EffectAlgebra — 编辑器/编译器一致性配置
+# 作用：将 L3 分析器的资源代价代数诊断设为 error 级，使泄漏/量纲冲突/逃逸参数缺失在编译期硬性阻断（§3.3.1 / §3.1.4b / §3.2.3 / §8.3）。
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+# 通用 Roslyn 一致性
+dotnet_sort_system_directives_first = true
+csharp_new_line_before_open_brace = all
+csharp_prefer_braces = true:silent
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+
+# ── L3 资源代价代数诊断：编译期硬约束（生产默认 error）──
+# §3.3.1 DO-9 近似泄漏：acquire 无配对 release 且未标 [EffectOverride]
+dotnet_diagnostic.EAA0901.severity = error
+# §3.1.4b DO-7 量纲隔离：同归一资源跨 kind 混用（A3）
+dotnet_diagnostic.EAA0303.severity = error
+# §3.2.3 Compatible 全函数冲突（A4）
+dotnet_diagnostic.EAA0304.severity = error
+# §8.3.1 [EffectOverride] reason 必填且非空（逃逸通道参数校验）
+dotnet_diagnostic.EAA0801.severity = error
+# §8.3.2 [AcceptDeviation] epsilon ∈ [0.0, 0.5]
+dotnet_diagnostic.EAA0802.severity = error
+
+# 注：EAA0901/EAA0303/EAA0304 为「控制流近似」早期根因提示（运行期 net 为权威），
+# 标记为 error 即要求开发者对每一处泄漏提示显式 [EffectOverride(reason)] 或修正配对；
+# 不标即为无证泄漏，构建失败（§8.3.1 逃逸通道必须编译期可验证）。
