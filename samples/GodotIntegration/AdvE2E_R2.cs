@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -33,7 +34,7 @@ public sealed class AdvE2E_R2
     {
         var comp = MakeCompilation(source);
         var withAnalyzers = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         return await withAnalyzers.GetAnalyzerDiagnosticsAsync();
     }
 
@@ -187,3 +188,4 @@ namespace AdvR2 {
         Assert.DoesNotContain(diags, d => d.Id == "EAA0901");
     }
 }
+

@@ -13,6 +13,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Cosmos.EffectAlgebra;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -56,7 +57,7 @@ namespace SampleGame {
     {
         var comp = MakeCompilation(GameSource);
         var withA = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withA.GetAnalyzerDiagnosticsAsync();
 
         // LeakViaReceiver：实例接收者 acquire（_node.AddChild）无 release ⇒ 旧逻辑静默漏报，修复后应报 EAA0901
@@ -71,7 +72,7 @@ namespace SampleGame {
     {
         var comp = MakeCompilation(GameSource);
         var withA = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withA.GetAnalyzerDiagnosticsAsync();
         // AudioPair / AnimPair 内部均含 acquire+release 配对（Play=create, Stop=release）⇒ 不报泄漏
         Assert.DoesNotContain(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("AudioPair"));
@@ -159,7 +160,7 @@ namespace SampleGame {
 }";
         var comp2 = MakeCompilation(analyzeSrc);
         var withA = comp2.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withA.GetAnalyzerDiagnosticsAsync();
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("Leak"));
     }
@@ -209,3 +210,4 @@ namespace SampleGame {
         Assert.Contains(Kind.Occupy, kinds);
     }
 }
+

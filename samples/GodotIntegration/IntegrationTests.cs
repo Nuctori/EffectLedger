@@ -11,6 +11,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -61,7 +62,7 @@ namespace SampleGame {
     {
         var comp = MakeCompilation(GameSource);
         var withAnalyzers = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withAnalyzers.GetAnalyzerDiagnosticsAsync();
 
         Assert.Contains(diags, d => d.Id == "EAA0901");                       // 泄漏必报
@@ -112,3 +113,4 @@ namespace SampleGame {
         Assert.True(net.IsConserved(treeNode), "AddChild+RemoveChild 在 Tree(node.id) 应守恒");
     }
 }
+

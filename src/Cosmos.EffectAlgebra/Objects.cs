@@ -52,13 +52,13 @@ public abstract record ResourceId
     {
         // §3.1.2b / ST-02：Self("signal_"+s) ≡ SignalBus(s)
         Self s when s.Component.StartsWith("signal_", StringComparison.Ordinal)
-            => new SignalBus(new StringName(s.Component["signal_".Length..])),
+            => new SignalBus(new StringName(s.Component.Substring("signal_".Length))),
         // §3.1.2b：Signal("signal_"+s) 也归一到 SignalBus(s)（PDR §3.1.4a "signal_"+s ≡ SignalBus(s)）
         Signal sig when sig.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
-            => new SignalBus(new StringName(sig.Name.Value["signal_".Length..])),
+            => new SignalBus(new StringName(sig.Name.Value.Substring("signal_".Length))),
         // §3.1.2b：SignalBus("signal_"+s) 内部也剥 signal_ 前缀，自洽（PDR §3.1.4a）
         SignalBus bus when bus.Name.Value.StartsWith("signal_", StringComparison.Ordinal)
-            => new SignalBus(new StringName(bus.Name.Value["signal_".Length..])),
+            => new SignalBus(new StringName(bus.Name.Value.Substring("signal_".Length))),
         // 其余构造子已为规范形式，原样返回
         _ => r
     };

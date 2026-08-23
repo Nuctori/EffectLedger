@@ -1,12 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- 多目标：net10.0（游戏/测试消费）+ net9.0（供 L3 分析器引用，分析器以 net9.0 为目标，与 SDK 自带 Roslyn 5.0.0.0 同代，根除 CS8032）。
+         两 TFM 共享同一源码；net9.0 仅作为净代数数据/类型层，不触及 Godot。 -->
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
+
+  <!-- net9.0 仅编译分析器所需的纯代数切片（Objects + ApiMapping + Algebra + Numeric + SignedNet）；
+       其余文件（EffectScript*/Deviation/DerivedMetrics）依赖 net9.0 缺失或分析器不需要，故排除。
+       System.Collections.Immutable 用 net9.0 自带（in-box），不引 NuGet 包，避免分析器 ALC 解析 NuGet 依赖失败 ⇒ CS8032。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <Compile Remove="DerivedMetrics.cs" />
+    <Compile Remove="Deviation.cs" />
+    <Compile Remove="EffectAttributes.cs" />
+    <Compile Remove="EffectScript.cs" />
+    <Compile Remove="EffectScriptContract.cs" />
+    <Compile Remove="EffectScriptIo.cs" />
+  </ItemGroup>
 
 </Project>

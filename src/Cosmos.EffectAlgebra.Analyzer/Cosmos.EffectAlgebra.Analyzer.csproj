@@ -1,24 +1,48 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- 分析器以 net9.0 为目标：与 SDK 自带 Roslyn 5.0.0.0 同代，且共享运行时（System.Runtime 9.0 / System.Collections.Immutable in-box），
+         根除 CS8032（分析器在编译器隔离 ALC 中因 Roslyn/运行时版本错位而无法实例化）。
+         RS1041（建议 netstandard2.0）为 advisory，此处显式 NoWarn：net9.0 分析器在 .NET 10 SDK 编译器中可正常加载。 -->
+    <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- RS2008/RS2007 = Roslyn 发布追踪（release-tracking）分析器；本迭代聚焦数学层与类型护栏，
-         发布追踪属打包/版本管理范畴，非代码正确性，故显式 NoWarn 以免阻塞 0 错误 0 警告构建。
-         真实诊断质量由 RS1033（描述句法）等已强制。 -->
-    <NoWarn>RS2008;RS2007</NoWarn>
+    <NoWarn>RS1041;RS2008;RS2007</NoWarn>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- L3 是 Roslyn DiagnosticAnalyzer；仅依赖 Roslyn + L1 纯代数。不引用 Godot.NET.Sdk（本机未装，会还原失败）。 -->
+    <!-- L3 是 Roslyn DiagnosticAnalyzer；仅依赖 Roslyn + L1 纯代数（零 Godot）。
+         CS8032 根因：编译器隔离 ALC 不会加载分析器的 ProjectReference 程序集（L1），导致实例化失败。
+         修复：将 L1 所需源文件直接 Compile 进分析器（单一事实来源、零程序集依赖），分析器在隔离 ALC 中自包含。
+         Roslyn 不引 NuGet 包 —— 编译器自带 5.0.0.0，避免 4.12.0≠5.0.0.0 错位。
+         不引用 Godot.NET.Sdk（本机未装，会还原失败）。
+         L1 源以「命名空间改写副本」(Cosmos.EffectAlgebra.Analyzer.Shared) 编入，避免与消费方同时引用的 L1 本体 (Cosmos.EffectAlgebra)
+         发生 ResourceId/Signature 同名冲突 (CS0433)。L1 仍是唯一事实来源（PrepareAnalyzerSharedSources 在构建期从 L1 派生）。 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
-    <ProjectReference Include="..\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\Objects.cs" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\ApiMapping.cs" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\Algebra.cs" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\Numeric.cs" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\SignedNet.cs" />
+    <ShareSource Include="..\Cosmos.EffectAlgebra\IsExternalInit.cs" />
   </ItemGroup>
+
+  <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Analyzer.Shared[.X]，
+       写入 IntermediateOutputPath\AnalyzerShared\，作为分析器自包含编译单元（不触碰 L1 本体）。 -->
+  <Target Name="PrepareAnalyzerSharedSources" BeforeTargets="CoreCompile" Inputs="@(ShareSource)" Outputs="@(ShareSource->'$(IntermediateOutputPath)AnalyzerShared\%(Filename).cs')">
+    <MakeDir Directories="$(IntermediateOutputPath)AnalyzerShared" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs"
+                      Lines="$([System.IO.File]::ReadAllText('%(ShareSource.FullPath)').Replace('namespace Cosmos.EffectAlgebra', 'namespace Cosmos.EffectAlgebra.Analyzer.Shared'))"
+                      Overwrite="true" />
+    <ItemGroup>
+      <Compile Remove="@(ShareSource)" />
+      <Compile Include="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs" />
+    </ItemGroup>
+  </Target>
 
 </Project>

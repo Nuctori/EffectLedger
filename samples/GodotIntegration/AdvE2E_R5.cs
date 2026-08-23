@@ -19,6 +19,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -42,7 +43,7 @@ public sealed class AdvE2E_R5
     {
         var comp = MakeCompilation(source);
         var withAnalyzers = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withAnalyzers.GetAnalyzerDiagnosticsAsync();
 
         var driver = (GeneratorDriver)CSharpGeneratorDriver.Create(new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
@@ -214,3 +215,4 @@ namespace SampleGame {
         Assert.Contains("ComputeRemoveChild", gen);
     }
 }
+

@@ -14,6 +14,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -38,7 +39,7 @@ public sealed class AdvE2E_R8
     {
         var comp = MakeCompilation(source);
         var withA = comp.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer()));
+            ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         return await withA.GetAnalyzerDiagnosticsAsync();
     }
 
@@ -185,3 +186,4 @@ namespace R8 {
         // 关键不变式：豁免是 per-method（方法声明级），不是 per-class ⇒ Escape 类内 UnmarkedLeak 仍被报。
     }
 }
+

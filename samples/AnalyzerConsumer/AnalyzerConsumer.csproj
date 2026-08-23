@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CS8032 复现/验证工程：用「真实分析器接法」OutputItemType="Analyzer"（生产落地写法），
+    而非 SampleGame 的 WithAnalyzers 测试驱动。若 L3 在编译器 ALC 下实例化失败，
+    dotnet build 会报 CS8032；修复后须 0 错误且 EAA0901 真在编译期出现（见 Game.cs）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NoWarn>RS2008;RS2007</NoWarn>
+    <!-- EAA0901/EAA0303 是泄漏/量纲隔离的「早期根因提示」（警告级）；本验证工程不将其升级为错误，
+         以便构建可成功完成并展示分析器确实在编译期触发（见 Game.cs Leaker）。生产工程可通过 .editorconfig 调为 error。 -->
+    <WarningsNotAsErrors>EAA0901;EAA0303</WarningsNotAsErrors>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- L1 纯代数（游戏逻辑直接引用）。 -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+
+    <!-- L3 分析器：真实接法 —— 编译器在独立 ALC 加载此 DLL 作为 analyzer。
+         此为 CS8032 的复现点：若加载失败则 build 报 CS8032。 -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

@@ -17,6 +17,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <NoWarn>RS2008;RS2007</NoWarn>
+    <!-- EAA* 是泄漏/量纲隔离/逃逸参数校验的「早期根因提示」（警告级），本集成验证工程不升级为错误，
+         以便构建可完成并展示分析器在真实工程编译期真触发（见 SampleGame/AdvE2E_Rx）。生产工程用 .editorconfig 调为 error。 -->
+    <WarningsNotAsErrors>EAA0901;EAA0303;EAA0304;EAA0801;EAA0802</WarningsNotAsErrors>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -32,16 +35,14 @@
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj" />
 
     <!--
-      L3 分析器：真实 Game.csproj 的接法是 OutputItemType="Analyzer"（生产落地写法，见下注释）。
-      本集成 E2E 测试需直接 new EffectAlgebraAnalyzer() 并以 WithAnalyzers 驱动（证明是真实 DiagnosticAnalyzer，非桩），
-      故此处用普通 ProjectReference 使类型在测试中可用：
-        <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
-                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-      约束（honest 声明）：本仓 analyzer 在编译器 analyzer-ALC 下因 SDK Roslyn 版本绑定差异可能报 CS8032；
-        我们尝试过对齐 Microsoft.CodeAnalysis 版本 / IsRoslynComponent 部署，但均会破坏本机/CI 构建（CS8032 仍残存），
-        故保留 WithAnalyzers 驱动路径——AdvE2E_R10.E2E_R10_AnalyzerInstantiableAndRuns 已证明该实例是真实的
-        DiagnosticAnalyzer（SupportedDiagnostics 含 EAA0901/EAA0303/EAA0304）且对泄漏源真产出 EAA0901，语义等价覆盖。
+      L3 分析器：真实 Game.csproj 的生产接法 = OutputItemType="Analyzer"（编译器在隔离 ALC 加载）。
+      CS8032 已根治（分析器自包含：直接 Compile L1 纯代数源，零程序集依赖，隔离 ALC 可实例化），
+      故改回生产接法，不再用 WithAnalyzers-only 的普通 ProjectReference（后者会导入分析器内嵌的 L1 类型，
+      与 L1 自身的 ResourceId/Signature 冲突 ⇒ CS0433）。
+      E2E 测试通过 AnalyzerFileReference + AnalyzerAssemblyLoader 反射加载分析器并以 WithAnalyzers 驱动（见 AnalyzerTestLoader）。
     -->
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj" />
   </ItemGroup>
 

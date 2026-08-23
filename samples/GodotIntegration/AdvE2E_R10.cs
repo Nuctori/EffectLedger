@@ -21,6 +21,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using SampleGame.IntegrationTests;
 
 namespace SampleGame.IntegrationTests;
 
@@ -68,7 +69,7 @@ namespace R10Game {
     public async Task E2E_R10_AnalyzerInstantiableAndRuns()
     {
         // 真实实例化（非桩）：构造必须成功，且类型确为 DiagnosticAnalyzer。
-        DiagnosticAnalyzer analyzer = new Cosmos.EffectAlgebra.Analyzer.EffectAlgebraAnalyzer();
+        DiagnosticAnalyzer analyzer = AnalyzerTestLoader.LoadAnalyzer();
         Assert.IsAssignableFrom<DiagnosticAnalyzer>(analyzer);
 
         // SupportedDiagnostics 必须真含 L3 三套诊断（证明是真实分析器而非空壳）。
@@ -165,3 +166,4 @@ namespace R10Game {
         Assert.Contains("SampleGame", typeof(AdvE2E_R10).Assembly.GetName().Name ?? "");
     }
 }
+
