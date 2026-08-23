@@ -30,8 +30,8 @@ public class Round3AdversarialTests
                 total += sig.ReadClaims.Count + sig.WriteClaims.Count + sig.OccupyClaims.Count;
 
             // 白名单条目 Claims 经 Union 不应丢失（结构相等保证幂等/交换/结合，§3.1.4a）。
-            Assert.True(entry.Claims.Count > 0, $"白名单条目 {entry.GodotApi} 应有非空 Claims");
-            Assert.Equal(entry.Claims.Count, CountClaims(sig));
+            Assert.True(entry.Claims.Length > 0, $"白名单条目 {entry.GodotApi} 应有非空 Claims");
+            Assert.Equal(entry.Claims.Length, CountClaims(sig));
         }
     }
 
