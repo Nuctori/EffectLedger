@@ -29,6 +29,26 @@ public sealed class PluginRuntime
     /// <summary>§7（reviewer #190 F4）— provider 通知 dependent 进入 Suspending 时的钩子（Godot 壳据此禁用 ProcessMode）。集成缝合点，默认 null 无操作。</summary>
     public Action<Fiber>? OnSuspending { get; set; }
 
+    /// <summary>§5 R5-7 / §10（reviewer #193 #6）— 永久存活 Fiber 周期快照网积累表：每 N 帧调度器喂入各 Active Fiber 的当帧 net（绝对值），运行时跨帧累积。逐 Fiber 退出判零对全程存活插件永久不触发 → 泄漏盲点；此表补足「周期快照阈值告警」。</summary>
+    private ImmutableDictionary<FiberId, long> _netAccum = ImmutableDictionary<FiberId, long>.Empty;
+
+    /// <summary>§10（reviewer #193 #6）— 累积当帧网：将调度器提供的 per-Fiber 当帧 net 累加到永久 Fiber 周期快照表（同 Fiber 跨帧相加）。每 N 帧调用一次即实现「周期快照」。</summary>
+    public void AccumulateNet(IReadOnlyDictionary<FiberId, long> perFrameNet)
+    {
+        foreach (var (id, v) in perFrameNet)
+            _netAccum = _netAccum.SetItem(id, _netAccum.GetValueOrDefault(id, 0L) + v);
+    }
+
+    /// <summary>§10（reviewer #193 #6）— 周期快照阈值告警：返回累积网绝对值超过 threshold 的【Active】Fiber（永久存活插件不退出，靠此告警泄漏盲点）。非 Active/TearingDown/Dead/Suspending 不计（已退出路径由 §6 正常回收）。空表⇒空数组。</summary>
+    public ImmutableArray<FiberId> CheckPermanentFiberLeak(long threshold)
+        => _fibers.Values
+            .Where(f => f.State == FiberState.Active && _netAccum.TryGetValue(f.Id, out var acc) && Math.Abs(acc) > threshold)
+            .Select(f => f.Id)
+            .ToImmutableArray();
+
+    /// <summary>§10（reviewer #193 #6）— 清空周期快照网积累表（跨批次/场景重载复位，避免无界增长与跨批次泄漏观测）。</summary>
+    public void ResetNetAccum() => _netAccum = ImmutableDictionary<FiberId, long>.Empty;
+
     /// <summary>§3 — 注册 Fiber（装载期）。返回 Fiber 供后续 Load/Unload。</summary>
     public Fiber Register(FiberSpec spec)
     {

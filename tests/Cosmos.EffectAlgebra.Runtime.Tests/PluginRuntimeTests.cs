@@ -437,4 +437,34 @@ public class PluginRuntimeTests
         var g = rt.Register(Spec("q", new ResourceId.Gpu(new Rid("z")), new ResourceId.Memory(0)));
         Assert.Equal(FiberState.Inactive, g.State);
     }
+
+    [Fact]
+    public void CheckPermanentFiberLeak_ReturnsActiveFibersExceedingThreshold() // reviewer #193 #6（§10 MVP 内建议落地）：永久存活 Fiber 周期快照阈值告警——逐 Fiber 退出判零对全程存活插件不触发，靠此补足泄漏盲点
+    {
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("leak", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => { })));
+        rt.LoadAll();
+        Assert.Equal(FiberState.Active, f.State);
+        // 每帧喂入当帧 net，运行时跨帧累积（模拟「每 N 帧周期快照」）
+        rt.AccumulateNet(new Dictionary<FiberId, long> { [f.Id] = 10 });
+        rt.AccumulateNet(new Dictionary<FiberId, long> { [f.Id] = 10 });
+        Assert.Empty(rt.CheckPermanentFiberLeak(threshold: 25)); // 累积 20 < 25 ⇒ 不告警
+        var alerts = rt.CheckPermanentFiberLeak(threshold: 15);   // 累积 20 > 15 ⇒ 告警
+        Assert.Contains(f.Id, alerts);
+        rt.ResetNetAccum();                                      // 跨批次复位
+        Assert.Empty(rt.CheckPermanentFiberLeak(threshold: 0));
+    }
+
+    [Fact]
+    public void CheckPermanentFiberLeak_IgnoresNonActiveFibers() // reviewer #193 #6：已 TearingDown/Dead 的 Fiber 不计入永久存活告警（退出路径由 §6 正常回收）
+    {
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("gone", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => { })));
+        rt.LoadAll();
+        rt.BeginTeardown(f);                                     // → TearingDown
+        rt.AccumulateNet(new Dictionary<FiberId, long> { [f.Id] = 999 });
+        Assert.Empty(rt.CheckPermanentFiberLeak(threshold: 1));   // 非 Active ⇒ 不告警
+    }
 }
