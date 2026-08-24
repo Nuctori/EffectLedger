@@ -20,11 +20,11 @@ public sealed class PluginRuntime
     /// <summary>§6 R5-7 — 关闭路径标志：关路径 RecomputeTopology 硬拒绝（非关路径延迟执行）。测试可置位以模拟关闭路径。</summary>
     public bool IsShuttingDown { get; set; }
 
-    /// <summary>§6（reviewer #189 F1 / #190 F1）— 崩溃级联报告累积表（ProviderCrashCascade.Handle 每次填充一条）。用 List 累积而非覆盖，使单批多 Fiber 失败均能观测（§6「异常上抛升级」不丢早期失败）。</summary>
+    /// <summary>§6（reviewer #189 F1 / #190 F1）— 崩溃级联报告累积表（ProviderCrashCascade.Handle 每次填充一条）。用 List 累积而非覆盖，使单批多 Fiber 失败均能观测（§6 记录累积、供宿主轮询，不自动上抛/日志，不丢早期失败）。</summary>
     public ImmutableArray<CrashReport> CrashReports { get; private set; } = ImmutableArray<CrashReport>.Empty;
-    /// <summary>§6（reviewer #190 F1）— 最近一次崩溃报告（CrashReports 末条）便捷访问；保留 last 语义，使「异常上抛升级」可观测。</summary>
+    /// <summary>§6（reviewer #190 F1）— 最近一次崩溃报告（CrashReports 末条）便捷访问；保留 last 语义，供宿主轮询观测（运行时无头不自动上抛/日志）。</summary>
     public CrashReport? LastCrashReport => CrashReports.IsEmpty ? null : CrashReports[^1];
-    /// <summary>§3 step4（reviewer #190 F3）— 装载期检出的软环（降级 warning，不中止装载）；可观测出口，供调度器记录/上报（§10 软环不实落地问题）。</summary>
+    /// <summary>§3 step4（reviewer #190 F3）— 装载期检出的软环（降级 warning，不中止装载）；可观测出口，供调度器记录/上报（§10 软环不实落地问题）。运行时无头不自动上抛/日志，须由宿主轮询消费。</summary>
     public ImmutableArray<FiberId> SoftCycles { get; private set; } = ImmutableArray<FiberId>.Empty;
     /// <summary>§7（reviewer #190 F4）— provider 通知 dependent 进入 Suspending 时的钩子（Godot 壳据此禁用 ProcessMode）。集成缝合点，默认 null 无操作。</summary>
     public Action<Fiber>? OnSuspending { get; set; }
@@ -136,13 +136,13 @@ public sealed class PluginRuntime
         var ordered = batch.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
         foreach (var (providerId, task) in ordered)
         {
-            if (cyclic.Contains(providerId)) continue; // 跳过成环子集（§6：其余重入队）
+            if (cyclic.Contains(providerId)) { CrashReports = CrashReports.Add(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集未排空（环 {string.Join(" -> ", cycle.HardCycle)}），相关 fiber 永久滞留，须宿主/看门狗另行回收"), cycle.HardCycle)); continue; } // 环中子集在拓扑序下不可排空，故意跳过并记 CrashReport（非重入队），由宿主/看门狗另行回收（reviewer #187 / D-041 #4）
             try
             {
                 var diag = task(); // 逆回放（R4-6 部分释放诊断）
                 // §6（reviewer #188 F2）：回放部分失败（AllCompleted=false）即升级崩溃级联——不再被 ReplayAndDead 静默 MarkDead 掩盖。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项）")));
+                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）")));
             }
             catch (Exception ex) // 整任务抛异常（R4-6 外层）→ 升级到 ProviderCrashCascade.Handle（§6 reviewer #187）
             {
@@ -178,7 +178,7 @@ public sealed class PluginRuntime
                 var diag = task();
                 // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}）")));
+                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）")));
             }
             catch (Exception ex)
             {
