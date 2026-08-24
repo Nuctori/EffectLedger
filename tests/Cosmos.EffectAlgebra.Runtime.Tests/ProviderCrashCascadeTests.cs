@@ -73,6 +73,19 @@ public class ProviderCrashCascadeTests
     }
 
     [Fact]
+    public void DrainTeardownBatch_PartialReleaseMessageListsPendingResources() // R7 N1：崩溃升级消息须含 diag.Pending 资源列表（具象可定位，不丢具体 ResourceId）
+    {
+        var (rt, p, d) = Scenario(pCrashes: true, dCrashes: false); // p 的逆抛异常 ⇒ 部分释放，Pending 含 Memory(0)
+        rt.BeginTeardown(p);
+        rt.DrainTeardownBatch();
+
+        var report = rt.LastCrashReport;
+        Assert.NotNull(report);
+        Assert.NotNull(report!.Exception);
+        Assert.Contains("Memory", report.Exception.Message, StringComparison.Ordinal); // Pending 资源（Memory(0)）已进入升级消息，可定位
+    }
+
+    [Fact]
     public void Handle_CleanDead_NoException()
     {
         var (rt, p, d) = Scenario(pCrashes: false, dCrashes: false);
