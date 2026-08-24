@@ -42,7 +42,7 @@ public sealed class PluginRuntime
     /// <summary>§10（reviewer #193 #6）— 周期快照阈值告警：返回累积网绝对值超过 threshold 的【Active】Fiber（永久存活插件不退出，靠此告警泄漏盲点）。非 Active/TearingDown/Dead/Suspending 不计（已退出路径由 §6 正常回收）。空表⇒空数组。</summary>
     public ImmutableArray<FiberId> CheckPermanentFiberLeak(long threshold)
         => _fibers.Values
-            .Where(f => f.State == FiberState.Active && _netAccum.TryGetValue(f.Id, out var acc) && Math.Abs(acc) > threshold)
+            .Where(f => f.State == FiberState.Active && _netAccum.TryGetValue(f.Id, out var acc) && (acc > threshold || acc < -threshold)) // 不用 Math.Abs：避免累积达 long.MinValue 时 OverflowException（reviewer #194 low 边界）
             .Select(f => f.Id)
             .ToImmutableArray();
 
