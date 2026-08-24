@@ -46,7 +46,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     private static readonly DiagnosticDescriptor MissingReleaseForAcquire = new(
         id: "EAA0901",
         title: "疑似资源泄漏（DO-9 静态近似）",
-        messageFormat: "方法 '{0}' 调用了 acquire 类 API（{1}）但无对应 release-class 调用且未标 [EffectOverride]；运行期 Σnet 可能泄漏（§3.3.1 DO-9）。此为控制流近似，运行期 net 为权威。",
+        messageFormat: "方法 '{0}' 调用了 acquire 类 API（{1}）但无对应 release-class 调用且未标 [EffectOverride]。修复：(1) 补一个 release-class 调用（QueueFree/RemoveChild/Disconnect 等配对释放），或 (2) 若有意偏离守恒，标 [EffectOverride(\"证据\")]（reason 必填，CI 人工 approve）。运行期 Σnet 为权威判据（§3.3.1 DO-9）；此为控制流近似，可能漏报跨方法/跨对象配对。",
         category: "EffectAlgebra",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
@@ -98,8 +98,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             OverrideReasonRequired, AcceptDeviationRange);
 
     // §3.3.1 DO-9 / §14.3 A3 / §14.3 A4：以方法声明为分析单元（控制流近似：仅方法内调用可见性）。
-    private static string Canonical(string name) =>
-        name.ToLowerInvariant().Replace(".", "").Replace("_", "");
+    // §3.3.1 / §14.3 — 白名单键归一化单一真源（R2 #3）：统一走 L1 GodotApiWhitelist.Canonical，避免与 Generator 各写一份漂移。
+    private static string Canonical(string name) => GodotApiWhitelist.Canonical(name);
 
     public override void Initialize(AnalysisContext context)
     {

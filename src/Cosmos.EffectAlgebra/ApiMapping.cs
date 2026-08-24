@@ -53,6 +53,11 @@ public static class GodotApiWhitelist
 
     static ApiMapping M(string api, params Claim[] claims) => new(api, claims.ToImmutableArray());
 
+    /// <summary>§7 / §14.3 — 白名单键归一化单一真源：去 '.' 与 '_'、小写（与 L2/L3 的 Canonical 一致）。
+    /// 原 Analyzer/Generator 各自内联一份相同逻辑（R2 #3 词冲），集中于此避免漂移。</summary>
+    public static string Canonical(string name) =>
+        name.ToLowerInvariant().Replace(".", "").Replace("_", "");
+
     /// <summary>§7.1–§7.10 白名单（逐条对应 PDR 映射表）。</summary>
     public static ImmutableArray<ApiMapping> All { get; } = Build();
 
