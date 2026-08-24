@@ -185,8 +185,12 @@ public sealed class PluginRuntime
                 _graph.NotifyDependents(f);
                 foreach (var dep in _graph.DependentsOf(f.Id))
                 {
-                    if (_fibers.TryGetValue(dep, out var d)) OnSuspending?.Invoke(d); // §7 钩子：dependent 进入 Suspending
-                    if (_fibers.TryGetValue(dep, out var d2) && !d2.TeardownEnqueued) BeginTeardown(d2);
+                    // §7（reviewer #191 low）：OnSuspending 与 BeginTeardown 同用 !TeardownEnqueued 去重守卫（与 BeginTeardown 对称），避免对同一 dependent 重复触发 Suspending 通知。
+                    if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
+                    {
+                        OnSuspending?.Invoke(d);   // §7 钩子：dependent 进入 Suspending ⇒ Godot 壳禁用 ProcessMode
+                        BeginTeardown(d);
+                    }
                 }
             }
     }
