@@ -12,10 +12,10 @@ public sealed record NetClosureResult(
 /// Scope 仅分组，绝不跨 Fiber 求和（R4-7）。fail-closed：任一资源 ⊤ 或未记录 ⇒ 不闭合（交人工确认）。</summary>
 public static class NetBenefitClosure
 {
-    /// <summary>§5 — 对单 Fiber：NetTable.Compute(fiber.Effect, fiber.Scope) → 枚举资源 → IsConserved（含 0 即闭合）。</summary>
+    /// <summary>§5 — 对单 Fiber：NetTable.Compute(fiber.EffectiveSignature, fiber.Scope) → 枚举资源 → IsConserved（含 0 即闭合）。</summary>
     public static NetClosureResult Check(Fiber fiber)
     {
-        var net = NetTable.Compute(fiber.Effect, fiber.Scope); // 仅该 Fiber 自身 Scope，绝不跨 Fiber
+        var net = NetTable.Compute(fiber.EffectiveSignature, fiber.Scope); // 仅该 Fiber 自身 Scope，绝不跨 Fiber；有效签名折入逆 release 使闸门真实生效
         var violating = ImmutableArray.CreateBuilder<ResourceId>();
         foreach (var r in net.Resources)
             if (!net.IsConserved(r)) violating.Add(r); // 含 0 ⇒ 闭合；⊤/未记录 ⇒ 不闭合（fail-closed）

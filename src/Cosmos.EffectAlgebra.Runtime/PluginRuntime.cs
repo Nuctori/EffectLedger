@@ -8,8 +8,8 @@ public sealed class PluginRuntime
 {
     private readonly DependencyGraph _graph = new();
     private readonly Dictionary<FiberId, Fiber> _fibers = new();
-    // 队列元素携带 provider FiberId，便于按拓扑序排空（R2：dependent-first）。
-    private readonly List<(FiberId Provider, Action Task)> _teardownQueue = new();
+    // 队列元素携带 provider FiberId，便于按拓扑序排空（R2：dependent-first）。任务返回逆回放诊断，供崩溃级联升级（reviewer #188 F2）。
+    private readonly List<(FiberId Provider, Func<PartialReleaseDiagnosis> Task)> _teardownQueue = new();
 
     /// <summary>§6 — 依赖图（崩溃级联/拓扑排序查询用）。</summary>
     public DependencyGraph Graph => _graph;
@@ -49,6 +49,18 @@ public sealed class PluginRuntime
                 $"§6 装载期拒载硬环：{string.Join(" → ", cycle.HardCycle.Select(id => id.ToString()))} 构成硬依赖环（将导致 teardown 死锁）");
         foreach (var f in all) LoadValidation.ValidateForLoad(f, all); // R1+R5-6：运行时真正调用装载校验（含跨 Fiber 双重释放交叉判定）
         LoadValidation.VerifyNetClosure(all);                          // §5 blocker 2：per-Fiber net 闭合闸门接线生效
+        // §3 step2（reviewer #187 F4）：逆引用自动派生软边——若 fiber 的逆释放了某 provider 提供的资源（同 Scope），则 fiber 软依赖该 provider（R4-4 幂等通知）。
+        foreach (var f in all)
+            foreach (var inv in f.Inverses)
+            {
+                if (inv.Scope != f.Scope) continue; // 软边须同 Scope（跨 Scope 不构成同图依赖）
+                foreach (var other in all)
+                {
+                    if (other.Id == f.Id) continue;
+                    if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(other.Coeffect.Provides))
+                        _graph.AddSoftEdge(f, other); // 软依赖：teardown 不强制顺序（降级 warning），但参与 NotifyDependents 级联
+                }
+            }
         foreach (var f in all) f.Load();
     }
 
@@ -59,7 +71,7 @@ public sealed class PluginRuntime
         if (provider.TeardownEnqueued) return; // 防二次入队
         provider.Unload();                       // → TearingDown + 标志 enqueued
         _graph.NotifyDependents(provider);       // provider-first-notify → dependent Suspending（R4-4 幂等）
-        _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider)));
+        _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider))); // 返回诊断 ⇒ DrainTeardownBatch 按 AllCompleted 升级
         foreach (var dep in _graph.DependentsOf(provider.Id))
             if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
                 BeginTeardown(d);
@@ -81,8 +93,14 @@ public sealed class PluginRuntime
         foreach (var (providerId, task) in ordered)
         {
             if (cyclic.Contains(providerId)) continue; // 跳过成环子集（§6：其余重入队）
-            try { task(); }
-            catch (Exception ex) // §6（reviewer #187）：崩溃不再被 catch{} 吞掉——升级到 ProviderCrashCascade.Handle
+            try
+            {
+                var diag = task(); // 逆回放（R4-6 部分释放诊断）
+                // §6（reviewer #188 F2）：回放部分失败（AllCompleted=false）即升级崩溃级联——不再被 ReplayAndDead 静默 MarkDead 掩盖。
+                if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
+                    ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项）"));
+            }
+            catch (Exception ex) // 整任务抛异常（R4-6 外层）→ 升级到 ProviderCrashCascade.Handle（§6 reviewer #187）
             {
                 if (_fibers.TryGetValue(providerId, out var pf))
                     ProviderCrashCascade.Handle(this, pf, ex);
@@ -107,7 +125,21 @@ public sealed class PluginRuntime
         for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
         var ordered = _teardownQueue.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
         _teardownQueue.Clear();
-        foreach (var (_, task) in ordered) { try { task(); } catch { /* 同上 */ } }
+        // §3（reviewer #188 F5）：关闭路径崩溃也升级到 ProviderCrashCascade.Handle，不再静默 catch{} 吞掉（与 DrainTeardownBatch 一致）。
+        foreach (var (providerId, task) in ordered)
+        {
+            try
+            {
+                var diag = task();
+                if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
+                    ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}）"));
+            }
+            catch (Exception ex)
+            {
+                if (_fibers.TryGetValue(providerId, out var pf))
+                    ProviderCrashCascade.Handle(this, pf, ex);
+            }
+        }
     }
 
     public IReadOnlyCollection<Fiber> Fibers => _fibers.Values.ToImmutableArray();
@@ -115,12 +147,16 @@ public sealed class PluginRuntime
     /// <summary>§7 medium #4 — 仅 Active 派发门控：Fiber 处于 Active 态才允许派发（Godot 壳调度器据此 gate，避免 Suspending/TearingDown 态误派发）。</summary>
     public static bool ShouldDispatch(Fiber fiber) => fiber.State == FiberState.Active;
 
-    /// <summary>§2 R4-9（reviewer #187 F5）— 看门狗帧时钟驱动：调度器每帧调用，对超时未达 Dead 的 Active/Suspending Fiber 强制 TearingDown（兜底回收）。
+    /// <summary>§2 R4-9（reviewer #187 F5 / #188 F-Tick）— 看门狗帧时钟驱动：调度器每帧调用，对超时未达 Dead 的 Active/Suspending Fiber 强制 TearingDown 并【入队逆回放任务】（兜底回收须真正执行 InverseReplay.ReplayAndDead，否则资源永不释放）。
     /// 纯逻辑层；真实帧时钟由 Godot 壳 _Process 驱动（deferred）。</summary>
     public void TickWatchdog(Func<Fiber, bool> isTimedOut)
     {
         foreach (var f in _fibers.Values)
-            if (isTimedOut(f)) f.ForceTeardownOnWatchdog();
+            if (isTimedOut(f))
+            {
+                f.ForceTeardownOnWatchdog();                         // Active/Suspending → TearingDown
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 入队逆回放 ⇒ DrainTeardownBatch 真正回收资源
+            }
     }
 }
 

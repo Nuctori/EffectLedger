@@ -12,6 +12,10 @@ public class PluginRuntimeTests
     {
         var stack = ImmutableStack<InverseClaim>.Empty;
         foreach (var (r, a) in inv) stack = stack.Push(new InverseClaim(r, new ScopeId.Shell(), a));
+        // §5（reviewer #188 F1）：若未显式声明释放 Provides 的逆，默认追加「释放 Provides」逆，使 Fiber 生命周期闭合（提供即释放），闸门不会误拒。
+        bool hasReleaseForProvides = inv.Any(e => ResourceId.Normalize(e.Item1) == ResourceId.Normalize(provides));
+        if (!hasReleaseForProvides)
+            stack = stack.Push(new InverseClaim(provides, new ScopeId.Shell(), () => { }));
         return new FiberSpec(new FiberId(id), Signature.Empty,
             new Coeffect(requires, provides, new ScopeId.Shell()), stack);
     }
@@ -188,5 +192,61 @@ public class PluginRuntimeTests
         Assert.Equal(FiberState.Active, f.State);
         rt.TickWatchdog(fib => fib.State == FiberState.Active); // 超时 ⇒ 强制 TearingDown
         Assert.Equal(FiberState.TearingDown, f.State);
+    }
+
+    [Fact]
+    public void TickWatchdog_EnqueuesReplayTask_ReclaimsResource() // reviewer #188 F-Tick：看门狗强制态后须真正入队逆回放，否则资源永不回收
+    {
+        bool released = false;
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => released = true)));
+        rt.LoadAll(); // Active
+        rt.TickWatchdog(fib => fib.State == FiberState.Active); // 超时 ⇒ TearingDown + 入队
+        Assert.Equal(FiberState.TearingDown, f.State);
+        rt.DrainTeardownBatch(); // 排空看门狗入队的逆回放任务
+        Assert.True(released);   // 逆回放真执行 ⇒ 资源回收
+        Assert.Equal(FiberState.Dead, f.State);
+    }
+
+    [Fact]
+    public void DrainTeardownBatch_PartialReleaseEscalatesViaProviderCrashCascade() // reviewer #188 F2：部分逆释放失败（AllCompleted=false）升级 Handle
+    {
+        var rt = new PluginRuntime();
+        bool notified = false;
+        // p 提供 Memory(0)（默认自动释放逆）与 Memory(1)；其中释放 Memory(1) 的逆抛异常 ⇒ 部分失败。
+        var p = rt.Register(Spec("p", new ResourceId.Memory(1), new ResourceId.Memory(0),
+            (new ResourceId.Memory(1), () => { }),                    // 成功释放 Memory(1)
+            (new ResourceId.Memory(1), () => throw new InvalidOperationException("partial")))); // 失败：同资源二次逆抛异常 ⇒ 部分释放
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0),
+            (new ResourceId.Gpu(new Rid("a")), () => notified = true)));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+        rt.BeginTeardown(p); // 级联入队 p（部分失败）+ d
+        rt.DrainTeardownBatch();
+        // p 部分释放失败 ⇒ Handle 升级：p 标记 Dead（fail-open）+ 依赖者 d 经级联完全 teardown。
+        Assert.Equal(FiberState.Dead, p.State);       // 升级后 Handle 标记 Dead（不再静默 MarkDead 掩盖部分失败）
+        Assert.True(notified);                          // d 的逆回放仍执行（崩溃级联兜底）
+        Assert.Equal(FiberState.Dead, d.State);         // 依赖者经级联完全 teardown
+    }
+
+    [Fact]
+    public void LoadAll_AutoDerivesSoftEdge_FromInverseToProviderResource() // reviewer #187 F4：逆引用自动派生软边，使 NotifyDependents 通知到软依赖者
+    {
+        var rt = new PluginRuntime();
+        // p 提供 Memory(0)；d 不显式 AddDependency，但其逆释放 Memory(0)（同 Scope）⇒ 软依赖 p。
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        // d 提供 Gpu(a)（自有释放 ⇒ 闭合）+ 借用 p 的 Memory(0)（跨 Fiber 逆释放须标注 R5-6 release-class 标签）。
+        var dSpec = new FiberSpec(new FiberId("d"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Gpu(new Rid("a")), new ScopeId.Shell()),
+            ImmutableStack<InverseClaim>.Empty
+                .Push(new InverseClaim(new ResourceId.Gpu(new Rid("a")), new ScopeId.Shell(), () => { }))           // 自有释放 ⇒ §5 闭合
+                .Push(new InverseClaim(new ResourceId.Memory(0), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free")))); // 跨 Fiber 逆释放 p 的 Memory(0)，标注标签
+        var d = rt.Register(dSpec);
+        rt.LoadAll(); // 自动派生软边 d→p
+        // 软边存在于图中 ⇒ NotifyDependents(p) 通知到 d。
+        Assert.Contains(d.Id, rt.Graph.DependentsOf(p.Id).ToArray());
+        rt.BeginTeardown(p); // provider 级联通知 + 递归 teardown（含软依赖）⇒ d 推进至 TearingDown
+        Assert.Equal(FiberState.TearingDown, d.State);
     }
 }

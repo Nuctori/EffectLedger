@@ -65,6 +65,17 @@ public class InverseReplayTests
     }
 
     [Fact]
+    public void Replay_Throws_WhenNotTearingDown() // reviewer #188 F3：逆回放前置 TearingDown，禁止对 Active/Suspending 回放
+    {
+        var f = new Fiber(new FiberId("x"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), new ScopeId.Shell()),
+            ImmutableStack<InverseClaim>.Empty.Push(new InverseClaim(new ResourceId.Memory(0), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free"))));
+        f.Load(); // → Active
+        Assert.Equal(FiberState.Active, f.State);
+        Assert.Throws<InvalidOperationException>(() => InverseReplay.ReplayAndDead(f)); // 非 TearingDown ⇒ 抛
+    }
+
+    [Fact]
     public void Replay_EmptyStack_NoOp_StillDead()
     {
         var f = FiberWithInverses();

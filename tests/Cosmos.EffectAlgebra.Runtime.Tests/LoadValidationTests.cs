@@ -128,16 +128,24 @@ public class LoadValidationTests
     }
 
     [Fact]
-    public void VerifyNetClosure_Pass_WhenFiberConserved()
+    public void VerifyNetClosure_Pass_WhenInverseReleasesProvidedResource() // reviewer #188 F1：真实装载语义——提供 R 且有逆释放 R ⇒ net 0 ⇒ 闸门放通
     {
-        // 闭合纤维：提供 Memory(0)（Occupy/Create）+ 对应释放（Occupy/Release）⇒ net 含 0 ⇒ 闸门不抛。
         var shell = new ScopeId.Shell();
-        var s = Signature.Of(
-            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Create, shell, Interval.Default),
-            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Release, shell, Interval.Default));
-        var f = new Fiber(new FiberId("x"), s,
+        // 有效签名 = Effect ∪ create(Memory0) ∪ release(Memory0) ⇒ net 0 ⇒ 闭合。
+        var inv = ImmutableStack<InverseClaim>.Empty.Push(Inv(new ResourceId.Memory(0), shell, "queue_free"));
+        var f = new Fiber(new FiberId("x"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), inv);
+        LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ §5 闸门对真实装载生效
+    }
+
+    [Fact]
+    public void VerifyNetClosure_Throws_WhenProvidedResourceNeverReleased() // reviewer #188 F1：提供 R 但无逆释放 R ⇒ 泄漏 ⇒ 闸门拦截
+    {
+        var shell = new ScopeId.Shell();
+        // 有效签名 = create(Memory0) 但无 release ⇒ net 正（泄漏）⇒ 闸门抛 LoadValidationException。
+        var f = new Fiber(new FiberId("x"), Signature.Empty,
             new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
-        LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ §5 闸门接线生效
+        Assert.Throws<LoadValidationException>(() => LoadValidation.VerifyNetClosure(new[] { f }));
     }
 
     [Fact]

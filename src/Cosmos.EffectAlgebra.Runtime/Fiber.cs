@@ -42,6 +42,24 @@ public sealed class Fiber
     public ImmutableHashSet<FiberId> Dependents { get; internal set; } = ImmutableHashSet<FiberId>.Empty;
     public bool TeardownEnqueued { get; internal set; }
 
+    /// <summary>§5（reviewer #188 F1）— 装载期有效签名：Effect ∪ create(Provides) ∪ 「释放自身 Provides」的逆 release。
+    /// 仅折入释放【自身 Provides】的逆：跨 Fiber 借用资源的逆（释放他人 Provides）不计入自身生命周期 net，由提供方 net 守恒（R4-7 Scope 仅分组、绝不跨 Fiber 求和）。
+    /// 折入逆声明使 §5 net 闭合闸门对真实装载生效（否则 Effect 恒 Empty、闸门恒真不拦截泄漏）。</summary>
+    public Signature EffectiveSignature
+    {
+        get
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(Kind.Occupy, Coeffect.Provides, Mode.Create, Coeffect.Scope, null),
+            };
+            foreach (var inv in Inverses)
+                if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(Coeffect.Provides))
+                    claims.Add(new Claim(Kind.Occupy, inv.Resource, Mode.Release, inv.Scope, null));
+            return Signature.Union(Effect, Signature.Of(claims.ToArray()));
+        }
+    }
+
     public Fiber(FiberId id, Signature effect, Coeffect coeffect, ImmutableStack<InverseClaim> inverses)
     {
         Id = id;

@@ -47,12 +47,13 @@ public class NetBenefitClosureTests
         var scope = new ScopeId.Shell();
         var ra = new ResourceId.Memory(1);
         var rb = new ResourceId.Memory(2);
-        var fa = FiberWithSignature(Signature.Of(
-            new Claim(Kind.Occupy, ra, Mode.Create, scope, Interval.Exact(1)),
-            new Claim(Kind.Occupy, ra, Mode.Release, scope, Interval.Exact(1))), scope);
-        var fb = FiberWithSignature(Signature.Of(
-            new Claim(Kind.Occupy, rb, Mode.Create, scope, Interval.Exact(2)),
-            new Claim(Kind.Occupy, rb, Mode.Release, scope, Interval.Exact(2))), scope);
+        // Provides == 各 Fiber 创建的资源（EffectiveSignature 折入 create(Provides, null)）；Effect 仅放 release(null)（与 Provides create 同尺度 ⇒ 净含 0 ⇒ 真正闭合）。
+        var fa = new Fiber(new FiberId("fa"),
+            Signature.Of(new Claim(Kind.Occupy, ra, Mode.Release, scope, null)),
+            new Coeffect(ra, ra, scope), ImmutableStack<InverseClaim>.Empty);
+        var fb = new Fiber(new FiberId("fb"),
+            Signature.Of(new Claim(Kind.Occupy, rb, Mode.Release, scope, null)),
+            new Coeffect(rb, rb, scope), ImmutableStack<InverseClaim>.Empty);
         var res = NetBenefitClosure.CheckAll(new[] { fa, fb });
         Assert.True(res.Conserved); // 各自闭合，未汇总
     }

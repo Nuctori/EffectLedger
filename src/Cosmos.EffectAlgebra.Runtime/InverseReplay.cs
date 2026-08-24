@@ -16,6 +16,9 @@ public static class InverseReplay
     /// <summary>§4 — LIFO 回放 Inverses 栈；栈中任一 Action 抛异常 → 记录部分释放诊断并尽量继续剩余逆（R4-6），最终标记 Dead。</summary>
     public static PartialReleaseDiagnosis ReplayAndDead(Fiber fiber)
     {
+        // reviewer #188 F3：逆回放前置于 TearingDown（设计假设「仅 TearingDown 态回放」；否则对 Active 纤程回放会遗贸 Active 且 MarkDead 成 no-op）。
+        if (fiber.State != FiberState.TearingDown)
+            throw new InvalidOperationException($"逆回放须于 TearingDown 态进行（当前 {fiber.State}）；禁止对 Active/Suspending 纤程回放");
         var completed = ImmutableArray.CreateBuilder<ResourceId>();
         var pending = ImmutableArray.CreateBuilder<ResourceId>();
         int failedIndex = -1;
