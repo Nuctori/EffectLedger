@@ -246,7 +246,38 @@ public class PluginRuntimeTests
         rt.LoadAll(); // 自动派生软边 d→p
         // 软边存在于图中 ⇒ NotifyDependents(p) 通知到 d。
         Assert.Contains(d.Id, rt.Graph.DependentsOf(p.Id).ToArray());
+        // reviewer #189 F3：自动派生的软边须回填 provider.Dependents（供 Godot 壳 ProcessMode 级联遍历）。
+        Assert.Contains(d.Id, p.Dependents);
         rt.BeginTeardown(p); // provider 级联通知 + 递归 teardown（含软依赖）⇒ d 推进至 TearingDown
         Assert.Equal(FiberState.TearingDown, d.State);
+    }
+
+    [Fact]
+    public void DrainTeardownBatch_PartialRelease_PopulatesLastCrashReport() // reviewer #189 F1：崩溃升级须可观测（LastCrashReport），否则升级路径不可证伪
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(1), new ResourceId.Memory(0),
+            (new ResourceId.Memory(1), () => { }),
+            (new ResourceId.Memory(1), () => throw new InvalidOperationException("partial"))));
+        rt.LoadAll();
+        rt.BeginTeardown(p);
+        rt.DrainTeardownBatch();
+        Assert.NotNull(rt.LastCrashReport);                 // 升级确有消费方（可观测）
+        Assert.Equal(p.Id, rt.LastCrashReport!.Provider);    // 记录崩溃 provider
+        Assert.NotNull(rt.LastCrashReport!.Exception);       // 异常随级联上抛
+    }
+
+    [Fact]
+    public void TickWatchdog_CascadesDependentsOfTimedOutProvider() // reviewer #189 F2：看门狗对超时 provider 须级联依赖者，否则依赖者仍 Active 派发/永不回收
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll(); // p, d 均 Active
+        // 仅 p 超时（provider）
+        rt.TickWatchdog(fib => fib.Id == p.Id);
+        Assert.Equal(FiberState.TearingDown, p.State);    // provider 被强制回收
+        Assert.Equal(FiberState.TearingDown, d.State);    // 依赖者经看门狗级联推进（不再滞留 Active）
     }
 }

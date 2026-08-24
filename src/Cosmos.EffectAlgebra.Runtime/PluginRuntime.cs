@@ -20,6 +20,9 @@ public sealed class PluginRuntime
     /// <summary>§6 R5-7 — 关闭路径标志：关路径 RecomputeTopology 硬拒绝（非关路径延迟执行）。测试可置位以模拟关闭路径。</summary>
     public bool IsShuttingDown { get; set; }
 
+    /// <summary>§6（reviewer #189 F1）— 最近一次崩溃级联报告（ProviderCrashCascade.Handle 填充）。使「异常上抛升级」可观测、可证伪，而非返回即丢弃。</summary>
+    public CrashReport? LastCrashReport { get; private set; }
+
     /// <summary>§3 — 注册 Fiber（装载期）。返回 Fiber 供后续 Load/Unload。</summary>
     public Fiber Register(FiberSpec spec)
     {
@@ -58,7 +61,10 @@ public sealed class PluginRuntime
                 {
                     if (other.Id == f.Id) continue;
                     if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(other.Coeffect.Provides))
-                        _graph.AddSoftEdge(f, other); // 软依赖：teardown 不强制顺序（降级 warning），但参与 NotifyDependents 级联
+                    {
+                        _graph.AddSoftEdge(f, other);           // 软依赖：teardown 不强制顺序（降级 warning），但参与 NotifyDependents 级联
+                        other.Dependents = other.Dependents.Add(f.Id); // 回填依赖者集合（与 AddDependency 一致，供 Godot 壳 ProcessMode 级联遍历）
+                    }
                 }
             }
         foreach (var f in all) f.Load();
@@ -98,12 +104,12 @@ public sealed class PluginRuntime
                 var diag = task(); // 逆回放（R4-6 部分释放诊断）
                 // §6（reviewer #188 F2）：回放部分失败（AllCompleted=false）即升级崩溃级联——不再被 ReplayAndDead 静默 MarkDead 掩盖。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项）"));
+                    LastCrashReport = ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项）"));
             }
             catch (Exception ex) // 整任务抛异常（R4-6 外层）→ 升级到 ProviderCrashCascade.Handle（§6 reviewer #187）
             {
                 if (_fibers.TryGetValue(providerId, out var pf))
-                    ProviderCrashCascade.Handle(this, pf, ex);
+                    LastCrashReport = ProviderCrashCascade.Handle(this, pf, ex);
             }
         }
     }
@@ -131,13 +137,14 @@ public sealed class PluginRuntime
             try
             {
                 var diag = task();
+                // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}）"));
+                    LastCrashReport = ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}）"));
             }
             catch (Exception ex)
             {
                 if (_fibers.TryGetValue(providerId, out var pf))
-                    ProviderCrashCascade.Handle(this, pf, ex);
+                    LastCrashReport = ProviderCrashCascade.Handle(this, pf, ex);
             }
         }
     }
@@ -147,7 +154,7 @@ public sealed class PluginRuntime
     /// <summary>§7 medium #4 — 仅 Active 派发门控：Fiber 处于 Active 态才允许派发（Godot 壳调度器据此 gate，避免 Suspending/TearingDown 态误派发）。</summary>
     public static bool ShouldDispatch(Fiber fiber) => fiber.State == FiberState.Active;
 
-    /// <summary>§2 R4-9（reviewer #187 F5 / #188 F-Tick）— 看门狗帧时钟驱动：调度器每帧调用，对超时未达 Dead 的 Active/Suspending Fiber 强制 TearingDown 并【入队逆回放任务】（兜底回收须真正执行 InverseReplay.ReplayAndDead，否则资源永不释放）。
+    /// <summary>§2 R4-9（reviewer #187 F5 / #188 F-Tick / #189 F2）— 看门狗帧时钟驱动：调度器每帧调用，对超时未达 Dead 的 Active/Suspending Fiber 强制 TearingDown 并【入队逆回放任务】+（若为 provider）通知依赖者并递归 BeginTeardown（兜底回收须真正执行 InverseReplay.ReplayAndDead 且级联，否则依赖者仍 Active 派发/永不回收）。
     /// 纯逻辑层；真实帧时钟由 Godot 壳 _Process 驱动（deferred）。</summary>
     public void TickWatchdog(Func<Fiber, bool> isTimedOut)
     {
@@ -156,6 +163,11 @@ public sealed class PluginRuntime
             {
                 f.ForceTeardownOnWatchdog();                         // Active/Suspending → TearingDown
                 _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 入队逆回放 ⇒ DrainTeardownBatch 真正回收资源
+                // §6（reviewer #189 F2）：超时 provider 须级联依赖者——否则依赖者仍 Active 派发且永不 teardown（use-after-free/泄漏）。
+                _graph.NotifyDependents(f);
+                foreach (var dep in _graph.DependentsOf(f.Id))
+                    if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
+                        BeginTeardown(d);
             }
     }
 }

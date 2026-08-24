@@ -149,6 +149,19 @@ public class LoadValidationTests
     }
 
     [Fact]
+    public void VerifyNetClosure_Pass_WhenEffectAlreadyCreatesProvidedResource() // reviewer #189 F4：Effect 已含 create(Provides) 时不重复折入，避免 fail-closed 过度拒绝
+    {
+        var shell = new ScopeId.Shell();
+        // Effect 已声明 create(Memory0) + release(Memory0)（净 0）；EffectiveSignature 不应再折入第二份 create(Provides=Memory0)。
+        var s = Signature.Of(
+            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Create, shell, null),
+            new Claim(Kind.Occupy, new ResourceId.Memory(0), Mode.Release, shell, null));
+        var f = new Fiber(new FiberId("x"), s,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), shell), ImmutableStack<InverseClaim>.Empty);
+        LoadValidation.VerifyNetClosure(new[] { f }); // 不抛 ⇒ 未重复折入导致过度拒绝
+    }
+
+    [Fact]
     public void ValidateDoubleRelease_Pass_WhenInverseReleasesOwnProvidedResource() // reviewer #187 F2：释放自身提供的资源是合法逆，不误判双重释放
     {
         var shell = new ScopeId.Shell();
