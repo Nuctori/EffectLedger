@@ -193,4 +193,26 @@ public sealed class Signature
 
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
+
+    // §3.1.4a(R4 P1) — Signature 看似值实则为引用相等（class 无结构相等），是 Hickey 式 footgun：
+    // 两个结构相同的签名不会 == / 不会哈希相等。补结构相等使「值」语义与外观一致（不改任何代数语义）。
+    public bool Equals(Signature? other) =>
+        other is not null && _read.SetEquals(other._read) && _write.SetEquals(other._write) && _occupy.SetEquals(other._occupy);
+
+    public override bool Equals(object? obj) => Equals(obj as Signature);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var h = 0;
+            foreach (var c in _read) h = (h * 31) ^ c.GetHashCode();
+            foreach (var c in _write) h = (h * 31) ^ c.GetHashCode();
+            foreach (var c in _occupy) h = (h * 31) ^ c.GetHashCode();
+            return h;
+        }
+    }
+
+    public static bool operator ==(Signature? a, Signature? b) => Equals(a, b);
+    public static bool operator !=(Signature? a, Signature? b) => !Equals(a, b);
 }

@@ -156,4 +156,30 @@ public class BucketIsolationTests
         var net = NetTable.Compute(onlyRead, scope);
         Assert.False(net.IsConserved(res)); // 无净占用记录 ⇒ 未闭合，交人工确认
     }
+
+    // §3.1.4a(R4 P1) — Signature 结构相等：看似值、构造方式不同但桶内容相同 ⇒ == / GetHashCode 一致。
+    // 补结构相等前，Signature 是 class 引用相等，两结构相同签名不会 ==（Hickey 式 footgun）。
+    [Fact]
+    public void Signature_StructuralEquality() // §3.1.4a / R4 P1
+    {
+        var res = new ResourceId.Tree(NodePathOrUnknown.Of("x"));
+        var scope = new ScopeId.Global();
+        var a = Signature.Of(
+            new Claim(Kind.Read, res, Mode.Use, scope, Interval.Default),
+            new Claim(Kind.Occupy, res, Mode.Create, scope, Interval.Exact(5)));
+        // 构造顺序不同、经 Union 合并，但桶内容完全相同 ⇒ 应结构相等。
+        var b = Signature.Union(
+            Signature.Of(new Claim(Kind.Occupy, res, Mode.Create, scope, Interval.Exact(5))),
+            Signature.Of(new Claim(Kind.Read, res, Mode.Use, scope, Interval.Default)));
+
+        Assert.Equal(a, b);              // Equals(object)
+        Assert.True(a == b);             // operator ==
+        Assert.False(a != b);            // operator !=
+        Assert.Equal(a.GetHashCode(), b.GetHashCode()); // 哈希一致（放入 HashSet/Dictionary 键安全）
+
+        // 内容不同 ⇒ 不相等（反向）。
+        var c = Signature.Of(new Claim(Kind.Occupy, res, Mode.Create, scope, Interval.Exact(7)));
+        Assert.NotEqual(a, c);
+        Assert.True(a != c);
+    }
 }
