@@ -280,4 +280,99 @@ public class PluginRuntimeTests
         Assert.Equal(FiberState.TearingDown, p.State);    // provider 被强制回收
         Assert.Equal(FiberState.TearingDown, d.State);    // 依赖者经看门狗级联推进（不再滞留 Active）
     }
+
+    [Fact]
+    public void DrainTeardownBatch_AccumulatesCrashReports_NotOverwrite() // reviewer #190 F1：单批多 Fiber 失败须累积，不丢早期失败
+    {
+        var rt = new PluginRuntime();
+        var p1 = rt.Register(Spec("p1", new ResourceId.Memory(1), new ResourceId.Memory(0),
+            (new ResourceId.Memory(1), () => throw new InvalidOperationException("boom1"))));
+        var p2 = rt.Register(Spec("p2", new ResourceId.Memory(2), new ResourceId.Memory(0),
+            (new ResourceId.Memory(2), () => throw new InvalidOperationException("boom2"))));
+        rt.LoadAll();
+        rt.BeginTeardown(p1);
+        rt.BeginTeardown(p2);
+        rt.DrainTeardownBatch();
+        Assert.Equal(2, rt.CrashReports.Length);            // 两条崩溃均保留（累积而非覆盖）
+        Assert.NotNull(rt.LastCrashReport);                 // 仍可取末条
+    }
+
+    [Fact]
+    public void SynchronousExitDrain_PartialRelease_PopulatesCrashReport() // reviewer #190 F2/F3：退出路径崩溃须可观测（与 DrainTeardownBatch 一致）
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(1), new ResourceId.Memory(0),
+            (new ResourceId.Memory(1), () => { }),
+            (new ResourceId.Memory(1), () => throw new InvalidOperationException("partial"))));
+        rt.LoadAll();
+        rt.BeginTeardown(p);
+        rt.SynchronousExitDrain();                          // 关闭路径排空
+        Assert.NotNull(rt.LastCrashReport);                 // 退出路径也填充崩溃报告
+        Assert.Single(rt.CrashReports);                     // 退出路径崩溃被记录（xUnit2013 合规）
+    }
+
+    [Fact]
+    public void LoadAll_RecordsSoftCycle_WhenSoftCyclePresent() // reviewer #190 F3：软环降级 warning 须可观测（不实落地）
+    {
+        var rt = new PluginRuntime();
+        // a 提供 Memory(0)（自有释放 Memory(0) ⇒ §5 自闭合）+ 逆释放 Memory(1)（b 的 Provides ⇒ 软边 a→b）；
+        // b 提供 Memory(1)（自有释放 Memory(1) ⇒ §5 自闭合）+ 逆释放 Memory(0)（a 的 Provides ⇒ 软边 b→a）；
+        // ⇒ a⇄b 软环（各自额外逆释放对方提供物，同 Scope），且各自 §5 守恒不因跨 Fiber 逆释放被误拒。
+        var aSpec = new FiberSpec(new FiberId("a"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(0), new ResourceId.Memory(0), new ScopeId.Shell()),
+            ImmutableStack<InverseClaim>.Empty
+                .Push(new InverseClaim(new ResourceId.Memory(1), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free"))) // 逆释放 b 的 Provides ⇒ 软边 a→b
+                .Push(new InverseClaim(new ResourceId.Memory(0), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free")))); // 自有释放 ⇒ §5 闭合
+        var bSpec = new FiberSpec(new FiberId("b"), Signature.Empty,
+            new Coeffect(new ResourceId.Memory(1), new ResourceId.Memory(1), new ScopeId.Shell()),
+            ImmutableStack<InverseClaim>.Empty
+                .Push(new InverseClaim(new ResourceId.Memory(0), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free"))) // 逆释放 a 的 Provides ⇒ 软边 b→a
+                .Push(new InverseClaim(new ResourceId.Memory(1), new ScopeId.Shell(), () => { }, ImmutableHashSet.Create("queue_free")))); // 自有释放 ⇒ §5 闭合
+        rt.Register(aSpec);
+        rt.Register(bSpec);
+        rt.LoadAll();                                        // 软环不中止装载（仅硬环拒载）
+        Assert.True(rt.SoftCycles.Length >= 2);             // 软环被记录（可观测出口）
+    }
+
+    [Fact]
+    public void BeginTeardown_InvokesOnSuspending_ForDependents() // reviewer #190 F4：§7 集成缝合点——dependent 进入 Suspending 触发钩子
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        var suspended = new System.Collections.Generic.List<FiberId>();
+        rt.OnSuspending = fib => suspended.Add(fib.Id);     // Godot 壳据此禁用 ProcessMode
+        rt.LoadAll();
+        rt.BeginTeardown(p);
+        Assert.Contains(d.Id, suspended);                   // dependent 进入 Suspending ⇒ 钩子触发
+    }
+
+    [Fact]
+    public void Register_Rejects_WhenProviderTearingDown() // reviewer #190 #2：级联进行中禁止新装载（避免挂上正在拆除的 provider）
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        rt.LoadAll();
+        rt.BeginTeardown(p);                                 // p → TearingDown（级联进行中）
+        Assert.Throws<InvalidOperationException>(() => rt.Register(Spec("late", new ResourceId.Gpu(new Rid("z")), new ResourceId.Memory(0))));
+    }
+
+    [Fact]
+    public void TickWatchdog_DoesNotReEnqueue_DeadFiber() // reviewer #190 #1：已 Dead 的超时 fiber 不重复入队（避免二次回放误填 LastCrashReport）
+    {
+        var rt = new PluginRuntime();
+        bool released = false;
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => released = true)));
+        rt.LoadAll();
+        rt.TickWatchdog(fib => fib.State == FiberState.Active); // 第一帧：超时⇒TearingDown+入队
+        rt.DrainTeardownBatch();                            // 排空⇒Dead
+        Assert.Equal(FiberState.Dead, f.State);
+        var before = rt.CrashReports.Length;
+        rt.TickWatchdog(fib => true);                       // 第二帧：isTimedOut 恒 true，但 f 已 Dead ⇒ 不重复入队
+        rt.DrainTeardownBatch();
+        Assert.Equal(before, rt.CrashReports.Length);       // 无新增崩溃报告（未二次回放）
+        Assert.True(released);
+    }
 }
