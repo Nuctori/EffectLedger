@@ -21,6 +21,7 @@ public sealed class GodotShell
     public void Defer(Action action, object? handle)
     {
         if (action == null) return;
+        if (_exitDraining) return; // §3 R4-1：退出期（_ExitTree 触发 FlushExitDrain 已置 _exitDraining）禁止新 Defer，避免退出序结束后的 use-after-free；_exitDraining 在退出路径持续为真（节点释放不可逆），flush 后新 Defer 仍丢弃
         if (!_deferred.Add(action)) return; // 幂等：已 enqueue 则跳过
         _host.Defer(() =>
         {
