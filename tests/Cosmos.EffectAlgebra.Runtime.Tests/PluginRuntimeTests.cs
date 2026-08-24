@@ -375,4 +375,66 @@ public class PluginRuntimeTests
         Assert.Equal(before, rt.CrashReports.Length);       // 无新增崩溃报告（未二次回放）
         Assert.True(released);
     }
+
+    [Fact]
+    public void AttachShell_WiresOnSuspendingToProcessModeCascade() // reviewer #191 F1：§7 集成缝合——provider teardown 经壳禁用 dependent 子树 ProcessMode
+    {
+        var host = new FakeHost();
+        var shell = new GodotShell(host);
+        var rt = new PluginRuntime();
+        rt.AttachShell(shell);                               // 接线：OnSuspending ⇒ shell.CascadeProcessModeDisabled
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+        rt.BeginTeardown(p);                                 // p teardown ⇒ d 进入 Suspending ⇒ 壳禁用 d 子树派发
+        Assert.Contains(host.ProcessModes, pm => pm.Id == d.Id && pm.Disabled); // §7 ProcessMode 级联真实贯通（非孤岛）
+    }
+
+    [Fact]
+    public void AttachShell_WiresExitDrainToShell() // reviewer #191 F2：关闭路径排空经壳触发运行时同步排空（双轨贯通）
+    {
+        var host = new FakeHost();
+        var shell = new GodotShell(host);
+        var rt = new PluginRuntime();
+        rt.AttachShell(shell);                               // 接线：SynchronousExitDrain ⇒ shell 退出 drain
+        bool released = false;
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => released = true)));
+        rt.LoadAll();
+        rt.BeginTeardown(f);
+        shell.FlushExitDrain();                             // 宿主 _ExitTree 触发壳 flush ⇒ 运行时 SynchronousExitDrain 被驱动
+        Assert.True(released);                              // 运行时退出排空经壳真执行（双轨缝合，非孤岛）
+    }
+
+    [Fact]
+    public void ResetDiagnostics_ClearsCrashReportsAndSoftCycles() // reviewer #191 F3：累积诊断可清空，避免跨批次无界增长/泄漏观测
+    {
+        var rt = new PluginRuntime();
+        var p = rt.Register(Spec("p", new ResourceId.Memory(1), new ResourceId.Memory(0),
+            (new ResourceId.Memory(1), () => throw new InvalidOperationException("boom"))));
+        rt.LoadAll();
+        rt.BeginTeardown(p);
+        rt.DrainTeardownBatch();
+        Assert.True(rt.CrashReports.Length > 0);            // 先有崩溃记录
+        rt.ResetDiagnostics();
+        Assert.Empty(rt.CrashReports);                      // 清空
+        Assert.Empty(rt.SoftCycles);
+    }
+
+    [Fact]
+    public void SynchronousExitDrain_ResetsShuttingDown() // reviewer #191 F5：排空完毕复位 IsShuttingDown，允许实例复用（场景重载）
+    {
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => { })));
+        rt.LoadAll();
+        rt.BeginTeardown(f);
+        rt.SynchronousExitDrain();
+        Assert.False(rt.IsShuttingDown);                    // 排空后复位
+        Assert.Equal(FiberState.Dead, f.State);
+        // 复位后复用例证：可再次 Register（不抛 IsShuttingDown 异常）
+        var g = rt.Register(Spec("q", new ResourceId.Gpu(new Rid("z")), new ResourceId.Memory(0)));
+        Assert.Equal(FiberState.Inactive, g.State);
+    }
 }

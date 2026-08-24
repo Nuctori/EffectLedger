@@ -94,7 +94,8 @@ public sealed class PluginRuntime
         {
             if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
             {
-                OnSuspending?.Invoke(d);          // §7（reviewer #190 F4）：dependent 进入 Suspending ⇒ Godot 壳禁用 ProcessMode（集成缝合）
+                // §7（reviewer #190 F4 / #191 F4）：dependent 进入 Suspending ⇒ Godot 壳禁用 ProcessMode（集成缝合）；钩子异常须隔离，避免中断后续依赖者级联（与 teardown 任务 try/catch 一致）。
+                try { OnSuspending?.Invoke(d); } catch { /* 钩子异常隔离：不阻断级联 */ }
                 BeginTeardown(d);
             }
         }
@@ -164,6 +165,21 @@ public sealed class PluginRuntime
                     CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, ex));
             }
         }
+        IsShuttingDown = false; // §3（reviewer #191 F5）：排空完毕复位，允许实例复用（场景重载）后正常 Register/RecomputeTopology；关路径仅限本次排空
+    }
+
+    /// <summary>§6/§7（reviewer #191 F3）— 清空累积诊断（CrashReports/SoftCycles）。跨批次/场景重载时由宿主定期调用，避免无界增长与跨批次泄漏观测。</summary>
+    public void ResetDiagnostics()
+    {
+        CrashReports = ImmutableArray<CrashReport>.Empty;
+        SoftCycles = ImmutableArray<FiberId>.Empty;
+    }
+
+    /// <summary>§7（reviewer #191 F1/F2）— 接线 Godot 壳：provider 通知 dependent 进入 Suspending 时驱动壳禁用 ProcessMode 级联；关闭路径排空时驱动壳 flush 退出 drain。打通 §7 ProcessMode 级联（此前 OnSuspending/ExitDrain 为孤岛）。</summary>
+    public void AttachShell(GodotShell shell)
+    {
+        OnSuspending = shell.CascadeProcessModeDisabled; // dependent Suspending ⇒ 壳禁用其子树派发（级联）
+        shell.EnqueueExitDrain(SynchronousExitDrain);   // 关闭路径由壳 _ExitTree 触发运行时同步排空
     }
 
     public IReadOnlyCollection<Fiber> Fibers => _fibers.Values.ToImmutableArray();
@@ -188,7 +204,7 @@ public sealed class PluginRuntime
                     // §7（reviewer #191 low）：OnSuspending 与 BeginTeardown 同用 !TeardownEnqueued 去重守卫（与 BeginTeardown 对称），避免对同一 dependent 重复触发 Suspending 通知。
                     if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
                     {
-                        OnSuspending?.Invoke(d);   // §7 钩子：dependent 进入 Suspending ⇒ Godot 壳禁用 ProcessMode
+                        try { OnSuspending?.Invoke(d); } catch { /* §191 F4 钩子异常隔离 */ } // §7 钩子：dependent 进入 Suspending ⇒ Godot 壳禁用 ProcessMode
                         BeginTeardown(d);
                     }
                 }
