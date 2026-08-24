@@ -94,4 +94,23 @@ public class GodotShellTests
         host.FlushDeferred();
         Assert.True(ran2);
     }
+
+    [Fact]
+    public void Defer_IsDroppedDuringExitDraining() // reviewer #194/R9 medium（§3 R4-1）：退出期（_ExitTree 触发 FlushExitDrain 期间）禁止新 Defer，避免退出序结束后的 use-after-free；flush 末复位允许后续正常 Defer
+    {
+        var host = new FakeHost();
+        var shell = new GodotShell(host);
+        shell.FlushExitDrain();                 // 进入退出期（_exitDraining 置位，flush 末不复位——节点释放不可逆）
+        Assert.True(shell.ExitDraining);        // 退出期标志保持
+        bool ran = false;
+        shell.Defer(() => ran = true);           // 退出期 Defer ⇒ 应被丢弃
+        host.FlushDeferred();
+        Assert.False(ran);                        // 退出期 Defer 不执行（避免退出序后 use-after-free）
+        // 退出期永久不可逆：flush 后再 Defer 仍丢弃
+        bool ran2 = false;
+        shell.Defer(() => ran2 = true);
+        host.FlushDeferred();
+        Assert.False(ran2);                       // 仍被丢弃
+        Assert.True(shell.ExitDraining);         // 标志持续为真
+    }
 }
