@@ -96,6 +96,19 @@ public class GodotShellTests
     }
 
     [Fact]
+    public void Defer_DropsActionWhenInstanceValidThrows() // R6 并发安全：IsSafeToInvoke 抛异常（真实宿主 IsInstanceValid 异常路径）不得逃逸进宿主 defer 机制——隔离为 not-safe，fail-closed 丢弃回调
+    {
+        var host = new ThrowingInstanceValidHost(); // IsInstanceValid 恒抛
+        var shell = new GodotShell(host);
+        bool ran = false;
+        bool threw = false;
+        shell.Defer(() => ran = true, new object());
+        try { host.FlushDeferred(); } catch { threw = true; } // 异常不得冒出
+        Assert.False(threw);   // 异常在壳内被隔离，不逃逸
+        Assert.False(ran);     // 句柄门控异常 ⇒ 回调被丢弃（fail-closed）
+    }
+
+    [Fact]
     public void Defer_IsDroppedDuringExitDraining() // reviewer #194/R9 medium（§3 R4-1）：退出期（_ExitTree 触发 FlushExitDrain 期间）禁止新 Defer，避免退出序结束后的 use-after-free；flush 末复位允许后续正常 Defer
     {
         var host = new FakeHost();
@@ -113,4 +126,14 @@ public class GodotShellTests
         Assert.False(ran2);                       // 仍被丢弃
         Assert.True(shell.ExitDraining);         // 标志持续为真
     }
+}
+
+// R6 测试替身：IsInstanceValid 恒抛，验证 Defer 门控异常被隔离为 fail-closed
+sealed class ThrowingInstanceValidHost : IHost
+{
+    public void Defer(Action action) => action(); // 立即同步执行，暴露任何逃逸异常
+    public void FlushDeferred() { }
+    public void SetProcessMode(FiberId id, bool disabled) { }
+    public void EnqueueExitDrain(Action drain) { }
+    public bool IsInstanceValid(object handle) => throw new InvalidOperationException("host IsInstanceValid boom");
 }

@@ -25,7 +25,14 @@ public sealed class GodotShell
         if (!_deferred.Add(action)) return; // 幂等：已 enqueue 则跳过
         _host.Defer(() =>
         {
-            if (_deferred.Remove(action) && (handle == null || IsSafeToInvoke(handle))) action(); // §1 R4-3：句柄失效则静默丢弃
+            // §1 R4-3：句柄失效则静默丢弃；IsSafeToInvoke 可能抛（真实宿主 IsInstanceValid 异常）→ 隔离为 not-safe，fail-closed 不逃逸进宿主 defer 机制
+            if (_deferred.Remove(action))
+            {
+                bool safe;
+                try { safe = handle == null || IsSafeToInvoke(handle); }
+                catch { safe = false; }
+                if (safe) action();
+            }
         });
     }
 
