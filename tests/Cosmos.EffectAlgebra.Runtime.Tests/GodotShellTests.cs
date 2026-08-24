@@ -77,4 +77,21 @@ public class GodotShellTests
         shell.FlushExitDrain(); // 第一个异常不阻断第二个
         Assert.True(secondRan);
     }
+
+    [Fact]
+    public void Defer_DropsActionWhenHandleInvalid() // reviewer #191 F2：Defer 执行前判空门控（此前 IsSafeToInvoke 死代码）——句柄失效则静默丢弃，避免 use-after-free
+    {
+        var host = new FakeHost { AllValid = false }; // Godot Object 已 QueueFree ⇒ 句柄失效
+        var shell = new GodotShell(host);
+        bool ran = false;
+        shell.Defer(() => ran = true, new object()); // 携带失效句柄
+        host.FlushDeferred();                          // 模拟帧末 call_deferred 排空
+        Assert.False(ran); // 句柄失效 ⇒ 回调被丢弃（fail-closed），不执行
+        // 对照：有效句柄仍执行
+        host.AllValid = true;
+        bool ran2 = false;
+        shell.Defer(() => ran2 = true, new object());
+        host.FlushDeferred();
+        Assert.True(ran2);
+    }
 }

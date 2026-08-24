@@ -13,14 +13,18 @@ public sealed class GodotShell
 
     public GodotShell(IHost host) => _host = host;
 
-    /// <summary>§7 R5-4 — 壳级 Defer：合并同 Action（去重），每帧排空；Suspending 后调用由 IsInstanceValid 门控。</summary>
-    public void Defer(Action action)
+    /// <summary>§7 R5-4 — 壳级 Defer：合并同 Action（去重），每帧排空。无句柄重载：host 级合法性由 FakeHost/真实 Godot 宿主在 _host.Defer 内保证。</summary>
+    public void Defer(Action action) => Defer(action, null);
+
+    /// <summary>§7 R5-4 / §1 R4-3（reviewer #191 F2）— 壳级 Defer：合并同 Action（去重），每帧排空；执行前判空（Godot Object 经 QueueFree 后裸引用失效则丢弃，不调用）。
+    /// handle 为 Action 触及的 Godot 原生对象；传 null 表示无需门控（host 级合法性由宿主保证）。此前 §7 注释声称「Suspending 后由 IsInstanceValid 门控」却未实装——现真接通（fail‑closed：句柄失效即丢回调，避免 use‑after‑free）。</summary>
+    public void Defer(Action action, object? handle)
     {
         if (action == null) return;
         if (!_deferred.Add(action)) return; // 幂等：已 enqueue 则跳过
         _host.Defer(() =>
         {
-            if (_deferred.Remove(action)) action();
+            if (_deferred.Remove(action) && (handle == null || IsSafeToInvoke(handle))) action(); // §1 R4-3：句柄失效则静默丢弃
         });
     }
 
@@ -64,6 +68,8 @@ public sealed class FakeHost : IHost
     public bool AllValid = true;
 
     public void Defer(Action action) => Deferred.Add(action);
+    /// <summary>测试用：同步执行全部已记录 Defer 闭包（Godot 壳真实宿主由 _Process 帧驱动排空；FakeHost 无帧循环故显式 flush）。</summary>
+    public void FlushDeferred() { foreach (var a in Deferred.ToArray()) a(); Deferred.Clear(); }
     public void SetProcessMode(FiberId id, bool disabled) => ProcessModes.Add((id, disabled));
     public void EnqueueExitDrain(Action drain) => ExitDrains.Add(drain);
     public bool IsInstanceValid(object handle) => AllValid;

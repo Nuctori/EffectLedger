@@ -132,11 +132,12 @@ public sealed class PluginRuntime
         }
     }
 
-    /// <summary>§3 R5-7 — 重拓扑（N2 守卫：关路径硬拒绝，非关路径延迟执行）。</summary>
+    /// <summary>§3 R5-7 / §8（reviewer #191 F4）— 重拓扑（N2 守卫：关路径硬拒绝，非关路径延迟执行）。
+    /// 注意：非关路径分支当前为 no-op 占位（设计 §8 明确为 deferred gap——动态拓扑重算不在 MVP 运行时范围；环检测由 DrainTeardownBatch 在每批重排时触发）。方法保留为生命周期内拓扑变更接缝，真实重算须由宿主在 DependencyGraph 调用方实现。</summary>
     public void RecomputeTopology()
     {
         if (IsShuttingDown) throw new InvalidOperationException("关闭路径禁止 RecomputeTopology（资源已不可靠）");
-        // 非关路径：重算拓扑（此处仅占位，真实重算在 DependencyGraph 调用方）；环检测由 DrainTeardownBatch 触发。
+        // 非关路径：no-op 占位（见 summary，§8 deferred）。
     }
 
     /// <summary>§3 — 关闭路径同步排空（R4-1）：在调度器 _ExitTree 内调用，按 dependent-first 顺序释放全部 TearingDown。</summary>
