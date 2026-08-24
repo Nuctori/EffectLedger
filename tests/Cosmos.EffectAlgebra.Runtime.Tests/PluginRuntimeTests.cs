@@ -497,4 +497,45 @@ public class PluginRuntimeTests
         Assert.Equal(before, rt.CrashReports.Length);         // 无新增崩溃报告（未二次回放）
         Assert.Equal(FiberState.Dead, f.State);               // 原队列正常排空 ⇒ Dead
     }
+
+    [Fact]
+    public void DrainTeardownBatch_PartialRelease_MessageContainsPendingResource() // Round 7 N1 形状钉：升级消息须含具体 ResourceId，防 refactor 误改语义（仅计数丢资源名）
+    {
+        var rt = new PluginRuntime();
+        // 将滞留未释放的资源：p 提供 Memory(1)，两条逆均针对 Memory(1)——一条成功、一条抛异常 ⇒ 部分释放。
+        var pending = new ResourceId.Memory(1);
+        var p = rt.Register(Spec("p", pending, new ResourceId.Memory(0),
+            (pending, () => { }),                                                  // 成功释放
+            (pending, () => throw new InvalidOperationException("partial"))));    // 失败 ⇒ 部分释放（Pending 含 pending）
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0),
+            (new ResourceId.Gpu(new Rid("a")), () => { })));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+        rt.BeginTeardown(p);
+        rt.DrainTeardownBatch();
+        var report = rt.LastCrashReport;
+        Assert.NotNull(report);
+        Assert.NotNull(report!.Exception);
+        // N1：升级消息须拼入具体资源（此处为未释放的 pending 资源），而非仅「未释放 N 项」丢资源名（对照 EAA0901 指导式）。
+        // 若 N1 被回退为仅计数，消息不再含资源名 ⇒ 此断言失败（语义回归可证伪）。
+        Assert.Contains("未释放", report.Exception.Message);
+        Assert.Contains(pending.ToString(), report.Exception.Message);
+    }
+
+    [Fact]
+    public void DrainTeardownBatch_HardCycleSubsetSkipped_EmitsCrashReport() // Round 7 N3 形状钉：硬环子集跳过须生成可见 CrashReport（否则 fiber 不可见永久滞留）
+    {
+        var rt = new PluginRuntime();
+        // 构造硬环 a⇄b：绕过 LoadAll 的硬环拒载（直接 Load），使环子集进入 teardown 队列。
+        var a = rt.Register(Spec("a", new ResourceId.Memory(0), new ResourceId.Memory(1)));
+        var b = rt.Register(Spec("b", new ResourceId.Memory(1), new ResourceId.Memory(0)));
+        rt.AddDependency(a, b, EdgeKind.Hard); // a 依赖 b
+        rt.AddDependency(b, a, EdgeKind.Hard); // b 依赖 a ⇒ 硬环
+        a.Load(); b.Load();                    // 直接装载（不触发 LoadAll 硬环拒载）
+        rt.BeginTeardown(a);                    // 级联入队 a + b（均处硬环）
+        rt.DrainTeardownBatch();                // 硬环子集应跳过并记 CrashReport（N3）
+        // N3：环中 fiber 不再不可见滞留——须有一条标注「动态硬环子集未排空」的 CrashReport。
+        Assert.NotEmpty(rt.CrashReports);
+        Assert.Contains(rt.CrashReports, r => r.Exception!.Message.Contains("动态硬环") && r.Exception.Message.Contains("未排空"));
+    }
 }
