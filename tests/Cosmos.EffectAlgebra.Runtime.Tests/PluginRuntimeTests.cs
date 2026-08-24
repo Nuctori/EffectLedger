@@ -467,4 +467,34 @@ public class PluginRuntimeTests
         rt.AccumulateNet(new Dictionary<FiberId, long> { [f.Id] = 999 });
         Assert.Empty(rt.CheckPermanentFiberLeak(threshold: 1));   // 非 Active ⇒ 不告警
     }
+
+    [Fact]
+    public void BeginTeardown_OnSuspendingThrows_DoesNotAbortCascade() // reviewer #194 MEDIUM：OnSuspending 钩子抛异常须被 try/catch 隔离，不中断依赖者级联（dependent 仍进 TearingDown）
+    {
+        var rt = new PluginRuntime();
+        rt.OnSuspending = _ => throw new InvalidOperationException("hook boom"); // 钩子异常
+        var p = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0)));
+        var d = rt.Register(Spec("d", new ResourceId.Gpu(new Rid("a")), new ResourceId.Memory(0)));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+        rt.BeginTeardown(p); // 钩子抛异常不应中止级联
+        Assert.Equal(FiberState.TearingDown, p.State);   // provider 进入 TearingDown
+        Assert.Equal(FiberState.TearingDown, d.State);   // dependent 仍被级联进入 TearingDown（未被异常中断）
+    }
+
+    [Fact]
+    public void TickWatchdog_DoesNotReEnqueue_TearingDownFiber() // reviewer #194 LOW：看门狗对超时但已 TearingDown 的 fiber 不重复强制/入队（State==Active||Suspending 守卫），避免二次回放误填 CrashReports
+    {
+        var rt = new PluginRuntime();
+        var f = rt.Register(Spec("p", new ResourceId.Memory(0), new ResourceId.Memory(0),
+            (new ResourceId.Memory(0), () => { })));
+        rt.LoadAll();
+        rt.BeginTeardown(f);                                 // → TearingDown + 入队（未排空）
+        var before = rt.CrashReports.Length;
+        // 模拟看门狗：f 已 TearingDown（非 Active/Suspending）且 isTimedOut 恒 true ⇒ 守卫不重复强制/入队
+        rt.TickWatchdog(fib => true);
+        rt.DrainTeardownBatch();
+        Assert.Equal(before, rt.CrashReports.Length);         // 无新增崩溃报告（未二次回放）
+        Assert.Equal(FiberState.Dead, f.State);               // 原队列正常排空 ⇒ Dead
+    }
 }

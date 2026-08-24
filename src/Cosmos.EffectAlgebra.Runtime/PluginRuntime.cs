@@ -189,11 +189,12 @@ public sealed class PluginRuntime
         IsShuttingDown = false; // §3（reviewer #191 F5）：排空完毕复位，允许实例复用（场景重载）后正常 Register/RecomputeTopology；关路径仅限本次排空
     }
 
-    /// <summary>§6/§7（reviewer #191 F3）— 清空累积诊断（CrashReports/SoftCycles）。跨批次/场景重载时由宿主定期调用，避免无界增长与跨批次泄漏观测。</summary>
+    /// <summary>§6/§7（reviewer #191 F3 / #194 LOW）— 清空累积诊断（CrashReports/SoftCycles/_netAccum 永久 Fiber 周期快照表）。跨批次/场景重载时由宿主定期调用，避免无界增长与跨批次泄漏观测；一并 ResetNetAccum 防止旧 FiberId 在永久 Fiber 表中残留。</summary>
     public void ResetDiagnostics()
     {
         CrashReports = ImmutableArray<CrashReport>.Empty;
         SoftCycles = ImmutableArray<FiberId>.Empty;
+        _netAccum = ImmutableDictionary<FiberId, long>.Empty;
     }
 
     /// <summary>§7（reviewer #191 F1/F2）— 接线 Godot 壳：provider 通知 dependent 进入 Suspending 时驱动壳禁用 ProcessMode 级联；关闭路径排空时驱动壳 flush 退出 drain。打通 §7 ProcessMode 级联（此前 OnSuspending/ExitDrain 为孤岛）。</summary>
