@@ -87,6 +87,15 @@ string back = EffectScriptContract.ToJson(script);
 
 契约要点（已实现且可证伪）：事件层 `scope` 是单一真相（与 claim 级 scope 不一致即抛，R6 S06-001）；`LoopCount.Of(0)` / `default(LoopCount)` 拒绝；预算按归一化键存储（R6 S06-002，`Self(signal_x)` ≡ `SignalBus(x)`）；异常类型统一为 `FormatException`（R4）。
 
+> **doc 即测试**：上面这段 JSON 已被 `tests/Cosmos.EffectAlgebra.Tests/Round7Hickey2Tests.cs` 的 `Readme_Example_ParsesAndAudits` 抽取并守护——文档改一字、CI 立刻红，杜绝"文档能跑、代码不能跑"的漂移。对应可剪贴的 xUnit 断言：
+> ```csharp
+> var at5 = script.At(NatStar.Of(5));
+> Assert.Equal(1, at5.OccupyClaims.Count());          // 单点投影：t=5 仅 alive 事件在
+> Assert.True(audit.Passed);                            // 该示例自洽：无违例
+> Assert.Equal(2, audit.CapsChecked);                   // 两资源峰值门实际运行（非零预算）
+> // 注意：Budget.None 时 gate(2) 不运行 ⇒ audit.CapsChecked==0，IsPeakChecked==false（R4/R7-D07-006：别把"没查"当"全绿"）
+> ```
+
 ---
 
 ## 参与者模型（你是谁，怎么用）

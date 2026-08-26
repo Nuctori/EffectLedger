@@ -131,6 +131,9 @@ public readonly record struct AuditResult
 
 AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接喂 L1 验证。**不经 Godot API、不经 §7 白名单**——是独立数据契约：
 
+> **resource 必须是扁平字符串形态**：`{"gpu":"mesh1"}`（rich-hickey2 R7 D07-002 钉）。历史 spec-drift 形态 `{"gpu":{"bufferId":"mesh1"}}` 已废弃，Parse 抛 `FormatException`（资源值须为非空字符串）。
+> 测试夹具：复制 §4 JSON 喂 `EffectScriptContract.Parse` 须不抛；`Parse(ToJson(script))` 字节级幂等。
+
 ```json
 {
   "events": [
