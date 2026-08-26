@@ -157,11 +157,13 @@ public sealed partial class EffectScript
         var peakSum = new Dictionary<ResourceId, NatStar>();                    // gate(2) 有限峰值和（不含 ⊤ 声明）
         var topCount = new Dictionary<ResourceId, int>();                       // gate(2) 活跃 ⊤ 声明计数（>0 ⇒ 该资源峰值 ⊤）
         var grp = new Dictionary<(ResourceId, ScopeId, int), HashSet<int>>();   // gate(3) 每 (res,scope,mode) 的活跃事件集合
-        var netScope = new Dictionary<ResourceId, ScopeId>();                   // gate(1) 资源→首个贡献者 scope（用于 Violation 归因）
-        var peakScope = new Dictionary<ResourceId, ScopeId>();                  // gate(2) 资源→首个峰值贡献者 scope
+        var netScope = new Dictionary<ResourceId, (ScopeId scope, int ei)>();   // gate(1) 资源→首个贡献者 (scope,ei)（用于 Violation 归因）
+        var peakScope = new Dictionary<ResourceId, (ScopeId scope, int ei)>();  // gate(2) 资源→首个峰值贡献者 (scope,ei)
         var peakReported = new HashSet<ResourceId>();                           // rich-hickey2 R1：PeakExceeded 每（归一化）资源只报首个反例——同一违例逐采样点重复上报是时间序列不是问题集
-        ScopeId ResolveNetScope(ResourceId r) => netScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
-        ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
+        ScopeId ResolveNetScope(ResourceId r) => netScope.TryGetValue(r, out var s) ? s.scope : new ScopeId.Global();
+        int ResolveNetEi(ResourceId r) => netScope.TryGetValue(r, out var s) ? s.ei : -1;
+        ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s.scope : new ScopeId.Global();
+        int ResolvePeakEi(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s.ei : -1;
 
         void Step(int ei, bool enter)
         {
@@ -177,7 +179,7 @@ public sealed partial class EffectScript
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
-                    if (!netScope.ContainsKey(r)) netScope[r] = e.Scope;
+                    if (!netScope.ContainsKey(r)) netScope[r] = (e.Scope, ei);
                     net[r] = net.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
@@ -194,7 +196,7 @@ public sealed partial class EffectScript
                     hs.Add(ei);
                     if (c.Mode != Mode.Release) // §3.3.2 release 不贡献峰值
                     {
-                        if (!peakScope.ContainsKey(r)) peakScope[r] = e.Scope;
+                        if (!peakScope.ContainsKey(r)) peakScope[r] = (e.Scope, ei);
                         bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                         if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
                         else
@@ -249,7 +251,7 @@ public sealed partial class EffectScript
                     // 取该资源的任一活跃贡献者的 scope 作归因（net 已按归一化资源聚合，scope 取首个活跃 key 的 e.Scope）
                     var scope = ResolveNetScope(kv.Key);
                     violations.Add(new Violation(t, kv.Key, scope, "NegativeDip",
-                        $"累积净占用在 t={t} 为负（release 早于 create）：{kv.Value}"));
+                        $"累积净占用在 t={t} 为负（release 早于 create）：{kv.Value}", ResolveNetEi(kv.Key)));
                 }
             // gate(2) 峰值：每 cap 资源当前运行中峰值 ≤ Caps[r]（按 cap 对应的归因 scope）。
             foreach (var kv in cap.Caps)
@@ -261,7 +263,7 @@ public sealed partial class EffectScript
                     var scope = ResolvePeakScope(nk);
                     // R4-V2（hickey-x）：上报归一化键 nk（与查找一致），否则同一违例随用户拼写呈现两种资源身份。
                     violations.Add(new Violation(t, nk, scope, "PeakExceeded",
-                        $"峰值 {p} > 预算 {kv.Value}"));
+                        $"峰值 {p} > 预算 {kv.Value}", ResolvePeakEi(nk)));
                 }
             }
             // gate(3) 兼容：组内同 mode 活跃事件数 ≥2 ⇔ 同 mode 冲突（单一真源：Compatible.IsCompatible 同值必冲突）。
@@ -274,7 +276,8 @@ public sealed partial class EffectScript
                 var detail = mode == Mode.Create ? "create×create 冲突（CONFLICT 集，§3.2.3）"
                             : mode == Mode.Move ? "move×move 冲突（CONFLICT 集，§3.2.3）"
                             : "release×release 冲突（CONFLICT 集，§3.2.3）";
-                violations.Add(new Violation(t, kv.Key.Item1, kv.Key.Item2, "CompatibleConflict", detail));
+                var grpEi = kv.Value.Count > 0 ? kv.Value.First() : -1; // 取组内首个冲突事件索引（可定位 events[N]）
+                violations.Add(new Violation(t, kv.Key.Item1, kv.Key.Item2, "CompatibleConflict", detail, grpEi));
             }
         }
 
@@ -315,7 +318,7 @@ public sealed partial class EffectScript
             }
             // rich-hickey2 R6 S06-004：Leak 归因取"最晚开始且尚未结束"的事件 scope（LastLeakSource: Lo 最大且 Hi>closureT）——
             // "未闭合"的责任在脚本运行期间最晚开始且仍在泄漏的那个人，而非已正常关闭/更早的开始者。修复前 leakScope 取"首个有限贡献者"，陈旧。
-            var leakScope = new Dictionary<ResourceId, (ulong lo, ScopeId scope)>();
+            var leakScope = new Dictionary<ResourceId, (ulong lo, ScopeId scope, int ei)>();
             for (int ei2 = 0; ei2 < Events.Length; ei2++)
             {
                 var ee = Events[ei2];
@@ -326,15 +329,15 @@ public sealed partial class EffectScript
                 {
                     var rr = ResourceId.Normalize(cc.Resource);
                     if (!leakScope.TryGetValue(rr, out var prev) || ee.Lifetime.Lo.Value > prev.lo)
-                        leakScope[rr] = (ee.Lifetime.Lo.Value, ee.Scope);
+                        leakScope[rr] = (ee.Lifetime.Lo.Value, ee.Scope, ei2);
                 }
             }
             foreach (var kv in closureNet)
                 if (!kv.Value.ContainsZero)
                 {
-                    var ls = leakScope.TryGetValue(kv.Key, out var t) ? t.scope : new ScopeId.Global();
+                    var (_, ls, ei) = leakScope.TryGetValue(kv.Key, out var t) ? t : (0UL, new ScopeId.Global(), -1);
                     violations.Add(new Violation(closureT, kv.Key, ls, "Leak",
-                        $"生命周期未闭合（净效应不含 0）：{kv.Value}"));
+                        $"生命周期未闭合（净效应不含 0）：{kv.Value}", ei));
                 }
         }
 
@@ -458,13 +461,17 @@ public readonly record struct Violation
     /// <summary>§3.2 — 当前值 vs 上限/阈值（供 AI 回修 JSON）。</summary>
     public string Detail { get; }
 
+    /// <summary>§3.2/R9 — 来源事件索引（可定位 JSON 的 events[N]，直接回修）。-1 表示该违例属累积层（非单条事件，如 NegativeDip 净占用负陷跨事件）。</summary>
+    public int EventIndex { get; }
+
     /// <summary>§3.2 — 构造单条违例。</summary>
-    public Violation(NatStar atT, ResourceId resource, ScopeId scope, string kind, string detail)
+    public Violation(NatStar atT, ResourceId resource, ScopeId scope, string kind, string detail, int eventIndex = -1)
     {
         AtT = atT;
         Resource = resource;
         Scope = scope;
         Kind = kind;
         Detail = detail;
+        EventIndex = eventIndex;
     }
 }
