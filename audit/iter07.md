@@ -1,91 +1,164 @@
-# Iter07 审计 — §6 三层类型系统 L1/L2/L3 可证性与 TS-001..012 收敛真伪（独立审计 #7，hy3 单独进程，本轮重跑）
+# Iter07 独立审计
 
-- **审计视角**：工具性证明义务 / 静态分析完备性（独立 pass #7，全新上下文）
-- **范围**：§6.1 三层模型表（L329-338）、§6.2 L1（L340-353）、§6.3 L2 Source Generator（L355-388）、§6.4 L3 Roslyn Analyzer（L390-398）、§6.5 TS-001..012（L400-416）；邻接全文（Iter05 的 §4 性质依赖、Iter08/Iter09 映射、Iter10 推导层、Iter11 运行时）
-- **结论摘要**：这是**全局性依赖根**——§4/§5 的「不可变/纯函数/无决策/无 Godot」等性质全部委托给 L1/L2/L3 工具强制，但 §6 从未证明任何一层工具的**检测完备性**（sound & complete？sound 足够但需显式证明）。结论：L1（C# 类型系统）的 struct/sealed/readonly 约束可 discharged（语言保证）；L2 Source Generator 与 L3 Roslyn Analyzer 的方法体/语法检查**完备性未证**，故所有「已收敛」依赖它们的性质（SH-001、EA-002/005、TS-001/003/005/007/009/010/011 等）实为 **asserted**，而非 discharged。TS-002/004/006/012 为 discharged（语言/标准模式保证）；TS-009 标注「已收敛」但反射 new 隐藏方法无法静态阻止 ⇒ open。TS-008/TS-011 标注「已解决」但仅描述机制、无证据（Interop 项目机制成立但「纯 .NET 无 Godot」仍靠 RULE001 检测 open；原型 Benchmark 未附）。
+## 范围 / 结论摘要
 
----
-
-## F1. L1 类型系统（§6.2，L340-353）
-
-**数学性质 / 证明状态**：
-- `sealed class` 阻止继承/重写：C# 语义保证 **discharged**（语言层）。
-- `readonly struct` 字段不可变 + 值相等：discharged（C# 保证；见 Iter05 D2）。
-- `where TState: struct` 泛型约束：discharged（C# 保证）。
-- **结论**：L1 是**唯一真正可证**的层级（语言保证）。但 L1 仅覆盖**结构约束**（不可继承、值类型），**不覆盖**方法体语义（决策/循环/Godot 调用），后者全靠 L2/L3。
-
-**文档行号**：§6.2（L340-353）、§6.1（L329-338 范围表）。
+- **范围**：`PDR_Effect_Cost_Algebra_v3_FINAL.md`（v3.0-FINAL-rA6，L1–L1100）之 §6 三层类型系统（L512–L597）、其与 §14 工具层完备性规范（L1000–L1082）、§4.2/EA 表、§10 Benchmark 类声明的交叉一致性。仅基于该文档磁盘内容，行号以本文件为准。
+- **总体结论**：§6.5 的 12 条 TS 收敛声明中，**0 条被文档内证据完全消解（discharged）**；约 5 条可作为「条件消解」（数学/语言语义层面可证，前提写明）；其余依赖未证工具（L2 Generator / L3 Analyzer），而 §14.4 与文档历史 rA6 行（L1098–L1100）**自己承认**工具层测试矩阵尚未实现——这构成与 §6.5 全表「已收敛」状态的**系统性内部矛盾**。
+- **最严重新发现**：
+  1. **G-07-1（矛盾）**：§6.3（L557–L568）声称「Generator 分析 Update 方法体」做写集分析，而 §14.2 S2（L1021–L1022）明确「Generator 不分析方法体内部」。EA-005、TS-005 的收敛方案均依赖方法体分析，故二者收敛状态为假。
+  2. **G-07-2（反例）**：§3.2.3 P4「mode=Unknown 按 use 处理（fail-closed）」（L283）在并行冲突检测中实为 **fail-open**：Unknown 归一为最弱共享权限 use ⇒ Compatible 恒真 ⇒ 潜在真实冲突静默放行。与 §14.3 A5 的「fail-closed」标签直接冲突。
+  3. **G-07-3（证据不存在）**：全文三处 Benchmark 声明（TS-011 L595、R-8 L844、R-9 L845）无任何数据、方法学或产物路径；TS-011「原型 Benchmark 验证」的证据在文档内不存在。
 
 ---
 
-## F2. L2 Source Generator（§6.3，L355-388）—— 完备性未证
+## 逐命题小节
 
-**命题** Generator 执行：字段类型白名单、禁 List/Dictionary/T[]/class、禁嵌套、生成 init/相等/签名、分析 System 写集（L355-388）。
+### P1｜L1 类型系统的结构约束 soundness
+- **命题**：C# 语言机制（`sealed`、`readonly struct`、泛型约束 `where TState : struct`）能可靠排除其目标类别（继承、外部可变、引用类型状态）。
+- **数学性质**：设 L₁(M) 为语言检查器，Sound(L₁) :⇔ ∀程序 M：M 通过检查 ⇒ M 不含被拒模式。此为语言规范的直接推论。
+- **状态**：**discharged（条件）**
+- **论证**：对「结构约束」这一窄域成立——前提是目标类别严格限定于语言规范保证的范围：(i) `sealed` 排除子类化（ECMA-334 §15.2.2.2）；(ii) `readonly struct` 在安全代码中排除构造器外字段写入；(iii) `struct` 约束排除引用类型。但 L1 覆盖范围表自身承认仅「结构约束」（L514）；任何深性质（不可变性传递、效应签名）均超出 L1。**前提**：不将 L1 用于 L514 承诺之外的性质。
+- **行号**：L512–L520、L585。
 
-**数学性质 / 证明状态**：
-- **(PO-I7-a) 字段白名单检查完备性（open）**：Generator 遍历字段类型，但「递归检查嵌套」的完全性（Iter05 I5-02）依赖能否枚举所有类型构造；`ImmutableArray<T>` 的 T 递归需全类型图可达性分析，未证终止/完备。状态 = open。
-- **(PO-I7-b) 方法体写集分析 soundness（open，高）**：L375-388 声称「Generator 分析 Update 方法体，记录 writes Position」。但方法体可调用其他函数（间接写）、可用反射、可写经属性——**别名分析与间接效应**未处理 ⇒ 写集分析是**不完备（可能漏）**的静态近似。文档未证明 soundness（即「标注的写集 ⊇ 实际写集」）。状态 = open（关键：EA-005 冲突检测、SYS001 依赖它，可能漏冲突 ⇒ 不安全）。
-- **(PO-I7-c) 「禁止 if/else/for/while/switch/try」AST 检查完备性（open）**：SH-001 的「无决策/无循环」靠此。但 C# 中决策可经 `?.` 空传播、`??`、逻辑短路、`switch` 表达式（非语句）、LINQ `Where`（隐藏循环）、委托调用隐藏控制流——仅查 6 种语句无法穷举 ⇒ 不完备。状态 = open。
+### P2｜TS-001「struct 不保证不可变」已收敛
+- **命题**：Component 不可变性由「L2 字段类型白名单 + L3 兜底」收敛。
+- **数学性质**：需要的是**深度不可变性**：∀字段链 f₁∘…∘fₖ，末端为不可变载体。这是闭包计算问题，要求类型图有限且环上全部节点满足白名单。
+- **状态**：**open（依赖未证工具）**
+- **论证**：L1 只保证浅层。白名单本身有漏洞未被讨论：(a) `ImmutableArray<T>` 的后备数组经强转可变——不可变性是**约定**而非运行时保证；(b) 白名单允许嵌套 `IComponent` 并称「递归检查」，但递归终止性与循环引用（A 含 B、B 含 A）的处理未定义——若两类型互相引用则类型图不满足良基性，递归检查需显式处理环。工具（L2/L3）本身按 G-07-5 未实现。
+- **行号**：L443–L452（§4.1.2 字段限制）、L585。
 
-**文档行号**：§6.3（L355-388）、SH-001（L321，§5.2）、EA-005（L271，§4.2）。
+### P3｜TS-004「L1 sealed class 完美解决 new 隐藏」
+- **命题**：sealed 使 `new` 隐藏不可发生。
+- **数学性质**：无子类 ⇒ 无隐藏成员引入点 ⇒ 论域为空，命题空洞真（vacuously true）。
+- **状态**：**discharged（条件）**
+- **论证**：前提是**所有** Shell 类均为 sealed 且用户无法绕过（例如不能通过 partial class 以外的手段向继承链插入类型）。若 Shell 由 Source Generator 生成 sealed（TS-006 方案，L590），该前提成立但依赖生成器正确性（见 P11）。作为独立命题在 C# 语义下成立。
+- **行号**：L524–L525、L588。
+
+### P4｜TS-009「反射调用基类 sealed override，new 隐藏不被调用」已收敛
+- **命题**：即使存在 `new` 隐藏，Godot 经反射仍调用基类 sealed override。
+- **数学性质**：取决于引擎方法查找函数的具体定义（BindingFlags、DeclaringType 解析顺序），是**经验事实**而非可推导定理。
+- **状态**：**open**
+- **论证**：(a) 文档未给出 Godot C# 绑定源码层面的查找证据（对照 §8.1 曾做过源码核对的做法，此处缺失）；`Type.GetMethod` 默认绑定标志下派生类型的 `new` 方法**会被返回**，「new 不被调用」不必然成立。(b) **内部张力**：TS-004 已断言无子类（论域空），则 TS-009 的威胁场景（谁写的 `new` 方法？）自相矛盾——若威胁真实存在则 TS-004 的「完美解决」为假；若 TS-004 真，则 TS-009 场景空洞，其「Analyzer 兜底」措施冗余。二者至多一真。
+- **行号**：L588、L593。
+
+### P5｜EA-005 / TS-005：写集分析与 GatherInput 效应检查已收敛【核心矛盾】
+- **命题**：「L2 Source Generator 方法体写集分析」「L2 Generator 方法体 AST 检查」使 System 并行判定与 GatherInput 效应可控。
+- **数学性质**：方法体效应分析至少需过程内控制流上的调用图提取；其 Sound（不漏写）/Complete（不多写）判据必须显式给出。
+- **状态**：**open（收敛声明为假）**
+- **论证**：**反证于文档自身**：§14.2 S2 明文「Generator 不分析方法体内部（iter38 已记 S1-S2 不分析方法体）……方法体内反射/字符串拼出的 Godot 调用不被注入」（L1021–L1022）。若 Generator 不进入方法体，则 §6.3 所述「Generator 分析：此方法修改 Position → 记录 writes Position」（L559–L561）在机制上不可能由所述工具完成。故 EA-005（L449）、TS-005（L589）的「已收敛」依赖一个被 §14 否定能力的能力。二者的真实状态至多是「调度器生成时按 Query 声明做 Archetype 重叠近似」——而 Query 只给读集候选，不给写集。
+- **行号**：L449、L557–L568、L589、L1021–L1022。
+
+### P6｜§14.2 S1/S2 的 sound/completeness 标签错置
+- **命题**：「S1 写集 soundness：注入覆盖所有白名单调用点（不漏注入）」。
+- **数学性质**：插桩覆盖率（不漏注入）是**completeness of instrumentation**（防漏报的前提），不是 soundness。§14.1 对 SOUNDNESS 的定义「正报警 ⊆ 真实违反（不冤枉）」（L1008）本身是无假阳性的正确方向，但其注释「无漏报的误通过」措辞混乱。
+- **状态**：**open（形式标注缺陷）**
+- **论证**：标签互换导致后续判据无法机械复核：按 §14.1 定义，S1 应改称「注入 completeness」，S2 描述的才是 L2 对动态调用的「sound 但 incomplete」。这不是措辞洁癖：A3/A4 等 L3 判据的 sound+complete 断言建立在同一套术语上，术语错位会传染。
+- **行号**：L1006–L1012、L1020–L1022。
+
+### P7｜RULE001 / TS-007：Domain 引用隔离完备性
+- **命题**：L3 Analyzer 检查 PackageReference 即可保证 DO-2（Domain 编译失败如果引用 Godot）。
+- **数学性质**：需要传递闭包：¬∃传递引用路径 Domain →* Godot。仅查直接 PackageReference 判定的是一阶近似。
+- **状态**：**open（条件可消解）**
+- **论证**：若第三方库 P 自身引用 Godot 且 Domain 引用 P，直接引用检查通过但 DO-2 语义被违反。**最小补充前提**：Analyzer 改为扫描 Compilation 的全部引用程序集（`Compilation.ExternalReferences` 传递闭包）或 CI 加 `dotnet list package --include-transitive` 校验。补此前提后命题 discharged（诊断可配 error 满足 DO-1 同款机制）。
+- **行号**：L591、L571–L579。
+
+### P8｜A1 泄漏检测 COMPLETE 过强
+- **命题**：「Instantiate/AddChild 后控制流无 QueueFree/release-class 调用 ⇒ AUDIT002 必报」为 COMPLETE。
+- **数学性质**：泄漏判定 net(S,scope)>0 要求作用域内释放配对的**精确性**，受三个未列前提制约：
+  1. **别名无关**：fx 仅经局部变量可达（无别名逃逸后在他处释放）；
+  2. **父级级联释放不计入**：Godot 中父节点 free 时递归 memdelete 全部 children（§8.1 L703 自己引用了这一事实！），故「AddChild 后无显式 QueueFree」在场景销毁边界**并不**构成永久泄漏——A1 把「scope 内无配对」等同于「泄漏」是量纲偷换；
+  3. **⊤ 可判定**：QueueFree emit `occupy(memory, self.size, release)`（L609），self.size 静态未知 ⇒ SizeVal [1,⊤] ⇒ net 返回 ⊤（§3.3.1 L316），而「net(S,scope)>0」对 ⊤ 未定义布尔值——A1 的触发条件在含 ⊤ 时不闭合。
+- **状态**：**open**
+- **论证**：在上述三条前提下 A1 作为「scope 局部净增报警」可消解（且此时它是 sound 的保守报警）；作为无条件 COMPLETE 命题为假。注意 §8.1 L703 的源码核对结论（queue_free 递归释放 children）恰好构成对 A1 语义的反例素材，文档未察觉。
+- **行号**：L1030、L609、L314–L320、L703。
+
+### P9｜A2 峰值检测 COMPLETE：循环语法覆盖
+- **命题**：「循环体内资源分配 ⇒ 报警」COMPLETE。
+- **数学性质**：需枚举全部迭代构造。Roslyn 语法层可穷举 `for/while/do/foreach`，但 LINQ 管道（`Select(...)` 内分配）、`Parallel.For`、**递归**（无语法循环关键字）均在「循环体」词法论域之外。
+- **状态**：**open（条件可消解）**
+- **论证**：补前提「峰值义务仅对四类语法循环承诺；递归/LINQ 场景落默认 Unknown 规则转人工确认（§8.1）」后，命题降格为可证的弱版本并 discharged。当前措辞无条件 COMPLETE 为过强声明。
+- **行号**：L1031、L694–L700。
+
+### P10｜A3 量纲混算 SOUND+COMPLETE
+- **命题**：跨 kind 聚合（weight=⊥）⇒ KIND_MIX 编译错误，既无假阳亦无假阴。
+- **数学性质**：分桶函数 bucket: Kind → {read,write,occupy} 为全函数且单射到桶（§3.1.4b 三桶互不相交）；聚合器只接受同桶输入。两者皆为一行代码可验证的全函数。
+- **状态**：**discharged（条件）**
+- **论证**：前提：(i) 每个 Claim 恰属一桶（kind 枚举三分，由 §3.1.1 保证）；(ii) weight 定义为查表全函数（§3.3.2 L330–L334，跨 kind=⊥）。在此前提下「混算必报」是类型层面判定，sound+complete 成立。残余风险仅在实现层把 weight=⊥ 误实现为 NaN 传播——由 §14.4 KIND_MIX 测试覆盖（若实现）。
+- **行号**：L196–L201、L329–L337、L1032。
+
+### P11｜A4 兼容冲突 COMPLETE 继承 L2 不完备性
+- **命题**：「同资源 CONFLICT mode 对 ⇒ 报警」COMPLETE。
+- **数学性质**：Completeness(A4) ⟹ Completeness(Signaturê)。因为冲突判定的输入是各 System 的 Signaturê；若 Signaturê 因反射/动态调用缺项（S2 承认），则冲突对可能整体缺席于输入，报警无从触发。
+- **状态**：**open**
+- **论证**：A4 的完备性以 L2 注入完备为前提，而 §14.2 已声明该前提只在「直接 API 调用」子域成立。正确的表述应为「A4 在 Signaturê 相对于真实 Signature 无缺项的条件下 COMPLETE」。另注：P4/G-07-2 的 Unknown-as-use 规则会进一步吞掉涉及 Unknown mode 的冲突对（见 P12）。
+- **行号**：L1033、L1019–L1022。
+
+### P12｜Unknown-mode 归一为 use 的 fail-open 反例（G-07-2）
+- **命题**：§3.2.3 P4 称「mode=Unknown 按 use 处理（最弱兼容，fail-closed 为保守兼容，收口 iter21）」。
+- **数学性质**：设安全谓词 Safe(σ) :⇔ σ 中不存在冲突对。归一 u:Unknown↦use 使 Compatible(u(c₁),u(c₂))=true 恒成立，故 ∃σ: ¬Safe(σ) ∧ Safe(u(σ))——归一算子**不保安全性**，即对冲突检测是 fail-open（假阴性方向）。「保守」一词仅对「放行共享」的方向成立，对「漏掉冲突」方向恰为激进。
+- **状态**：**open（文档内矛盾）**
+- **论证**：与 A5 的「未知保守 SOUND … fail-closed」（L1034）以及 §8.1「fail-closed 为『需人工确认』而非静默漏报」（L697–L699）矛盾：在并行组合约束处 Unknown 被**静默放行**，并未转人工确认。修复方向二选一：(a) 冲突判定中 Unknown-mode 对强制产出「需人工确认」诊断；(b) 显式声明该残余风险并从 fail-closed 叙事中剔除并行组合场景。
+- **行号**：L283、L1034、L697–L700。
+
+### P13｜Benchmark 类声明的证据存在性
+- **命题**：TS-011「Bevy SoA + swap-remove，原型 Benchmark 验证」；R-8「…Benchmark 验证」；R-9「Benchmark 对比 Dictionary vs ImmutableDictionary」。
+- **数学性质**：证据存在性判定：∃ 文档内数据点/方法学/产物路径。
+- **状态**：**asserted（证据不存在）**
+- **论证**：全文 `Benchmark` 共 3 次命中（L595、L844、L845），均为表格单元格内的裸断言：无基准数字、无负载描述、无测量环境、无产物文件名。TS-011 标「已收敛」属于**用未来实验给当下结论背书**——收敛方案与验收证据混为一谈。TS-011 应改标 open（性能命题本质上是经验命题，不可能由本文档先验消解）。
+- **行号**：L595、L844–L845。
+
+### P14｜TS-002 / TS-003 / TS-006 / TS-008 / TS-010 / TS-012 逐条
+- **TS-002（L586）**：版本下限文档化——纯决策类命题，文档化行为本身即可消解。**discharged（决策类）**。
+- **TS-003（L587）**：Command 携带 Signature 属性——设计决策，与 §4.1.7 一致；但其**正确性**（每个 Command 实例的 Signature 与其实际效应一致）同样依赖效应推导层（ED-001 白名单完整性，未证）。属性存在性 discharged，一致性 open。
+- **TS-006（L590）**：Generator 生成非泛型密封壳——机制断言；对每实例化点的展开完备性未证（泛型实例化次数静态可数是前提）。open（低危）。
+- **TS-008（L592）**：Interop DTO 项目隔离——架构决策，DO-2 语义下自洽。discharged（决策类，附 P7 传递引用前提）。
+- **TS-010（L594）**：Generator 生成映射表——实现断言，双射性（编译期类型 ↔ ComponentType 一一对应）未证。open（低危）。
+- **TS-012（L596）**：接受 abstract/sealed record 模式——显式接受现状的决策，无可证对象。discharged（决策类）。
+
+### P15｜§14.4 测试矩阵与「已收敛」的系统性矛盾（G-07-5）
+- **命题**：§6.5 各行「已收敛」与 §14 的自我定位相容。
+- **状态**：**open（文档级矛盾）**
+- **论证**：§14.4 明文「实现层……须让上述测试全绿方视为 L2/L3 完备性『已证』」（L1081–L1082），rA6 行明文「仅剩 godot-csharp 工程落地 §14 测试矩阵为 out-of-scope 实现类缺口」（L1100）。即：**按文档自己的判据，一切以 L2/L3 为收敛方案的条目此刻都不满足「已证」**。§6.5 表却维持 11/12 行「已收敛」。这不是措辞问题而是状态机不一致：同一文档对同一事实给出两个互斥真值。最小修复：§6.5 引入第三态「cond-discharged（待 §14.4 测试矩阵绿灯转正）」。
+- **行号**：L581–L596、L1037–L1082、L1098–L1100。
+
+### P16｜章节编号重复
+- **命题**：文档结构唯一性。
+- **状态**：**open（格式缺陷）**
+- **论证**：L1000 与 L1086 均为 `## 14.`（「编译期工具层完备性规范」与「文档历史」）。rA5 声称删除了重复标题，但现存两个不同内容节共用编号 14，交叉引用「§14」产生歧义（本审计中 §14 指 L1000 起的工具层规范）。
+- **行号**：L1000、L1086。
 
 ---
 
-## F3. L3 Roslyn Analyzer（§6.4，L390-398）—— 兜底但无完备性证明
-
-**命题** RULE001（Domain 禁 Godot）、SHELL001（壳复杂度）、SHELL003（new 隐藏）、BUDGET001（预算累加）、SYS001（System 冲突）（L390-398）。
-
-**数学性质 / 证明状态**：
-- **(PO-I7-d) RULE001 引用检测 soundness（open）**：通过 `PackageReference` 检测 Domain 引用 Godot（TS-007「已收敛」）。但 Godot 类型可经 `InternalsVisibleTo`、反射、共享基类间接引入，包引用检测**漏检间接依赖**。状态 = open。
-- **(PO-I7-e) SHELL001 复杂度检测的判定（open）**：「>20 行或含复杂条件」——行数易检；但「复杂条件」无定义 ⇒ 阈值模糊，误报/漏报不定。状态 = open。
-- **(PO-I7-f) SHELL003 new 隐藏 sealed override（open）**：TS-009「已解决」称「反射调用基类 sealed override，new 隐藏不被调用」。但反射调用具体方法名时若开发者**刻意反射 new 隐藏方法**，Analyzer 无法静态阻止 ⇒ 该「解决」依赖「不刻意滥用反射」，非机制保证。状态 = open（asserted→实为 open）。
-
-**文档行号**：§6.4（L390-398）、TS-007（L410）、TS-009（L412）。
-
----
-
-## F4. TS-001..012 收敛真伪（表）
-
-| ID | 文档状态 | 实际审计状态 | 说明 |
-|----|---------|-------------|------|
-| TS-001 struct 不保证不可变 | 已收敛 | **asserted** | 依赖 L2 白名单+L3（F2/F3 未证完备）。 |
-| TS-002 static abstract 版本 | 已收敛 | **discharged** | 文档化最低要求（事实，非证明需求）。 |
-| TS-003 Command 效应未编码 | 已收敛 | **asserted** | 携带 Signature 元数据，但一致性未校验（Iter05 I5-06）。 |
-| TS-004 new 隐藏 sealed | 已收敛 | **discharged(部分)** | L1 sealed 禁子类成立；但 new 隐藏手法本身（非子类）仍需 L3（TS-009，open）。 |
-| TS-005 GatherInput 效应 | 已收敛 | **asserted** | 依赖 L2 AST 检查（F2 PO-I7-c 不完备）。 |
-| TS-006 泛型爆炸 | 已收敛 | **discharged** | Generator 生成非泛型密封壳，机制成立。 |
-| TS-007 项目引用隔离约定 | 已收敛 | **asserted** | 包引用检测漏间接依赖（PO-I7-d）。 |
-| TS-008 Interop 类型归属 | 已解决 | **asserted** | 引入 Interop DTO 项目（机制），但「纯 .NET 无 Godot」仍靠 RULE001 检测（open）。 |
-| TS-009 sealed override 反射 | 已收敛 | **open** | 反射 new 隐藏方法无法静态阻止（PO-I7-f）。 |
-| TS-010 编译/运行期映射 | 已收敛 | **asserted** | Generator 生成映射表，生成正确性未证 soundness。 |
-| TS-011 World 不可变性能 | 已收敛 | **asserted** | 「Bevy SoA + swap-remove，原型 Benchmark 验证」——**原型 Benchmark 无引用/无数据/未附**，不可复现 ⇒ 性能声明无证据。 |
-| TS-012 Command DU | 已收敛 | **discharged** | abstract record + sealed record 标准模式，机制成立。 |
-
----
-
-## F5. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged）**：L1 的 sealed/readonly/struct 约束在 C# 语义下严格成立（语言保证）。证明：C# 语言规范保证 sealed 禁继承、readonly 禁字段写、struct 值类型。无需额外前提。
-- **P2（discharged，条件）**：在「Generator 写集分析 sound（标注集 ⊇ 实际写集）」且「Analyzer 引用检测 sound」前提下，EA-005/SYS001/RULE001 的冲突检测/零 Godot 可证。证明：写集/引用集不漏 ⇒ 冲突/违规可检。前提 PO-I7-b/d（soundness 未立）⇒ 条件证明，实际未消解。
-
----
-
-## Proof Obligation 账本（Iter07）
+## Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I7-a | 字段白名单递归完备 | open | 证嵌套递归终止/穷举 | L355-373 |
-| PO-I7-b | 写集分析 soundness | open(高) | 证 标注集 ⊇ 实际写集 | L375-388 |
-| PO-I7-c | 无决策 AST 检查完备 | open | 覆盖表达式级控制流 | L321,L388 |
-| PO-I7-d | RULE001 引用检测 sound | open | 覆盖间接依赖 | L393,L410 |
-| PO-I7-e | SHELL001 复杂度判定 | open | 定义「复杂条件」 | L394 |
-| PO-I7-f | SHELL003 反射 new 隐藏 | open | 见 TS-009 | L395,L412 |
+| ---- | ------ | ------ | ------ | ------ |
+| PO-07-01 | L1 结构约束 soundness | cond-discharged | 声明 L1 论域限于 L514 承诺的结构约束 | L514 |
+| PO-07-02 | TS-001 深度不可变性 | open | L2 白名单补 ImmutableArray 后备可变性说明 + 嵌套环检测算法；§14.4 增对应反例测试 | L443–452, L585 |
+| PO-07-03 | TS-004 sealed 空洞真 | cond-discharged | 前提：全部 Shell sealed 由生成器保证（挂接 PO-07-08） | L588 |
+| PO-07-04 | TS-009 反射调用序 | open | 给出 Godot C# 绑定方法查找的源码级证据，或删除该命题并与 TS-004 的矛盾二选一 | L588, L593 |
+| PO-07-05 | EA-005/TS-005 方法体写集分析 | open | 二选一：(a) 更正 §6.3 为「Query 声明近似 + L3 方法体兜底」；(b) 给出具备方法体分析的 Generator 判据并重开 S2 | L449, L557–568, L589, L1021 |
+| PO-07-06 | S1/S2 sound-completeness 标签 | open | S1 改称注入 completeness；统一 §14.1 定义措辞 | L1006–1022 |
+| PO-07-07 | RULE001/TS-007 传递引用完备 | open | Analyzer 扫描传递引用闭包或 CI 侧 `--include-transitive` 校验 | L591 |
+| PO-07-08 | A1 泄漏检测 COMPLETE | open | 补三前提（无别名、父级级联语义、⊤ 分支→人工确认），降格为「scope 局部净增报警」 | L609, L703, L1030 |
+| PO-07-09 | A2 峰值检测 COMPLETE | open | 声明迭代构造论域（for/while/do/foreach），递归/LINQ 落 Unknown 通道 | L1031 |
+| PO-07-10 | A3 量纲混算 | cond-discharged | 前提：Claim 单桶归属 + weight 查表全函数（已在 §3.1.4b/§3.3.2 满足） | L196, L329 |
+| PO-07-11 | A4 冲突 COMPLETE | open | 显式加前提「Signaturê 无缺项」；与 PO-07-05 联动 | L1033 |
+| PO-07-12 | Unknown-as-use fail-open | open | 冲突判定处 Unknown 强制产「人工确认」诊断，修正 P4 的 fail-closed 措辞 | L283, L697, L1034 |
+| PO-07-13 | TS-011 Benchmark 证据 | open | 附基准数据（负载/环境/数字/产物路径），或将状态改回 open | L595 |
+| PO-07-14 | R-8/R-9 Benchmark 缓解措施证据 | open | 同 PO-07-13；缓解措施栏不得引用不存在的实验 | L844–845 |
+| PO-07-15 | TS-003 Signature 一致性 | open | 声明 Command 构造器的 Signature 由 ED-001 推导且随白名单完整性受限 | L587 |
+| PO-07-16 | §6.5 与 §14.4/rA6 状态机矛盾 | open | §6.5 引入 cond-discharged 第三态，统一到 §14.4 判据 | L581–596, L1081 |
+| PO-07-17 | 章节 §14 编号重复 | open | 「文档历史」重编号为 §15 或去编号 | L1000, L1086 |
 
-## 本轮新发现未消解缺口（I7- 前缀，全局唯一）
-- **I7-01**：L1 是唯一真可证层（语言保证）；L2/L3 完备性全未证 ⇒ 全文「收敛」声明过度。
-- **I7-02**：方法体写集分析漏间接写/反射/别名 ⇒ EA-005 冲突检测、SYS001 可能漏冲突（不安全）。
-- **I7-03**：「无决策」AST 检查仅覆盖 6 种语句，漏 `?.`/`??`/短路/`switch` 表达式/LINQ（隐藏控制流）。
-- **I7-04**：RULE001 漏检经 InternalsVisibleTo/反射/共享基类的间接 Godot 依赖。
-- **I7-05**：TS-009 反射 new 隐藏方法无法静态阻止，依赖「不滥用」，非机制保证。
-- **I7-06**：TS-011 的「原型 Benchmark 验证」无引用无数据，性能声明不可复现（证据缺口）。
-- **I7-07**：TS-008/TS-003 收敛建立在与未证工具（RULE001/Generator 映射）耦合上 ⇒ asserted。
+---
+
+## 新发现缺口清单
+
+1. **G-07-1｜机制矛盾（高危）**：§6.3 声称的方法体写集分析与 §14.2 S2「不分析方法体内部」互斥；EA-005、TS-005 收敛状态为假。（L557–568 ↔ L1021–1022）
+2. **G-07-2｜fail-open 反例（高危）**：Unknown-mode ↦ use 使并行冲突检测产生假阴性，与 §8.1/§14.3-A5 的 fail-closed 叙事矛盾。（L283 ↔ L697, L1034）
+3. **G-07-3｜证据不存在（中危）**：全部 3 处 Benchmark 声明零数据支撑；TS-011 的「已收敛」是以计划中的实验背书当下命题。（L595, L844–845）
+4. **G-07-4｜A1 语义反例（中危）**：§8.1 自己核实的「父节点 free 递归释放 children」事实未被 A1 的泄漏定义吸收，导致「无显式 QueueFree ⇒ 泄漏」在场景销毁边界为假阳性语义。（L703 ↔ L1030）
+5. **G-07-5｜状态机不一致（结构性）**：§14.4+rA6 承认工具层未证，§6.5 却整表「已收敛」；缺「条件消解」中间态。（L581–596 ↔ L1081, L1100）
+6. **G-07-6｜ImmutableArray 深度不可变性漏洞（低危）**：白名单接受的 `ImmutableArray<T>` 后备数组可经强转变更，不可变性为约定非保证，文档未声明此信任假设。（L450, L546）
+7. **G-07-7｜组件嵌套环检测未定义（低危）**：「递归检查，必须扁平化」未定义环引用情形下的终止与报错规则。（L451）

@@ -34,9 +34,13 @@ public readonly record struct EffectEvent
     /// 默认单实例（<see cref="LoopCount"/> 的 1 值）。ω=⊤ ⇒ 上界开放（常驻）。</summary>
     public LoopCount Loop { get; }
 
-    /// <summary>§2.1 — 全字段构造（含 ω）。</summary>
+    /// <summary>§2.1 — 全字段构造（含 ω）。
+    /// P0-5（hickey-x3 核实矩阵#5 / 探针 F）：拒绝 Lo=⊤ 寿命——Lo=⊤ 的事件永不存活，
+    /// 会让 create-without-release 泄漏剧本在端点采样下静默全绿（假绿）。非法输入在构造期即不可表达。</summary>
     public EffectEvent(Interval lifetime, ScopeId scope, Signature footprint, LoopCount loop)
     {
+        if (lifetime.Lo.IsTop)
+            throw new ArgumentException("EffectEvent lifetime 下界不可为 ⊤（[⊤,⊤] 非法：事件永不存活会掩盖泄漏审计）");
         Lifetime = lifetime;
         Scope = scope;
         Footprint = footprint;
@@ -106,6 +110,9 @@ public sealed partial class EffectScript
     {
         var violations = new List<Violation>();
 
+        // R10-F1：default(Budget).Caps == null（struct 默认值绕过构造函数归一）⇒ 归一为无上限，不 NRE。
+        if (cap.Caps is null) cap = Budget.None;
+
         // 端点集合（有限 Lo/Hi）。hi=⊤ 视为开放尾段（采 maxFinite+1 代表点）。
         var endpoints = new SortedSet<ulong>();
         ulong maxFinite = 0;
@@ -145,6 +152,10 @@ public sealed partial class EffectScript
         var peakSum = new Dictionary<ResourceId, NatStar>();                    // gate(2) 有限峰值和（不含 ⊤ 声明）
         var topCount = new Dictionary<ResourceId, int>();                       // gate(2) 活跃 ⊤ 声明计数（>0 ⇒ 该资源峰值 ⊤）
         var grp = new Dictionary<(ResourceId, ScopeId, int), HashSet<int>>();   // gate(3) 每 (res,scope,mode) 的活跃事件集合
+        var netScope = new Dictionary<ResourceId, ScopeId>();                   // gate(1) 资源→首个贡献者 scope（用于 Violation 归因）
+        var peakScope = new Dictionary<ResourceId, ScopeId>();                  // gate(2) 资源→首个峰值贡献者 scope
+        ScopeId ResolveNetScope(ResourceId r) => netScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
+        ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
 
         void Step(int ei, bool enter)
         {
@@ -160,6 +171,7 @@ public sealed partial class EffectScript
                     var contrib = c.Mode == Mode.Release
                         ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
                         : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
+                    if (!netScope.ContainsKey(r)) netScope[r] = e.Scope;
                     net[r] = net.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
@@ -176,6 +188,7 @@ public sealed partial class EffectScript
                     hs.Add(ei);
                     if (c.Mode != Mode.Release) // §3.3.2 release 不贡献峰值
                     {
+                        if (!peakScope.ContainsKey(r)) peakScope[r] = e.Scope;
                         bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                         if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
                         else
@@ -217,32 +230,39 @@ public sealed partial class EffectScript
 
         void AuditAtSample(NatStar t)
         {
-            // gate(1) 负陷：运行中 net.Hi < 0。
+            // gate(1) 负陷：运行中 net.Hi < 0（按资源归属的事件 scope 归因，非 Global）。
             foreach (var kv in net)
                 if (!kv.Value.Hi.IsTop && kv.Value.Hi.Value < 0)
-                    violations.Add(new Violation(t, kv.Key, new ScopeId.Global(), "NegativeDip",
+                {
+                    // 取该资源的任一活跃贡献者的 scope 作归因（net 已按归一化资源聚合，scope 取首个活跃 key 的 e.Scope）
+                    var scope = ResolveNetScope(kv.Key);
+                    violations.Add(new Violation(t, kv.Key, scope, "NegativeDip",
                         $"累积净占用在 t={t} 为负（release 早于 create）：{kv.Value}"));
-            // gate(2) 峰值：每 cap 资源当前运行中峰值 ≤ Caps[r]。
+                }
+            // gate(2) 峰值：每 cap 资源当前运行中峰值 ≤ Caps[r]（按 cap 对应的归因 scope）。
             foreach (var kv in cap.Caps)
             {
                 var nk = ResourceId.Normalize(kv.Key);
                 var p = (topCount.TryGetValue(nk, out var tc) && tc > 0) ? NatStar.Top : peakSum.GetValueOrDefault(nk, NatStar.Of(0));
                 if (p.CompareToFinite(kv.Value) > 0)
-                    violations.Add(new Violation(t, kv.Key, new ScopeId.Global(), "PeakExceeded",
+                {
+                    var scope = ResolvePeakScope(nk);
+                    // R4-V2（hickey-x）：上报归一化键 nk（与查找一致），否则同一违例随用户拼写呈现两种资源身份。
+                    violations.Add(new Violation(t, nk, scope, "PeakExceeded",
                         $"峰值 {p} > 预算 {kv.Value}"));
+                }
             }
-            // gate(3) 兼容：组内同 mode∈{create,move,release} 活跃事件数 ≥2 ⇔ 存在跨事件同 mode 冲突对（CONFLICT 集，§3.2.3）。
-            // 数学等价于逐点两两枚举：同 mode 多份副本必来自 ≥2 个不同事件（单事件内 ω 份同 EventIdx 不触发，与逐点一致）。
+            // gate(3) 兼容：组内同 mode 活跃事件数 ≥2 ⇔ 同 mode 冲突（单一真源：Compatible.IsCompatible 同值必冲突）。
+            // 组已按 (resource,scope,mode) 分组，组内 mode 相同，冲突等价于 IsCompatible(mode,mode)==false 且组大小≥2。
             foreach (var kv in grp)
             {
-                var mode = kv.Key.Item3;
-                if ((mode == (int)Mode.Create || mode == (int)Mode.Move || mode == (int)Mode.Release) && kv.Value.Count >= 2)
-                {
-                    var detail = mode == (int)Mode.Create ? "create×create 冲突（CONFLICT 集，§3.2.3）"
-                                : mode == (int)Mode.Move ? "move×move 冲突（CONFLICT 集，§3.2.3）"
-                                : "release×release 冲突（CONFLICT 集，§3.2.3）";
-                    violations.Add(new Violation(t, kv.Key.Item1, kv.Key.Item2, "CompatibleConflict", detail));
-                }
+                if (kv.Value.Count < 2) continue;
+                var mode = (Mode)kv.Key.Item3;
+                if (Compatible.IsCompatible(mode, mode)) continue; // Use 等自兼容 ⇒ 组内不冲突
+                var detail = mode == Mode.Create ? "create×create 冲突（CONFLICT 集，§3.2.3）"
+                            : mode == Mode.Move ? "move×move 冲突（CONFLICT 集，§3.2.3）"
+                            : "release×release 冲突（CONFLICT 集，§3.2.3）";
+                violations.Add(new Violation(t, kv.Key.Item1, kv.Key.Item2, "CompatibleConflict", detail));
             }
         }
 
@@ -271,7 +291,6 @@ public sealed partial class EffectScript
                 if (e.Loop.Count.IsTop) continue;       // 居民层豁免
                 if (e.Lifetime.Lo.IsTop) continue;       // Lo=⊤ 永不存活，不入累积
                 if (e.Lifetime.Lo.CompareToFinite(closureT) > 0) continue; // 修 auditR：仅纳入已开始（Lo≤closureT）事件，排除未来事件
-                if (e.Lifetime.Lo.IsTop) continue;       // Lo=⊤ 永不存活，不入累积
                 foreach (var c in e.Footprint.OccupyClaims)
                 {
                     var r = ResourceId.Normalize(c.Resource);
@@ -282,13 +301,31 @@ public sealed partial class EffectScript
                     closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
+            // Leak 归因：取该资源首个有限贡献者的 scope（闭包路径首个 Lo≤closureT 的 e.Scope）
+            var leakScope = new Dictionary<ResourceId, ScopeId>();
+            for (int ei2 = 0; ei2 < Events.Length; ei2++)
+            {
+                var ee = Events[ei2];
+                if (ee.Loop.Count.IsTop) continue;
+                if (ee.Lifetime.Lo.IsTop) continue;
+                if (ee.Lifetime.Lo.CompareToFinite(closureT) > 0) continue;
+                foreach (var cc in ee.Footprint.OccupyClaims)
+                {
+                    var rr = ResourceId.Normalize(cc.Resource);
+                    if (!leakScope.ContainsKey(rr)) leakScope[rr] = ee.Scope;
+                }
+            }
             foreach (var kv in closureNet)
                 if (!kv.Value.ContainsZero)
-                    violations.Add(new Violation(closureT, kv.Key, new ScopeId.Global(), "Leak",
+                {
+                    var ls = leakScope.TryGetValue(kv.Key, out var s) ? s : new ScopeId.Global();
+                    violations.Add(new Violation(closureT, kv.Key, ls, "Leak",
                         $"生命周期未闭合（净效应不含 0）：{kv.Value}"));
+                }
         }
 
-        return new AuditResult(violations.Count == 0, violations.ToImmutableArray());
+        // R1-HIGH-3（hickey-x）：报告 gate(2) 实际检查的预算资源数——Caps.Count==0 ⇒ 峰值门未运行，调用方须知情。
+        return new AuditResult(violations.Count == 0, violations.ToImmutableArray(), cap.Caps.Count);
     }
 
     // §2.2 — Lifetime ∋ t 判定（hi=⊤ 视为无上界；Lo=⊤ ⇒ ⊤>有限t ⇒ 永不存活）。
@@ -302,8 +339,9 @@ public sealed partial class EffectScript
         return new Interval(s.Lo * w, s.Hi * w);
     }
 
-    private static ZStar ToZ(NatStar n) => n.IsTop ? ZStar.Top : ZStar.Of((long)n.Value);
-    private static ZStar Negate(NatStar n) => n.IsTop ? ZStar.Top : ZStar.Of(-(long)n.Value);
+    // R4-F1：超 long 表示域 ⇒ ZStar.Top（禁止 (long) 强转静默翻转符号）。
+    private static ZStar ToZ(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(unchecked((long)n.Value));
+    private static ZStar Negate(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(-unchecked((long)n.Value));
 }
 
 /// <summary>§2.3 — 峰值预算壳（软约束）。缺省 = 该资源无上限（⊤）。审计时 Peak ≤ Caps[r]，超限报 PeakExceeded。
@@ -320,7 +358,9 @@ public readonly record struct Budget
     public static readonly Budget None = new(new Dictionary<ResourceId, NatStar>());
 }
 
-/// <summary>§3.2 — 审计结果。Passed=全部 gate 通过；Violations 携带反例（时刻/资源/类型/当前值 vs 上限），供 AI 直接回修 JSON。</summary>
+/// <summary>§3.2 — 审计结果。Passed=全部 gate 通过；Violations 携带反例（时刻/资源/类型/当前值 vs 上限），供 AI 直接回修 JSON。
+/// R1-HIGH-3（hickey-x）：CapsChecked 记录 gate(2) 实际检查的预算资源数——0 表示峰值门未运行，
+/// 使「查过通过」与「没查」可区分（零预算时 Passed=true 不再冒充全绿）。</summary>
 public readonly record struct AuditResult
 {
     /// <summary>§3.2 — 是否全部通过。</summary>
@@ -329,8 +369,14 @@ public readonly record struct AuditResult
     /// <summary>§3.2 — 违例清单（可空）。</summary>
     public ImmutableArray<Violation> Violations { get; }
 
-    /// <summary>§3.2 — 构造审计结果。</summary>
-    public AuditResult(bool passed, ImmutableArray<Violation> violations) { Passed = passed; Violations = violations; }
+    /// <summary>R1-HIGH-3（hickey-x）— gate(2) 实际检查的预算资源数。0 ⇒ 峰值门整体未运行（无预算声明），调用方应显式知情而非默认全绿。</summary>
+    public int CapsChecked { get; }
+
+    /// <summary>§3.2 — 构造审计结果（兼容旧签名，CapsChecked=0）。</summary>
+    public AuditResult(bool passed, ImmutableArray<Violation> violations) { Passed = passed; Violations = violations; CapsChecked = 0; }
+
+    /// <summary>R1-HIGH-3 — 全参构造（含覆盖面计数）。</summary>
+    public AuditResult(bool passed, ImmutableArray<Violation> violations, int capsChecked) { Passed = passed; Violations = violations; CapsChecked = capsChecked; }
 }
 
 /// <summary>§3.2 — 单条违例（反例）。携带供 AI 回修的充分信息：哪个时刻、哪个资源、哪类问题、当前值 vs 上限/阈值。</summary>

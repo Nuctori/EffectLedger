@@ -69,24 +69,28 @@ public sealed class AdvE2E_R8
         return net.IsConserved(resource);
     }
 
-    // ── 场景源：pair 容器 ──
+    // ── 场景源：pair 容器（P0-2 对齐：Godot 桩 + 接收者调用；标注方法保留供 L2 生成器 emit）──
     private const string PairSource = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes {
+    public sealed class Node3D { public void AddChild(object c) { } public void RemoveChild() { } }
+    public sealed class ResourceLoader { public object Load() => new(); }
+}
 namespace R8 {
     public sealed class Node3D { public object? child; }
     public sealed class Paired {
-        private readonly Node3D _n = new();
+        private readonly GodotShapes.Node3D _n = new();
+        private readonly GodotShapes.ResourceLoader _rl = new();
         [EffectOverride(""spawn/despawn"")]
-        public void AddChild(object c) { _n.child = c; }
+        public void AddChild(object c) { }
         [EffectOverride(""release tree"")]
-        public void RemoveChild() { _n.child = null; }
+        public void RemoveChild() { }
         // A acquire Tree(node.id); B release 同资源 ⇒ 组合守恒（整体不报）
-        public void Balanced() { AddChild(new object()); RemoveChild(); }
+        public void Balanced() { _n.AddChild(new object()); _n.RemoveChild(); }
         // 跨类型：acquire Object(Mem) 然后 release Tree ⇒ 不守恒（应报）
-        public void CrossType() { Load(); RemoveChild(); }
-        public void Load() { }
+        public void CrossType() { _rl.Load(); _n.RemoveChild(); }
         // 部分释放：acquire 2 Tree，release 1 ⇒ net 1 ⇒ 应报
-        public void Partial() { AddChild(new object()); AddChild(new object()); RemoveChild(); }
+        public void Partial() { _n.AddChild(new object()); _n.AddChild(new object()); _n.RemoveChild(); }
     }
 }";
 
@@ -154,21 +158,14 @@ namespace R8 {
     // ── 逃逸：per-method。[EffectOverride] 的逃逸方法 imbalance 不报；同类未标注兄弟 imbalance 必报。──
     private const string EscapeSource = @"
 using Cosmos.EffectAlgebra;
-namespace R8 {
-    public sealed class Node3D { public object? child; }
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace R8b {
     public sealed class Escape {
-        private readonly Node3D _n = new();
-        [EffectOverride(""known leak"")]
-        public void AddChild(object c) { _n.child = c; }
-        [EffectOverride(""known leak 2"")]
-        public void AnotherAdd(object c) { _n.child = c; }
-        // 逃逸通道（标注）⇒ 即使 acquire 无对应 release 也不报
-        public void EscapeMethod() { AddChild(new object()); }
-        // 非豁免但同方法内 acquire 有对应 release ⇒ 不报
-        public void Balanced(object c) { AddChild(c); Free(); }
-        public void Free() { _n.child = null; }
-        // 未标注逃逸 ⇒ 遗漏释放 ⇒ 必报（per-method 逃逸边界验证）
-        public void UnmarkedLeak() { AddChild(new object()); }
+        private readonly GodotShapes.Node3D _n = new();
+        // 逃逸通道语义说明：EAA0901 永不豁免（P0-1 文档对齐）——本测试锁定的是 per-method 分析边界：
+        // 同方法内 acquire 无 release ⇒ 该方法必报；标注在【其他】方法上不影响本方法的判定。
+        public void EscapeMethod() { _n.AddChild(new object()); }
+        public void UnmarkedLeak() { _n.AddChild(new object()); }
     }
 }";
 

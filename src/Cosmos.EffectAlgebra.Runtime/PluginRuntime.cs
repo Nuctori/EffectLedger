@@ -57,14 +57,20 @@ public sealed class PluginRuntime
         if (_fibers.Values.Any(f => f.State == FiberState.TearingDown))
             throw new InvalidOperationException("级联 teardown 进行中禁止新装载（provider 正在拆除，须待其 Dead 后）");
         var fiber = new Fiber(spec.Id, spec.Effect, spec.Coeffect, spec.Inverses);
-        _fibers[fiber.Id] = fiber;
+        // R7-L1：重复 FiberId 抛异常——原静默覆盖使外部持有的旧 Fiber 成幽灵（State 可驱动、图中却是新实例）。
+        if (!_fibers.TryAdd(fiber.Id, fiber))
+            throw new InvalidOperationException($"Fiber {fiber.Id} 已注册：禁止静默覆盖（R7-L1）");
         _graph.Register(fiber);
         return fiber;
     }
 
-    /// <summary>§3 — 批量建立显式依赖边（同 Scope Requires⊇Provides）；软边同时回填 provider.Dependents（medium #3：否则 Godot 壳 ProcessMode 级联遍历空集 no-op）。</summary>
+    /// <summary>§3 — 批量建立显式依赖边（同 Scope Requires⊇Provides）；软边同时回填 provider.Dependents（medium #3：否则 Godot 壳 ProcessMode 级联遍历空集 no-op）。
+    /// R7-M2：校验「同 Scope」前置条件（设计 §3 step1）——跨 Scope 边装载能过但 teardown 语义未定义，非法状态不可表示。</summary>
     public void AddDependency(Fiber dependent, Fiber provider, EdgeKind kind)
     {
+        if (dependent.Scope != provider.Scope)
+            throw new InvalidOperationException(
+                $"AddDependency 前置条件违反（§3 step1）：dependent {dependent.Id} Scope({dependent.Scope}) != provider {provider.Id} Scope({provider.Scope})，跨 Scope 依赖边 teardown 语义未定义（R7-M2）");
         if (kind == EdgeKind.Hard) _graph.AddHardEdge(dependent, provider);
         else _graph.AddSoftEdge(dependent, provider);
         provider.Dependents = provider.Dependents.Add(dependent.Id); // 回填依赖者集合（供 Godot 壳级联）

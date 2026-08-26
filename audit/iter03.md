@@ -1,91 +1,126 @@
-# Iter03 审计 — §3.3 派生度量（net / peak / read / write）数学性质
+# Iter03 独立审计
 
-- **审计视角**：派生度量代数（独立审计 pass #3/20，hy3，单独进程）
-- **范围**：§3.3.1-3.3.3（net/peak/read/write）；邻接 §3.1.1（Claim 字段）、§3.2.1-3.2.5（∪/S×ω/Peak）、§3.4 MA-003/MA-004、§1 DO-3/DO-7/DO-9；交叉 Iter01（I1-02 Claim 去重）、Iter02（I2-05 S×ω、I2-07 双 Peak 矛盾）、Iter14（DO-7 量纲隔离）
-- **结论摘要**：net/peak/read/write 的**语法定义**可形式化，但其数学性质（可加性、单调性、scope 单调性、量纲隔离）几乎全部挂在 Iter01/Iter02 的开放约束上（Claim 相等、ScopeId⊆、S×ω 语义）。关键发现：`net` 对 ∪ **非同态**——这与 §2.2「统一组合律」、DO-3 的「基于集合并 ∪ 的统一组合律」不能直接推广到派生度量 net（仅集合层成立）；net 守恒仅在「按资源配对 create/release 同 size」时成立，而文档未要求配对 ⇒ 泄漏（net≠0）是**允许状态**，与 DO-9 泄漏检测依赖的「净零」不变量未显式关联。§3.3.2 `peak` 依赖未定义的 ScopeId⊆（阻塞）且跨 kind 混合 size 求和（与 DO-7 冲突）；与 §3.2.5 的 `Peak` 是两函数同名（Iter02 I2-07）。read/write 仅计数、可加性依赖 Claim 去重、不按 size 加权（精度缺口）；MA-003「并行 read 累加」是精度策略非证明。MA-004「occupy 峰值与净变化混淆已解决」仅为**结构层收敛**，使用层混淆（调用方仍可用 peak 当 budget、用单点 net 断言无泄漏）未消。
+- 审计对象：`PDR_Effect_Cost_Algebra_v3_FINAL.md`（磁盘版本 v3.0-FINAL-rA6）
+- 范围：§3.3 派生度量（定义 3.3.1 Net / 3.3.2 Peak / 3.3.3 read/write），及其对 §3.1（SizeVal L203–236、Claim= L169、⊆* L141）、§3.2（组合律 L252–301）的依赖
+- 纪律：结论仅基于该文档自身内容，引用行号；每命题标注 discharged / asserted / open
 
----
+## 结论摘要
 
-## C1. 净变化 Net（§3.3.1）
+§3.3 的三个派生度量在「作用域过滤谓词」层面已由 §3.1.3b 良定义，但在**算术层**存在系统性缺口：
+SizeVal 已从标量改为区间 `[lo,hi]`（L207），而 §3.1.5a 只为 ℕ\* 定义了 `+ × max min compare` 五种运算（L221–228），
+**区间加法与区间减法从未定义**。net 的核心运算 `Σ c.size  −  Σ c.size`（L312–318）因此悬空：
+求和算子未指定（区间算术加 `[a+c,b+d]`？还是 merge_I join？二者语义完全不同），
+减法算子在 ℕ\*/Interval 上无定义，⊤ 参与减法的传播律缺失。此外发现一处**文档内部矛盾**：
+Peak 公式（L327/L337）缺少 `c.kind=occupy` 过滤，与 §3.1.4b 分桶约束（L199）及 DO-7 直接冲突；
+且 L337 中 `weight(c.kind,c.kind)` 恒等于 1，weight 函数在 Peak 公式内部**不可能**触发 KIND_MIX，
+量纲隔离实际依赖未写出的桶级外层结构。
 
-**命题** `net(S) = Σ_{c∈S, c.kind=occupy, c.mode∈{create,move}} c.size − Σ_{c∈S, c.kind=occupy, c.mode=release} c.size`
+## 逐命题审计
 
-**数学性质 / 证明状态**：
-- **(PO-I3-a) net 对 ∪ 非线性（open，与 DO-3 冲突）**：`net(S₁∪S₂)` 一般 **≠** `net(S₁)+net(S₂)`。因 net 按 `mode∈{create,move}` 与 `mode=release` **分桶求和**，而非按资源配对：`S₁` 含 `occupy(res,r,create,size=a)`，`S₂` 含 `occupy(res,r,release,size=a)`，`S₁∪S₂` 后净量抵消，但 `net(S₁)=+a`、`net(S₂)=-a`。即 net 对 ∪ **无同态**。
-  - 证据：net 是 Signature 上的**非线性**函数（分桶求和 ≠ 线性叠加）。§2.2 L60「统一组合律，无分配律问题」仅指 `∪` 这层集合运算；net 是 ∪ 的**派生量**，其非同态性说明 DO-3「统一组合律」不能推广到 net。状态 = **open（需与 DO-3 调和声明）**。
-- **(PO-I3-b) net 守恒仅当按资源配对（open，关联 DO-9）**：令 per-resource 净 `net_r(S)=Σ_{同(res,scope)} create·size − Σ release·size`。仅当所有 occupy 按**资源+scope 配对**（create 后必 release 同 size）时 `Σ_r net_r(S)=0`。文档未要求配对 ⇒ 泄漏（net≠0）是允许状态。DO-9「Instantiate 无对应释放路径静态报警」依赖「净零」不变量，但该不变量**未被文档声明为强制**，故泄漏检测的数学前提缺失。状态 = **open（关联 DO-9）**。
-- 形式证明（结构层）：**P1（discharged，条件）**：若 Claim 相等良定义（Iter01 PO-I1-a/b）且所有 occupy 按 (resource,scope) 配对 create/release 同 size，则 `Σ_r net_r(S∪S')=Σ_r net_r(S)+Σ_r net_r(S')`（在配对集一致时）。证明：分桶求和对配对集相加可分配。前提 PO-I3-b 未立 ⇒ 条件。
+### 命题 N1：net 是全函数（良定义性）
 
-**文档行号**：§3.3.1（L159-163）、§2.2 L60-61、§1 DO-3（L15）、DO-9（L21）、Iter01 PO-I1-a/b、Iter02 I2-07。
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | net : Signature → D（某值域 D），对任意 S 唯一确定 |
+| 状态 | **open** |
+| 论证 | L312–318 定义 net 为两个 Σ 之差。(i) Σ 对 `c.size ∈ Interval` 求和：§3.1.5a 仅定义 ℕ\* 上的 +（L224），**Interval 上的加法未定义**——若取区间算术加 [a,b]+[c,d]=[a+c,b+d] 则需显式声明；若误用 merge_I（L235，min/max join）则 net 退化为非负包络，不再是「净变化」；(ii) 两 Σ 之间的 `−` 在 ℕ\* 与 Interval 上均无定义（L221–228 运算律表无减法）；(iii) ⊤ 进入被减项/减项时的行为（⊤−x ? x−⊤?）无任何定律。三者在文档中均为悬空符号。 |
+| 行号 | L207–208, L221–228, L309–320 |
 
----
+### 命题 N2：net(S, Global) = net(S)（基础定义与分组定义一致）
 
-## C2. 峰值 Peak（§3.3.2）与 §3.2.5 的 Peak 矛盾
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | 全局聚合是作用域分组的最大元特例 |
+| 状态 | **discharged（条件证明）** |
+| 前提 | N1 的算术层已补齐（本命题只关涉过滤谓词） |
+| 论证 | 按 §3.1.3b，`c.scope ⊆ Global := (c.scope ⊑ Global) ∨ (Global=Global)`；任一具体 scope 满足 X ⊑\_any Global（L150–152），故过滤器恒真，两组求和指标集相同 ⇒ 两式逐项相等。附带验证：⊆\* 的自反/反对称/传递经查表成立（Global⊆a ⇔ a=Global 保证传递性闭合），L157 的偏序断言成立。 |
+| 行号 | L141–158, L312 vs L317 |
 
-**命题** `peak(S,scope) = max_{t∈scope} Σ_{c∈S, c.scope⊆t, c.mode≠release} c.size`
+### 命题 N3：net 对 ∪ 线性 / 单半群同态
 
-**数学性质 / 证明状态**：
-- **(PO-I3-c) 依赖 ScopeId⊆（open，阻塞）**：`c.scope⊆t` 的 ⊆ 在 §3.1.3 仅枚举 7 种 ScopeId 构造子，**从未定义包含序**（Iter01 I1-04 / Iter15）。无 ⊆ 则 `peak` 谓词无确定真值 ⇒ peak 数学未良定义。状态 = **open（阻塞）**。
-- **(PO-I3-d) 跨 kind 混合 size 求和（open，与 DO-7 冲突）**：求和 `Σ c.size` 对 `c.scope⊆t ∧ c.mode≠release` 的**全部 Claim** 累加，不按 kind 分离。即 read/write/occupy 三类 size 同数值相加（如 `GetNode` read size + `AddChild` occupy size 同加）。DO-7「read/write/occupy 不可混算，编译期报错」要求跨 kind 算术被禁止——peak 在此**混算**，与 DO-7 冲突（Iter14）。状态 = **open**。
-- **(PO-I3-e) 与 §3.2.5 Peak 矛盾（open）**：Iter02 I2-07 已立。补充：§3.3.2 `peak` 对**单签名 S 静态**求 max over `t∈scope`，不含循环展开 `S×ω`；§3.2.5 `Peak` 量化 `i∈1..ω`（轮次）。对 `while` 体 S，`peak(S,scope)` 给常量上界，`Peak(S,scope)` 在 ω=∞ 下为 ∞（若多重集语义，Iter02 I2-05）。同一输入两函数结论相反 ⇒ 选错即错报警/漏报。状态 = **open**。
-- 形式证明（结构层）：**P2（discharged，条件）**：在「Claim 相等良定义 + ScopeId⊆ 定义 + 单签名静态」前提下，`peak(S,scope)` 是 well-defined 函数（有限 scope 上有限和的最大值）。证明：前提成立即良定义；size≥0 ⇒ 求和单调。前提 PO-I3-c/d 未立 ⇒ 条件。
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | net(S₁∪S₂) = net(S₁) + net(S₂) 是否成立 |
+| 状态 | **discharged（否定性结果 + 条件正结果）** |
+| 论证 | **反例**：S₁ = S₂ = { occupy{Memory(u), create, s, [64,64]} }。net(S₁)=net(S₂)=64；但 ∪ 幂等（L252–256，Claim 相等合并）⇒ S₁∪S₂ = S₁ ⇒ net(S₁∪S₂)=64 ≠ 128。故 net **不是** (Signature,∪,∅) 到任意加法幺半群的单调半群同态；顺序组合 (S;S)=S 语义下「同一 Claim 重复分配两次」被计数一次。这是 Set 语义与资源计数的固有张力，文档未声明此限制（MA-004 L354 称「已解决」，仅指 net/peak 不再混淆，未覆盖幂等吞并重复分配问题）。**条件正结果**：若 S₁∩S₂ = ∅（按 Claim= 判），则 net(S₁∪S₂)=net(S₁)+net(S₂)，前提是 N1 的区间加法已定义且可交换结合。 |
+| 行号 | L252–256, L354 |
 
-**文档行号**：§3.3.2（L165-168）、§3.2.5 L154、§3.1.3 L103-113、§1 DO-7（L19）、Iter01 I1-04、Iter02 I2-05/I2-07、Iter14。
+### 命题 N4：Peak 良定义且量纲隔离（DO-7）
 
----
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | Peak : Signature × ScopeId → SizeVal∪{⊤}；同一次 Peak 内不跨 kind 混算 |
+| 状态 | **open（含内部矛盾）** |
+| 论证 | (i) **kind 过滤缺失（内部矛盾）**：L327 与 L337 的求和指标仅为 `c.scope⊆scope ∧ c.mode≠release`，无 `c.kind=occupy`。read/write 桶的 claim（如 §7.2 的 read(self,"transform",use) size=[1,1]）全部混入占用峰值求和，直接违反 L199「peak/net/read/write 仅在同桶内聚合」与 DO-7。文字描述「并发占用 size 之和」（L326）暗示仅 occupy，公式未兑现——**规范文本与其形式化公式矛盾**。(ii) weight 失效：L337 的 `weight(c.kind,c.kind)` 由 L333 恒为 1（同 kind），单条 Peak 公式内永远不产生 ⊥；KIND_MIX 只能在「外部把 Peak\_read 与 Peak\_occupy 相加」时触发，而该外层结构未定义。L1032（A3 判据）声称基于 §3.3.2 weight 达成 SOUND+COMPLETE，证据链断裂。(iii) ω=⊤ 时 L327 的 `max_{i∈1..ω}` 类型非法（1..⊤ 无意义），靠 L301/L328 的兜底条款「返回 ⊤」全函数化，可接受但属公理式补丁而非推导。(iv) copy\_i 因 scope 统一标注为 Loop(id) 且其余字段相同，各副本 Claim 相同 ⇒ 在集合语义下坍缩为一个副本（见 N6）。 |
+| 行号 | L196–200, L296, L301, L323–338, L1032 |
 
-## C3. read / write 计数（§3.3.3）
+### 命题 N5：Peak ≥ net（峰值上界净变化）
 
-**命题** `read(S)=|{c∈S | c.kind=read}|`，`write(S)=|{c∈S | c.kind=write}|`
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | Peak(S,scope) ≥ net(S,scope)（资源守恒直觉：持有峰值不小于净增量） |
+| 状态 | **asserted（ω=1 时条件可证；一般情形 open）** |
+| 论证 | 文档从未陈述此关系。设 P = Σ(create,move)、R = Σrelease（均限 kind=occupy）。ω=1 且数值域为普通自然数时：net = P − R ≤ P ≤ Σ\_{mode≠release} = Peak，需 R ≥ 0（N1 补齐后平凡）且 Peak 不含负项。一般情形失败：Peak 取 max 于循环副本之上，而 net 按全部副本累计；由于副本集合坍缩（N6），net(S×ω)=net(S) ≠ ω·net(S)，两度量对 ω 的响应不一致，「Peak ≥ net」在多副本泄漏场景下不可判定。文档亦未给出区间版证明路径。 |
+| 行号 | L312–318, L327, L354 |
 
-**数学性质 / 证明状态**：
-- **(PO-I3-f) 可加性依赖 Claim 去重（open）**：`read(S₁∪S₂)` 若不去重（size 归一化未立，Iter01 I1-02/I1-b），重复 read 同一资源被计 2 次。`read` 对 ∪ 是**基数度量**，非 additivity-preserving 除非去重。状态 = **open（根因 Iter01）**。
-- **(PO-I3-g) read 不按 size 加权（open，精度）**：`read(S)` 计数而非量化；但 §7 的 read 资源有 size 语义（如 `Load` 占 memory size，§7.4 L456）。read 计数不反映实际读量 ⇒ 「读多但计数少」漏评估。状态 = **open（精度）**。
-- **(PO-I3-h) MA-003「并行 read 去重，接受保守累加」审计（asserted）**：§3.4 L182「保守估计：并行 read 累加，不尝试去重」——这是**精度策略声明，非证明结论**。状态 = **asserted（接受保守，未证上界紧度）**。
-- 形式证明（结构层）：**P3（discharged，条件）**：在 Claim 去重（Iter01 PO-I1-b 立）下，`read(S₁∪S₂) ≤ read(S₁)+read(S₂)`（次可加，等号当无重复）。证明：集合基数次可加。前提未立 ⇒ 条件。
+### 命题 N6：(S×ω) 作为数学对象良定义
 
-**文档行号**：§3.3.3（L170-174）、§3.4 MA-003（L182）、§7.4 L456-459、Iter01 I1-02/I1-b。
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | (S×ω) := Σ\_{i=1..ω} copy\_i(S) 应为 Signature 上的合法元素 |
+| 状态 | **open** |
+| 论证 | L296 用 Σ 记号定义集合构造，本身即记号滥用（集合上无 Σ）；copy\_i 仅 scope 标注 Loop(id)/Global（L296 注释），i 不进入 Claim 任何字段 ⇒ ∀i,j: copy\_i(S)=copy\_j(S)（按 Claim=），并集后 ω 个副本坍缩为一份。「上界开放的重复副本集合」（L297）不是集合也不是多重集，是无定义对象。后果：DO-8「循环内资源分配静态报警」的数值基础缺失——100 次迭代每次占 64MB 报 Peak=64MB 还是 6400MB，文档无法回答。 |
+| 行号 | L293–301 |
 
----
+### 命题 N7：peak 过滤谓词 c.mode≠release 的量纲合理性
 
-## C4. MA-004「occupy 峰值与净变化混淆已解决」真伪
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | 过滤谓词应在维度（kind×mode×unit）上封闭 |
+| 状态 | **open** |
+| 论证 | 三重量纲问题：(i) mode 层面——谓词只排除 release，保留 use/create/move。对 kind=occupy 自洽（use=持续持有应计入），但对 read/write 无意义（见 N4-i）；谓词的正确性**隐式依赖 kind=occupy 前提，而前提未写进公式**。(ii) unit 层面——size 无单位维度：occupy{Memory,[64,64]}(MB) 与 occupy{Occupancy("audio"),[1,1]}(通道数) 在 Peak/net 中直接相加得 [65,65]，MB 与个数混算。§3.1.5 SizeVal 无单位参数，AUDIT003 的「VramMB 预算」（L958）要求按单位类分组聚合，文档未提供机制。(iii) resource 层面——不同资源的 size 求和语义未定义（全局总量？分资源账本？），泄漏判定 net>0 也因此无法定位到具体资源。 |
+| 行号 | L207, L327, L337, L958 |
 
-**命题** §3.4 MA-004（L183）：`occupy 峰值与净变化混淆，高，已解决`，收敛「采用 Set<Claim>，net 和 peak 是派生度量，非原语」。
+### 命题 N8：net 值域良定义（区间减法 / 负值 / ⊤）
 
-**数学性质 / 证明状态**：
-- **(PO-I3-i) 结构层收敛 ≠ 使用层收敛（open，partial）**：Set<Claim> 使 net/peak 成为派生量，**消解了「把二元组(net,peak)当原语导致的不一致」这一结构问题**（原 v0.1 用区间 Grade 原语，v1→v3 改为派生量）。但文档**未提供任何机制**阻止调用方在**使用**时：① 用 `peak` 当 budget（峰值误当预算，高估然后误报或反之）；② 用单点 `net` 断言「无泄漏」（net≠0 但允许，PO-I3-b）。即混淆**根因（开发者误用派生量）未被消除**，仅载体重构。
-- 状态判定：**MA-004 部分 discharged（结构层）+ 部分 open（使用层）**。文档以「已解决」单一结论 closure，过度声称。状态 = **open（使用层）**。
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | 存在 codomain D 与封闭的减法运算使 net: Signature→D 总有定义 |
+| 状态 | **open** |
+| 论证 | (i) codomain 未声明：ℕ\* 排除负数，而 release 多于 create 时 net<0 必然出现（如先 QueueFree 后 Instantiate 的合法代码路径，或 §7.7 Stop() 单独出现）；候选 D = ℤ∪{⊤} 或整区间 [lo,hi], lo∈ℤ，均未定义。(ii) 区间点态减法 [a,b]−[c,d]=[a−d,b−c] 保持 lo≤hi 但可产生负端点；文档既未采用也未排除。(iii) ⊤−x 与 x−⊤ 的传播律缺位：create size=[1,⊤] 配 release [64,64] 时 net 结果未定义，L320 的 fail-closed 规则只覆盖 mode=Unknown 的 claim，**不覆盖 size=⊤ 的已知 claim**，存在静默漏报窗口。(iv) 泄漏判定的 `net(S,scope)>0`（L319）：`>` 只在 ℕ\* 上定义（L228），Interval 上与 0 的比较未定义（[lo,hi]>0 意为 lo>0？lo≥1 即可？），DO-9 的可判定性因此悬空。 |
+| 行号 | L207–208, L224–228, L312–320 |
 
-**文档行号**：§3.4 MA-004（L183）、§2.2 L61、§14 L771（v0.1 区间 Grade）。
+### 命题 N9：read/write 度量良定义
 
----
+| 项目 | 内容 |
+| ---- | ---- |
+| 数学性质 | read/write : Signature → SizeVal∪{⊤} 全函数 |
+| 状态 | **open（弱于 net/peak）** |
+| 论证 | L343–344 同样使用未定义的 Interval 求和（承 N1-i）；且无 scope 参数，与 net(S,scope)/Peak(S,scope) 的接口不对称——无法回答「某方法内读量」，AUDIT001（L944，60/sec 读频报警）所需的 per-scope read 无法由此公式导出。不过不过滤 mode 对 read/write 语义可辩护（读释放仍是读），不算矛盾。 |
+| 行号 | L341–344, L944 |
 
-## C5. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged，条件）**：net 对配对集一致时满足 `Σ_r net_r(S∪S')=Σ_r net_r(S)+Σ_r net_r(S')`。前提 PO-I3-b（配对要求）未立。
-- **P2（discharged，条件）**：peak 在 ⊆+去重+静态签名下 well-defined 且 size 单调。前提 PO-I3-c/d 未立。
-- **P3（discharged，条件）**：read/write 次可加。前提 PO-I3-f（去重）未立。
-
----
-
-## Proof Obligation 账本（Iter03）
+## Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I3-a | net 对 ∪ 非线性（无同态） | open | 与 DO-3 调和：组合律仅限集合层 | L159-163, L60 |
-| PO-I3-b | net 守恒需按资源配对 | open | 显式关联 DO-9 净零不变量 | L159-163, DO-9 |
-| PO-I3-c | peak 依赖 ScopeId⊆ | open（阻塞） | 见 Iter15 | L167, L103-113 |
-| PO-I3-d | peak 混合 size 维度 | open | 见 Iter14 量纲隔离 | L167 |
-| PO-I3-e | 两 Peak 定义矛盾 | open | 见 Iter02 I2-07 | L154, L167 |
-| PO-I3-f | read 可加性依赖去重 | open | 见 Iter01 I1-02 | L170-174 |
-| PO-I3-g | read 不按 size 加权 | open（精度） | 引入加权 read | L170-174 |
-| PO-I3-h | MA-003 接受保守未证紧 | asserted | 给精度上界 | L182 |
-| PO-I3-i | MA-004 使用层混淆未消 | open（partial） | 见 Iter17 | L183 |
+| ---- | ---- | ---- | ---- | ---- |
+| PO-I3-01 | net 全函数性（区间和+差） | open | 新增 §3.1.5d：定义 Interval 加法 [a,b]+[c,d]=[a+c,b+d]（⊤ 律沿用 3.1.5a）与差值载体 NetVal := ℤ·Interval∪{⊤} 及其减法/比较律 | L207, L312 |
+| PO-I3-02 | net(S,Global)=net(S) | discharged | （无；已证，依赖 PO-I3-01 落地后复核） | L141, L312 |
+| PO-I3-03 | net 对 ∪ 的代数地位 | open | 文档显式声明：net 非同态，仅 Claim-不相交并可加；并声明 (S;S)=S 下重复分配计一次为已知保守限制 | L252, L354 |
+| PO-I3-04 | Peak 量纲隔离 | open | Peak 公式加 `c.kind=occupy` 过滤或改写为 per-kind 参数化 Peak\_k；删除或重写恒真的 weight(c.kind,c.kind) 项，KIND_MIX 移到桶级聚合层定义 | L327, L337, L199 |
+| PO-I3-05 | Peak ≥ net | asserted | PO-I3-01/04/06 落地后在 ℕ\* 数值域证明（ω=1 平凡；ω>1 需先解 PO-I3-06） | L312, L327 |
+| PO-I3-06 | (S×ω) 良定义 | open | 将 copy\_i 的 i 编入 Claim（如 scope=Loop(id,i) 或新增 iteration 字段），或将 (S×ω) 显式定义为多重集并给 Peak/net 的多重集版本 | L293–301 |
+| PO-I3-07 | peak 谓词量纲封闭 | open | SizeVal 增加单位维度 Unit（MB/count/…），Peak/net 强制按 (resource-class, Unit) 分组聚合；AUDIT003 预算比较限定同 Unit | L207, L958 |
+| PO-I3-08 | net 值域与负值 | open | 同 PO-I3-01 载体；补 ⊤−x=x−⊤=⊤ 保守律（fail-closed）；明确 size=⊤ 的 occupy claim 使 net 项输出 ⊤ | L312–320 |
+| PO-I3-09 | net>0 可判定 | open | 定义 Interval 与 0/预算的比较序（[lo,hi]>0 :⇔ lo>0，⊤ 参与 ⇒ 需人工界定） | L228, L319 |
+| PO-I3-10 | read/write 良定义 | open | 承接 PO-I3-01 的区间加法；补 read(S,scope)/write(S,scope) 分组版本以支撑 AUDIT001 | L341–344 |
 
-## 本轮新发现未消解缺口（I3- 前缀，全局唯一）
-- **I3-01**：net 对 ∪ 非同态 ⇒ DO-3「统一组合律」不能推广到派生度量 net（仅集合层成立，需限定声明）。
-- **I3-02**：net 不变量（净零=无泄漏）与 DO-9 泄漏检测未显式关联（缺按 (resource,scope) 配对要求）。
-- **I3-03**：peak 单签名定义不含循环展开，与安全峰值 Peak（§3.2.5）语义割裂（选错函数即错报警/漏报）。
-- **I3-04**：read/write 仅计数不量化 size，读量评估漏算（MA-003 接受保守但未证紧度）。
-- **I3-05**：MA-004「已解决」为过度声称，结构层收敛但使用层混淆未消（交叉 Iter17）。
-- **I3-06**：§3.2.3 注释「use+write(同资源)不兼容」中「write」非 mode 枚举词（mode={use,create,release,move}）→ 注释与 §3.1.1 定义冲突（repeat of Iter02 I2-08）。
+## 新发现缺口清单
+
+1. **G-I3-01（高，内部矛盾）**：Peak 公式（L327/L337）无 kind 过滤，read/write claim 混入「占用峰值」，与 L199 分桶规则、DO-7、A3 判据（L1032）三方冲突；weight(c.kind,c.kind)≡1 使 weight 在公式内永不起作用。
+2. **G-I3-02（高）**：SizeVal 升级为区间（L207）后，§3.1.5a 未同步升级——区间加法、区间减法、区间与 0 的序均未定义；net/read/write/Peak 四个度量的核心算子全部悬空（v3.0-FINAL 修订 C 声称「size 用 SizeVal 故返回 ⊤ 不 NaN」（L307），实际只处理了标量 ⊤，未处理区间载体）。
+3. **G-I3-03（高）**：(S×ω) 副本坍缩（L296），ω 对 net/Peak 数值无效，DO-8「循环内资源分配报警」缺乏数值语义；「上界开放的重复副本集合」（L297）为无定义对象。
+4. **G-I3-04（中）**：size 无单位/资源类维度，跨资源 size 求和（MB+个数）在 net/Peak 中发生，AUDIT003 的 VramMB 对账（L956–958）无机制支撑。
+5. **G-I3-05（中）**：net 可为负但值域未声明；L320 fail-closed 只覆盖 mode=Unknown，不覆盖 size=⊤，存在静默低估窗口（例：release [64,64] 已知、create [1,⊤] 未知 ⇒ 净变化应为 ⊤ 而非 −63）。
+6. **G-I3-06（低）**：L199 引用「见 3.3.2b」——全文不存在 §3.3.2b 小节，悬空引用。
+7. **G-I3-07（低）**：read/write（L341–344）无 scope 参数化版本，与 net(S,scope)/Peak(S,scope) 接口不一致，AUDIT001（per-frame 读频）无法由 §3.3.3 导出。
+8. **G-I3-08（低，记录性）**：Set 幂等语义吞并重复分配（N3 反例），MA-004「已解决」（L354）表述过强——解决的是 net/peak 混淆，未解决重复计数问题，建议降格表述并列为本体论限制。

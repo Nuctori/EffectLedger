@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -46,7 +47,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     private static readonly DiagnosticDescriptor MissingReleaseForAcquire = new(
         id: "EAA0901",
         title: "疑似资源泄漏（DO-9 静态近似）",
-        messageFormat: "方法 '{0}' 调用了 acquire 类 API（{1}）但无对应 release-class 调用且未标 [EffectOverride]。修复：(1) 补一个 release-class 调用（QueueFree/RemoveChild/Disconnect 等配对释放），或 (2) 若有意偏离守恒，标 [EffectOverride(\"证据\")]（reason 必填，CI 人工 approve）。运行期 Σnet 为权威判据（§3.3.1 DO-9）；此为控制流近似，可能漏报跨方法/跨对象配对。",
+        messageFormat: "方法 '{0}' 调用了 acquire 类 API（{1}）但无对应 release-class 调用。注意：[EffectOverride] 不豁免本诊断（它仅豁免 A3/A4 意图提示；DO-9 静态泄漏近似永不抑制，防止全标 override 静默泄漏）。修复：(1) 在同一方法体内补 release-class 配对调用（QueueFree/RemoveChild/Disconnect 等），或 (2) 若配对在跨方法/跨对象（静态近似盲区），以运行期 Σnet 为权威判据并在 CI 基线中显式豁免本警告（附证据）。",
         category: "EffectAlgebra",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
@@ -133,7 +134,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             .OfType<InvocationExpressionSyntax>()
             .ToArray();
 
-        AnalyzeMissingRelease(context, method, invocations);                    // EAA0901：永不豁免（fail-open，§8.3.1(3)）
+        // EAA0901：永不豁免（§8.3.1(3)；R2 对抗修复——全标 override 即零报警 = 静默泄漏通道，不得重开）。
+        // P0-1（hickey-x3 F2）按「改文档」方向对齐：诊断消息与 README 已改为如实说明 [EffectOverride] 仅豁免 A3/A4。
+        AnalyzeMissingRelease(context, method, invocations);
         if (!hasValidOverride) AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：仅合法逃逸豁免意图提示
     }
 
@@ -150,7 +153,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         foreach (var inv in invocations)
         {
             var canon = Canonical(RawName(inv));
-            var m = FindWhitelistEntry(inv);
+            var m = FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null)
             {
                 // §8.1 release-class 但不在 §7 白名单：无对应资源映射，本近似不处理（运行期 net 为权威）。
@@ -200,7 +203,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         int invIndex = 0;
         foreach (var inv in invocations)
         {
-            var m = FindWhitelistEntry(inv);
+            var m = FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null) { invIndex++; continue; }
 
             // 同站点去重：本调用贡献的 (kind,mode) 集合（按（kind,mode）去重，避免单 API 内部重复 Claim 计入）
@@ -226,19 +229,19 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 
         foreach (var kv in byResource)
         {
-            // 跨调用：收集"不同调用"各自的 kind 集合与 mode 集合（单调用内部多态不计入跨调用多样性）。
-            var perInvocationKinds = kv.Value.Values.Select(site => site.Select(x => x.Kind).ToImmutableHashSet())
+            // P0-3（hickey-x3 F1）：白名单已知 acquire/release 配对（如 AddChild→QueueFree）跨调用的 kind 差异
+            // 来自 Release-mode claim（配对的另一半），属推荐模式而非混用 ⇒ A3 豁免之。
+            // A4 冲突检测不受影响（Create×Create 等冲突与 Release 端无关）。
+            var nonReleaseSites = kv.Value.Values
+                .Select(site => site.Where(x => x.Mode != Mode.Release).Select(x => x.Kind).ToImmutableHashSet())
+                .Where(kinds => kinds.Count > 0)
                 .ToImmutableArray();
-            var perInvocationModes = kv.Value.Values.Select(site => site.Select(x => x.Mode).ToImmutableHashSet())
-                .ToImmutableArray();
-
-            // 仅当参与跨调用的调用数 ≥ 2 时才考虑（排除单 API 内部多态的误报）。
-            bool crossInvocation = kv.Value.Count >= 2;
 
             // A3 KIND_MIX：跨调用出现多类效应（read/write/occupy）混用（§3.1.4b DO-7）。
-            if (crossInvocation)
+            // 仅当剔除 Release 配对端后仍有 ≥2 个调用贡献非 Release claim 时才评估。
+            if (nonReleaseSites.Length >= 2)
             {
-                var allKinds = perInvocationKinds.SelectMany(k => k).ToImmutableHashSet();
+                var allKinds = nonReleaseSites.SelectMany(k => k).ToImmutableHashSet();
                 if (allKinds.Count > 1)
                 {
                     var kindList = string.Join(",", allKinds.Select(k => k.ToString()));
@@ -252,6 +255,10 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             }
 
             // A4 Compat 冲突：枚举"不同调用"间的 mode 对，存在 Compatible==false ⇒ §3.2.3 CONFLICT 集（§14.3 A4）。
+            // 跨调用判定沿用全量站点（含 Release 端）：release×release 同为 CONFLICT，不得因 P0-3 豁免漏报。
+            var perInvocationModes = kv.Value.Values.Select(site => site.Select(x => x.Mode).ToImmutableHashSet())
+                .ToImmutableArray();
+            bool crossInvocation = kv.Value.Count >= 2;
             if (crossInvocation)
             {
                 bool conflict = false;
@@ -287,16 +294,41 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     // 调用 canonical 名 → §7 白名单条目（null 表示不在白名单，本近似不处理）。
     // 匹配键既看全名（Audio.Play ⇒ audioplay）也看方法名（去接收者：node.QueueFree ⇒ queuefree），
     // 以修复「带接收者的 Godot 主流写法」被静默漏报的 false negative（见 R6/R7 对抗审计）。
-    private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv)
+    //
+    // P0-2（hickey-x3 F3）：方法名回退匹配要求接收者类型可判定为 Godot 类型——
+    // 用户自有 Load()/Connect() 等撞名方法不再被裸名定罪。判定规则：
+    //   符号可解析 ⇒ 包含类型命名空间以 "Godot" 开头才允许回退（真 Godot = namespace Godot；仓内 stub = GodotShapes）；
+    //   符号不可解析（无引用的裸语法编译）⇒ 保留旧回退行为（召回优先，诚实记录启发式边界）。
+    private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv, SemanticModel model)
     {
+        // P0-2：门控前置——裸标识符调用的 RawName 即方法名，若不先过 Godot 类型门，
+        // 用户自有同名方法会经「全名」路径被定罪（hickey-x3 F3 的实际触发形态）。
+        // 符号不可解析（无引用的裸语法编译）⇒ IsGodotTypedInvocation 返回 true，保留旧回退行为（召回优先）。
+        if (!IsGodotTypedInvocation(inv, model)) return null;
+
         var full = Canonical(RawName(inv));
+        foreach (var m in GodotApiWhitelist.All)
+        {
+            var c = Canonical(m.GodotApi);
+            if (c == full) return m;
+        }
         var method = Canonical(MethodName(inv));
         foreach (var m in GodotApiWhitelist.All)
         {
             var c = Canonical(m.GodotApi);
-            if (c == full || c == method) return m;
+            if (c == method) return m;
         }
         return null;
+    }
+
+    // P0-2 — 接收者类型是否可判定为 Godot 类型（命名空间根以 "Godot" 开头的启发式）。
+    private static bool IsGodotTypedInvocation(InvocationExpressionSyntax inv, SemanticModel model)
+    {
+        var info = model.GetSymbolInfo(inv);
+        var sym = info.Symbol as IMethodSymbol ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (sym?.ContainingType is null) return true; // 无法解析 ⇒ 保守保留旧回退（无引用编译场景）
+        var ns = sym.ContainingType.ContainingNamespace.ToDisplayString();
+        return ns.StartsWith("Godot", StringComparison.Ordinal);
     }
 
     // 调用的全名 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。

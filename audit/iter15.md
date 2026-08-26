@@ -1,143 +1,131 @@
-# Iter15 审计 — ScopeId⊆ 偏序未定义导致 Peak/peak/net 的 scope 过滤悬空（独立审计 #15，hy3 单独进程，本轮重跑）
+# Iter15 独立审计
 
-- **审计视角**：scope 偏序的数学定义 / 派生度量过滤良定义 / §7 标注与 ScopeId 文法一致性（独立 pass #15，全新上下文）
-- **范围**：§3.1.3 ScopeId（L103-113）、§3.2.5 Peak（L154）、§3.3.1 net（L163-165）、§3.3.2 peak（L167）、§3.3.3 read/write（L172-173）；邻接 §7 映射 scope 标注（L425-507，shell_scope/global_scope）、§5 Shell 作用域、§14「0 阻塞」（Iter13）、DO-7/DO-8（Iter14/Iter08）
-- **结论摘要**：ScopeId 在 §3.1.3 仅定义为 7 个构造子，**从未定义 ⊆ 偏序**；而 §3.2.5 的 `Peak` 与 §3.3.2 的 `peak` 都依赖 `c.scope⊆t`（或 `c.scope ⊆ scope`）做窗口过滤 ⇒ 过滤对象不确定，Peak/peak 数学悬空（open，高）。额外发现：(1) §7 映射全部标 `shell_scope`/`global_scope`，而 `shell_scope` **根本不在 7 构造子内**、`global_scope` 命名与 `Global` 不一致 ⇒ 标注与 ScopeId 文法脱节（open，高）；(2) 文档存在**两个相互矛盾的 Peak 定义**（L154 用 count `|·|` 遍历循环索引 i；L167 用 `Σsize` 遍历 scope 窗口 t），二者既不一致又都依赖未定义的 ⊆（open）；(3) `peak` 的 `max_{t∈scope}` 中 `t` 的遍历域（哪些 scope 是合法窗口？）未列出 ⇒ max 范围未定（open）；(4) `net` 公式（L163-165）实际**不含 scope 参数**，无法按 scope 聚合，与任务描述「net 按 scope 分组」不符 ⇒ 跨作用域泄漏检测数学缺失（open）；(5) 即便补 ⊆ 定义，§7 标注的 scope 层级混乱（QueueFree/Connect/Load/AddChild 各标不同 scope）也无法给出一致嵌套。结构性成立（在显式补 ⊆ 偏序 + 统一 scope 标注文法后 Peak/peak 良定义）给条件证明。
+## 范围 / 结论摘要
 
----
+**范围**：ScopeId（§3.1.3，L128–139，全部 8 个构造子：Method / Type / Scene / Global / Loop / Conditional / Async / Shell）上的包含关系 ⊆（§3.1.3b，L141–160）的良定义性；其核心消费方 `c.scope ⊆ scope`（Peak §3.2.5 L299–301、§3.3.2 L327/L337；net(S,scope) §3.3.1 L317–318）对 DO-8 峰值检测（L23）与 DO-9（经 net 配对，L321–322）的影响。
 
-## O1. §3.1.3 定义 ScopeId 但缺失 ⊆ 偏序（核心，高）
-
-**命题** §3.1.3（L103-113）：`ScopeId := Method(name) | Type(name) | Scene(name) | Global | Loop(id) | Conditional(branch) | Async(id)`。全文（grep「⊆」「subset」「偏序」「partial order」）无任何位置定义该类型上的二元关系 `⊆`。
-
-**数学性质 / 证明状态**：
-- **(PO-I15-a) ⊆ 偏序未定义 ⇒ Peak/peak 过滤悬空（open，高）**：§3.2.5（L154）`Peak(S, scope) = max_{i∈1..ω} |{ c ∈ S×i | c.scope ⊆ scope ∧ c.mode ≠ release }|` 与 §3.3.2（L167）`peak(S, scope) = max_{t∈scope} Σ_{c∈S, c.scope⊆t, c.mode≠release} c.size` 都以 `c.scope ⊆ scope`（或 `c.scope⊆t`）作为「Claim 是否落入窗口」的判定谓词。该谓词依赖 ScopeId 上的偏序 ⊆，但：
-  - 没有自反性/反对称性/传递性证明；
-  - `Method("Foo") ⊆ Type("Enemy")`？`Loop("i") ⊆ Method("Foo")`？`Conditional("b") ⊆ Loop("i")`？全部未定义 ⇒ 对任意 Signature，`{ c | c.scope ⊆ scope }` 的集合成员资格**不可判定**。
-  - 后果：`Peak`/`peak` 的求和域为空/全集/部分集合均可能，值不确定 ⇒ DO-8（峰值检测，L20）所依赖的峰值数字**无数学定义**，属 PDR 级悬空。状态 = open（高）。
-- 交叉：Iter09 I9-01 已指 `occupy` 的 scope 标注在 Load/Preload 用 `global`、在 Instantiate 用 `shell`，但彼处讨论的是 global vs shell 的**值不统一**；本项上升为「连 ⊆ 比较本身都未定义」的更根本缺口。
-
-**文档行号**：§3.1.3（L103-113）、§3.2.5（L154）、§3.3.2（L167）、DO-8（L20）。
+**结论摘要**：
+1. **文档内部矛盾（高）**：§3.1.3b 同时断言「⊑ 自反、反对称、传递 ⇒ ⊆\* 为偏序」（L159）与两条双向 Global 规则 `Global ⊑_any X`、`X ⊑_any Global`（L154–155）。后者使 ⊑ 在 (Global, X)（X≠Global）上双向可达，直接违反反对称；且经由 ⊆\* 定义（L158）传递性亦失效。**L159 的性质声明为假命题。**
+2. **证明缺口（高）**：基础偏序枚举表（L146–152）遗漏 `Shell ⊑ Shell`（构造子在 L138 新增），而 L160 声称「无未定义项」——对含 Shell 的对，查表无结果。
+3. **术语缺口（中）**：L145「字段单调」未定义任何字段序；「嵌套闭包 ⊆\*」（L157）名为闭包实则无被闭包的嵌套关系（Loop↛Method 无父指针），闭包运算的对象不存在。
+4. **DO-8 影响（高）**：跨构造子不可比较（L156）导致 Loop 作用域 claim 永不落入外层 Method/Type 的 Peak 过滤集——峰值检测要么系统性漏报，只能依赖 ω=⊤ 的整体兜底退化为「凡未知界循环必报」，丧失定位能力。
+5. **DO-9 连带误报反例（中）**：Load 的 create 标 global_scope（L637）、QueueFree 的 release 标 shell_scope⇒Shell（L610/L138），在中间作用域上 net 的 create/release 配对被 ⊆ 的不对称通融拆散。
 
 ---
 
-## O2. §7 标注使用 `shell_scope`/`global_scope`，与 7 构造子文法脱节（高）
+## 逐命题小节
 
-**命题** §7 全部映射表（L425-507）的 scope 字段统一写为 `shell_scope` 或 `global_scope`（如 `read(tree, path, use, shell_scope)`、`occupy(memory, estimatedSize(T), create, global_scope)`），而 §3.1.3 的 ScopeId 构造子是 `Method/Type/Scene/Global/Loop/Conditional/Async`。
+### 命题 SC-1：⊑ 的基础偏序表未覆盖 Shell 构造子
 
-**数学性质 / 证明状态**：
-- **(PO-I15-b) `shell_scope` 非合法 ScopeId（open，高）**：`shell_scope` 在 7 构造子中**完全不存在**——既非 `Scene(name)` 也非 `Global` 也非其他。即 §7 给每个 Claim 标注的 scope 值**不属于 ScopeId 类型** ⇒ 与 §3.1.1 `scope ∈ ScopeId`（L84）的类型约束直接冲突，所有 §7 映射在类型层非法。状态 = open（高，文法断裂）。
-- **(PO-I15-c) `global_scope` 与 `Global` 命名不一致（open）**：`global_scope` 应对应 `Global` 构造子，但命名不统一（`global_scope` vs `Global`），且无「`global_scope` ⇒ `Global`」的归一化规则（交叉 Iter01 I1-02 Claim 相等/归一化未定义）。状态 = open（弱，但放大 O1 的 ⊆ 判定——连 scope 值的**名字**都未对齐，更无从比较 ⊆）。
-- 附加：`type`/`method`/`loop`/`conditional`/`async` 构造子在 §7 映射中**从未出现**（L425-507 全部是 shell_scope/global_scope），即 §3.1.3 设计的 5 个细粒度作用域在真实映射中无一处使用 ⇒ ScopeId 文法与实际标注严重脱节（open，弱）。
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | 对全部 (a,b)∈ScopeId²，⊑ 可机械查表判定且无未定义项 |
+| 数学性质 | 定义完备性（关系定义的全性） |
+| 状态 | **discharged（否证）** |
+| 论证或反例 | 构造子全集含 Shell（L128–139）；基础偏序逐行枚举仅含 Global/Method/Type/Scene/Loop/Conditional/Async 七项（L146–152），无 `Shell ⊑ Shell` 行。取 a=b=Shell：表中无匹配行，「包含层次」两条（L154–155）因 Shell≠Global 亦不适用，⊑(Shell,Shell) 在表上无值。L160「按上表机械查表即可，无未定义项」对该对为假。若辩称 L145 总则「构造子标签相同」已隐涵 Shell⊑Shell，则与「逐行枚举即查表依据」的自述冲突——两种读法至少一种使文本失真。 |
+| 行号 | L138, L145–152, L154–156, L160 |
 
-**文档行号**：§7.1-7.10（L425-507）、§3.1.1（L80-84）、§3.1.3（L103-113）。
+### 命题 SC-2：⊑ 不满足反对称（L159 性质声明为假）
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | ⊑ 自反、反对称、传递（L159） |
+| 数学性质 | 二元关系的反对称性：a⊑b ∧ b⊑a ⇒ a=b |
+| 状态 | **discharged（否证，内部矛盾）** |
+| 论证或反例 | 反例：令 X=Method("m")，X≠Global。L154 给出 Global ⊑\_any X；L155 给出 X ⊑\_any Global。于是 Global⊑X ∧ X⊑Global 而 Global≠Method("m")，反对称被违反。「包含层次」注释自陈意图为「全局资源出现在所有 scope 的聚合中」（L154）——这要求 Global 兼任最小元（被一切包含）与最大元（L159「Global 为最大元」）。非平凡偏序中最大元=最小元当且仅当全域单点，故该双重要求与偏序定义数学不相容。这是文档级**自相矛盾**：同一小节内 L154–155 与 L159 不能同时为真。 |
+| 行号 | L154–155, L159 |
+
+### 命题 SC-3：⊆\* 不满足传递性
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | ⊑ 传递 ⇒ ⊆\* 为偏序（L158–159） |
+| 数学性质 | 传递性：a⊆b ∧ b⊆c ⇒ a⊆c |
+| 状态 | **discharged（否证）** |
+| 论证或反例 | 即便放弃追究 SC-2、只考察 ⊆\* 的实际计算语义 `a ⊆ b :⇔ (a ⊑ b) ∨ (b = Global)`（L158）：取 a=Method("m")，b=Global，c=Scene("s")。(i) a⊆b：由第二析取支 b=Global 成立；(ii) b⊆c：由 L154 Global⊑\_any Scene("s") 成立；(iii) a⊆c 需 Method("m")⊑Scene("s")，被 L156 明文排除（跨标签不可比较）。三步齐备，传递性失败。故 ⊆\* 至多是自反、反对称但**非传递**的关系，L159「⊆\* 为偏序」不成立。根因：L158 的第二析取支 `scope=Global` 与 L154 的 `Global⊑_any X` 叠加，使 Global 成为「任意两元素间的免费桥」，恰是传递性的破坏者。 |
+| 行号 | L154, L156, L158–159 |
+
+### 命题 SC-4：「字段单调」未定义
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | 基础偏序条件「构造子标签相同且字段单调」（L145）可执行 |
+| 数学性质 | 定义的可判定性（判定算法须引用的全部谓词均已定义） |
+| 状态 | **open（部分消解）** |
+| 论证 | 「字段单调」暗示同标签不同字段值之间可能可比较（如 Method(m₁)⊑Method(m₂) 当 m₁≤m₂），但文档从未给出 String/U64 字段上的序，也未说明单调方向；而 L156 又限定「互不比较除非同名」，实际语义坍缩为字段相等。两种读法（相等 vs 序）下 L145 措辞均不准确：相等读法下「单调」是冗余误导，序读法下缺失定义。机械实现者无从裁决。 |
+| 行号 | L145, L156 |
+
+### 命题 SC-5：「嵌套闭包 ⊆\*」名不副实
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | ⊆\* 是某嵌套关系的闭包，能表达作用域层级（Loop ⊂ Method ⊂ Type 等） |
+| 数学性质 | 闭包运算良定义性：须存在被闭包的基础关系 R 且 ⊆\*=R\*（自反传递闭包） |
+| 状态 | **open** |
+| 论证 | ScopeId 各构造子仅携带名字字段（L130–138），无父作用域指针或包含边集 E⊆ScopeId×ScopeId；文档未定义任何「嵌套」基础关系。因此「嵌套闭包」四字无所指：L158 实际给出的是一次性布尔表达式而非任何闭包。后果是结构化嵌套信息在类型层不可表达——Loop(id) 无法声明其宿主 Method，Conditional/Async 同理（对照 ED-007 L~「async_scope 效应持续到方法结束」所隐含的 Async⊂Method 层级，二者矛盾：若 Async 效应归属到方法结束，则需要 Async(id)⊆Method(m) 可判，而 L156 排除之）。 |
+| 行号 | L130–138, L156–158（另见 §8.2 ED-007 行） |
+
+### 命题 SC-6：有效包含矩阵（按磁盘定义重构）
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | 对任意 (a,b)∈ScopeId²，⊆\*(a,b) 有确定真值 |
+| 数学性质 | 关系的显式矩阵刻画 |
+| 状态 | **discharged（在修补 SC-1 缺口后）** |
+| 论证（前提：补设 Shell⊑Shell，即按 L145 总则读法） | 由 L145–155 + L158 机械展开：⊆\*(a,b) ⇔ [a=b] ∨ [a=Global] ∨ [b=Global]。即：对角线全真；首列 a=Global 全真；末行 b=Global 全真；其余格（跨标签、或同标签不同名如 Loop("L1") vs Loop("L2")）全假。此关系自反✓、反对称✓、非传递（SC-3）✗。注意该矩阵与「偏序」声称的唯一偏差就是传递性，且修正代价极低（见 PO-2）。 |
+| 行号 | L145–158 |
+
+### 命题 SC-7：t∈scope 的域良定性
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | Peak/net 中过滤谓词 `c.scope ⊆ scope` 类型良定 |
+| 数学性质 | 谓词论域一致性：c.scope∈ScopeId ∧ scope∈ScopeId ∧ ⊆\*:ScopeId×ScopeId→𝔹 |
+| 状态 | **discharged（弱结论）** |
+| 论证 | 两端均为 ScopeId（Claim 定义 L96、Peak 签名 L327），⊆\* 论域匹配，故**类型层面**良定。但这只是最低要求：SC-2/SC-3 表明其**语义层面**（偏序性）不良定；SC-8 表明其对 DO-8 **功能层面**失效。另注意 copy_i(S) 的 scope 标注规则「标注为所在 Loop(id) 或 Global」（L296）本身二义（何时 Loop 何时 Global？内层循环嵌套时归谁？），谓词输入端亦不确定。 |
+| 行号 | L96, L296, L317, L327 |
+
+### 命题 SC-8：⊆ 缺陷对 DO-8 峰值检测的影响
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | §3.1.3b 的 ⊆ 支撑 DO-8「循环内资源分配静态报警」（A2 判据：ω=⊤ ⇒ 报警） |
+| 数学性质 | 完备性判据的语义依赖：Peak(S,scope) 过滤项非空性 |
+| 状态 | **discharged（功能受损，存在漏报通道 + 定位失效）** |
+| 论证或反例 | 反例场景：System 方法 M 内含循环 L，循环体 Instantiate 占用 size=[64,64]，copy_i 标注 scope=Loop("L")（L296）。查询 Peak(S, Method("M"))：过滤集 {c∈copy_i(S) \| Loop("L")⊆Method("M")}，由 SC-6 矩阵该谓词为假 ⇒ 循环占用**不计入方法级峰值**，静态预算比较（AUDIT003 类）漏掉该 64MB。唯一兜底是 ω=⊤ 时 Peak 直接返回 ⊤（L301）触发无差别报警——此时 ⊆ 过滤完全旁路，检测退化为「有未知界循环就报」，既不能定位也不能给出数值，与「静态报警」的验收语义（L23）相悖。结论：DO-8 的数值路径被 SC-3/SC-5 阻断，布尔路径绕过 ⊆ 使其成为死代码。**⊆ 在 DO-8 主路径上无正贡献且有负贡献（漏报通道）。** |
+| 行号 | L23, L156, L296, L299–301, L327（A2 判据见 §14.3） |
+
+### 命题 SC-9：连带发现——net 的 create/release 配对被 ⊆ 拆散（DO-9 误报反例）
+
+| 项 | 内容 |
+| ---- | ---- |
+| 命题 | net(S,scope) 的泄漏判定（L321–322）在标准使用模式下无误报 |
+| 数学性质 | 配对封闭性：create 与其配对 release 应落入同一过滤集 |
+| 状态 | **discharged（否证）** |
+| 论证或反例 | Load\<T\>(path) 发射 occupy(memory,·,create,**global_scope**)（L637，⇒Global）；QueueFree() 发射 release(memory,·,release,**shell_scope**)（L610，ST-04 ⇒Shell，L138）。查询 net(S, Scene("Level1"))：create 侧因 Global⊆Scene 成立（L154）被计入 +size；release 侧需 Shell⊆Scene("Level1")，跨标签不可比较（L156）被排除 ⇒ net>0，触发 DO-9 泄漏报警，而资源实际已释放。反之在 scope=Global 处两者均计入，守恒正常。同一生命周期在不同查询域下结论翻转，暴露 ⊆ 双向通融 Global 但不通融具体作用域的设计无法支撑跨作用域生命周期配对。 |
+| 行号 | L138, L154–156, L317–318, L321–322, L610, L637 |
 
 ---
 
-## O3. 文档存在两个相互矛盾的 Peak 定义（open）
-
-**命题** §3.2.5（L154）与 §3.3.2（L167）各给一个「峰值」公式：
-- L154：`Peak(S, scope) = max_{i∈1..ω} |{ c ∈ S×i | c.scope ⊆ scope ∧ c.mode ≠ release }|`（遍历**循环索引 i**，取**集合计数 |·|**）
-- L167：`peak(S, scope) = max_{t∈scope} Σ_{c∈S, c.scope⊆t, c.mode≠release} c.size`（遍历**scope 窗口 t**，取 **Σ size**）
-
-**数学性质 / 证明状态**：
-- **(PO-I15-d) 两公式语义不一致（open）**：前者度量「某次循环迭代中非 release Claim 的**个数**」，后者度量「某 scope 窗口内非 release Claim 的 **size 之和**」。二者量纲不同（count vs bytes）、遍历域不同（i∈1..ω vs t∈scope），且都叫「峰值」却不等价 ⇒ 读者/工具不知以哪个为准。若以 L154 为准，则 `size` 字段（DO-7 量纲，Iter14）从未进入峰值；若以 L167 为准，则循环索引 ω 完全不参与（与 §3.2.5 `S×ω` 的循环展开语义脱节，交叉 Iter04 PO-I4-a：`S×ω` 中 ω=∞ 时 Peak 未定义）。状态 = open（文档内部定义冲突）。
-- 附加：L154 的 `Peak` 首字母大写、L167 的 `peak` 小写，二者在文中似被视为同一概念的不同表述，但数学上不等价 ⇒ 命名混淆掩盖了语义冲突。
-
-**文档行号**：§3.2.5（L154）、§3.3.2（L167）、§3.2.4（S×ω，L143-147）、Iter04 PO-I4-a。
-
----
-
-## O4. `peak` 的 `max_{t∈scope}` 遍历域 t 未定义（open）
-
-**命题** §3.3.2（L167）：`peak(S, scope) = max_{t∈scope} ...`，其中 `t` 被描述为「scope 窗口」但**未列出哪些 ScopeId 是合法窗口**。
-
-**数学性质 / 证明状态**：
-- **(PO-I15-e) max 遍历域未定（open）**：`t∈scope` 的含义含糊：
-  - 若 `scope` 是单个 ScopeId（如 `Global`），`t∈scope` 是「t 取 scope 自身」还是「t 取所有 ⊆ scope 的子作用域」？前者则 max 退化为单值（无意义），后者则依赖 O1 的 ⊆ 才能枚举子作用域 ⇒ 仍悬空。
-  - 合法窗口集合（global? 每 method? 每 loop?）未给出 ⇒ `max` 的论域空集/全集不定，峰值上界不唯一。状态 = open。
-- 交叉：此缺口与 O1 同源——即便 ⊆ 定义，仍需显式规定「peak 的窗口枚举规则（如所有 Method/Type/Loop ⊆ 给定 scope）」。
-
-**文档行号**：§3.3.2（L167）、§3.1.3（L103-113）。
-
----
-
-## O5. `net` 公式无 scope 参数，跨作用域泄漏检测数学缺失（open）
-
-**命题** §3.3.1（L163-165）：`net(S) = Σ_{c∈S, c.kind=occupy, c.mode∈{create,move}} c.size − Σ_{c∈S, c.kind=occupy, c.mode=release} c.size`。该式**不含 scope 参数**（任务描述称「net 按 scope 分组求和」，但公式无 scope 绑定）。
-
-**数学性质 / 证明状态**：
-- **(PO-I15-f) net 全局化、无 scope 聚合（open）**：`net(S)` 对所有 Claim 一视同仁求和，不区分 scope。后果：
-  - 泄漏检测（DO-9，L21）需「某作用域内 occupy(create) 未配 release」才报警；但 net 全局求和 ⇒ 全局 net=0 时，局部作用域内的泄漏（如 QueueFree 标 `move` 而非 `release`，Iter08 PO-I8-a，致 release 项缺失）被其它作用域的 create/release 抵消而**不可见** ⇒ DO-9 数学失效。
-  - 任务期望的「net 按 ScopeId 分组」在公式中未实现；若改为 `net(S, scope)` 则又依赖 O1 的 ⊆ 做分组判据（group by = 聚合同 scope 或 ⊆ scope 的 Claim）。状态 = open。
-- 交叉：Iter08 I8-01（QueueFree mode=move 致 release 项缺失）+ 本项（net 无 scope 分组）⇒ 泄漏检测两侧同时失守，DO-9 实际不可证。
-
-**文档行号**：§3.3.1（L163-165）、DO-9（L21）、Iter08 PO-I8-a。
-
----
-
-## O6. 即便补 ⊆，§7 标注层级混乱无法给出一致嵌套（open）
-
-**命题** 即便文档补出 ⊆ 偏序，§7 实际标注也无法形成一致嵌套：QueueFree/Connect/EmitSignal 标 `shell_scope`，Load/Preload 标 `global_scope`，AddChild/MoveChild 标 `shell_scope`，无任何 `Method/Type/Loop` 细粒度标注（O2 已证）。
-
-**数学性质 / 证明状态**：
-- **(PO-I15-g) 标注无层级结构 ⇒ ⊆ 即使定义也退化（open）**：若所有 Claim 的 scope 非 `shell_scope` 即 `global_scope`（二值），则合理 ⊆ 只能是 `shell_scope ⊆ global_scope`（或反之）。但 `shell_scope` 非合法构造子（O2），且「shell」与「global」的嵌套方向（shell 是 global 的子集？还是并列？）未定义 ⇒ 即便补 ⊆，也只能得到平凡二值偏序，无法区分「方法内 vs 方法间 vs 循环内」的峰值（DO-8 的细粒度目标落空）。状态 = open（弱，依赖 O1/O2 先立）。
-
-**文档行号**：§7.1-7.10（L425-507）、§3.1.3（L103-113）。
-
----
-
-## O7. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged，条件）**：若显式定义 ScopeId 上的偏序 ⊆（如 `Method/Type/Loop/Conditional/Async/Scene 均 ⊆ Global`，且同层按 name 相等才可比，异层 `Method(m) ⊆ Type(t) ⇔ m 属于 t` 等），并把 §7 标注统一为合法构造子（消除 `shell_scope`，将 shell 归为 `Scene` 或 `Type`），则 `Peak`/`peak` 的过滤谓词良定义（成员资格可判定）。证明：偏序给出 ⇒ `{ c | c.scope ⊆ scope }` 为可判定集合 ⇒ 求和/计数域确定。前提 PO-I15-a/b/c 未立 ⇒ 条件，实际未消解。
-- **P2（discharged，条件）**：若统一两 Peak 定义为「`peak(S, scope)=max_{t: t⊆scope} Σ c.size`」（取 Σsize 语义、遍历 ⊆scope 的窗口），并明确 `t` 的枚举规则（所有 Method/Type/Loop ⊆ scope），则峰值唯一且覆盖循环展开（令 `S` 已含 `S×ω` 展开，删除 L154 的 `max_{i∈1..ω}` 形式）。证明：单一定义消除 O3/O4 冲突。前提 PO-I15-d/e 未立 ⇒ 条件。
-- **P3（discharged，条件）**：若 `net` 改为 `net(S, scope)=Σ_{c∈S, c.scope⊆scope, ...} create.size − Σ_{c∈S, c.scope⊆scope, c.mode=release} c.size`（按 ⊆scope 分组），则泄漏检测可在作用域粒度进行，配合 QueueFree mode=release 修正（Iter08）⇒ DO-9 可证。证明：分组 net 暴露局部失配。前提 PO-I15-f + Iter08 PO-I8-a 未立 ⇒ 条件。
-
----
-
-## Proof Obligation 账本（Iter15）
+## Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I15-a | ScopeId ⊆ 偏序未定义 ⇒ Peak/peak 过滤悬空 | open(高) | 定义 ScopeId 上的偏序 ⊆ | L103-113, L154, L167 |
-| PO-I15-b | §7 标 `shell_scope` 非合法 ScopeId | open(高) | 统一 scope 标注为 7 构造子 | L425-507, L84, L103-113 |
-| PO-I15-c | `global_scope` 与 `Global` 命名不一致 | open(弱) | 归一化命名规则 | L456, L459, L103-113 |
-| PO-I15-d | 两个 Peak 定义矛盾(count vs Σsize) | open | 合并为单一定义 | L154, L167 |
-| PO-I15-e | peak 的 `max_{t∈scope}` 遍历域 t 未定 | open | 列出合法窗口枚举规则 | L167 |
-| PO-I15-f | net 无 scope 参数，跨域泄漏检测缺失 | open | net 加 scope 分组 | L163-165, L21 |
-| PO-I15-g | 标注二值化致 ⊆ 退化 | open(弱) | 引入细粒度 scope 标注 | L425-507 |
+| ---- | ------ | ------ | ------------------ | ------ |
+| PO-15-1 | ⊑ 查表对 Shell 对可判定 | **open** | L146–152 表增补一行 `Shell ⊑ Shell`；或改写 L145 为全称规则并删「按上表机械查表」表述 | L138, L145–152, L160 |
+| PO-15-2 | ⊆\* 为偏序（自反/反对称/传递） | **open（当前为假）** | 删除 L154 或 L155 其一（建议保留 `a⊑b :⇔ a=b ∨ a=Global`，删除 `X⊑_any Global` 并把 Global 聚合改为「scope=Global 时不过滤」的独立条款），随后三条性质均可两行内归纳证明 | L154–155, L158–159 |
+| PO-15-3 | 同标签不同名的可比性 | **open** | 将 L145「字段单调」替换为「字段相等」，或显式给出字段序 | L145, L156 |
+| PO-15-4 | 嵌套层级可表达 | **open** | 若需真实层级：扩展构造子携带父域（如 Loop(id, parent: ScopeId)）并定义父边自反传递闭包为 ⊆；若不需：删除「嵌套闭包」措辞并在 ED-007 补 async 效应的归属规则 | L130–138, L157, ED-007 |
+| PO-15-5 | copy_i scope 标注确定性 | **open** | L296 改写为确定性规则（如「最内层 enclosing Loop(id)，无则 enclosing Method(name)，再无则 Global」） | L296 |
+| PO-15-6 | DO-8 数值路径可用性 | **open** | 依赖 PO-15-4：建立 Loop⊆宿主 后重证 Peak(S, Method) 包含内层循环 claim；否则修订 A2 判据为纯 ⊤ 兜底语义并降级 DO-8 验收描述 | L156, L299–301, §14.3 A2 |
+| PO-15-7 | net 跨作用域 create/release 配对 | **open** | 定义配对规则与 scope 解耦（如同 resource+kind 下 create/release 就近抵消后再按 scope 归组），或在 ST-04 收口中统一 Load 的 global_scope 为 shell_scope | L138, L317–322, L610, L637 |
 
-## 本轮新发现未消解缺口（I15- 前缀，全局唯一）
-- **I15-01（高）**：ScopeId（§3.1.3）仅列 7 构造子，全文未定义 ⊆ 偏序；§3.2.5/§3.3.2 的 Peak/peak 都依赖 `c.scope⊆scope` 过滤 ⇒ 过滤集合成员资格不可判定，峰值数字数学悬空（DO-8 失效）。
-- **I15-02（高）**：§7 全部映射标 `shell_scope`，而 `shell_scope` 不在 7 构造子内 ⇒ 所有 §7 Claim 的 scope 字段类型非法，与 §3.1.1 `scope ∈ ScopeId` 冲突。
-- **I15-03**：`global_scope` 命名与 `Global` 构造子不一致，且无归一化规则 ⇒ 连 scope 值名字都未对齐，⊆ 比较更无从谈起。
-- **I15-04**：文档存在两个矛盾 Peak 定义——L154 用 count `|·|` 遍历循环索引 i，L167 用 `Σsize` 遍历 scope 窗口 t；量纲与遍历域均不同，读者/工具无基准。
-- **I15-05**：`peak` 的 `max_{t∈scope}` 中合法窗口集合（global? 每 method? 每 loop?）未列出 ⇒ max 论域不定，峰值上界不唯一。
-- **I15-06**：`net`（§3.3.1）不含 scope 参数，全局求和；泄漏检测（DO-9）需作用域粒度 net 才能暴露局部失配，当前公式下局部泄漏被全局抵消掩盖（交叉 Iter08 QueueFree mode=move）。
-- **I15-07（弱）**：§7 标注退化为 shell_scope/global_scope 二值，即便补 ⊆ 也只能得平凡偏序，无法支撑 DO-8 的细粒度峰值目标。
-- **I15-08（弱）**：`Method/Type/Loop/Conditional/Async` 五细粒度构造子在 §7 真实映射中零使用 ⇒ ScopeId 文法与实际脱节。
+## 新发现缺口清单
 
----
+1. **[高][内部矛盾]** L159「⊑ 自反、反对称、传递 ⇒ ⊆\* 为偏序；Global 为最大元」与 L154–155 双向 Global 规则数学不相容（SC-2/SC-3）。v3.0-FINAL 修订 A 自我声称为「收口 iter15/iter34」的修复（L141）本身引入了新的假命题。
+2. **[高][定义不完备]** Shell 构造子（L138，rA2/ST-04 新增）未同步进入 ⊑ 枚举表，ST-04 收口动作不完整（SC-1）。
+3. **[中][措辞失准]** 「字段单调」（L145）与「嵌套闭包」（L157）均为无可执行语义的装饰性术语（SC-4/SC-5）。
+4. **[高][功能性缺陷]** DO-8 的数值峰值路径被跨构造子不可比较阻断，仅存 ω=⊤ 无差别兜底；⊆ 过滤在其主用例中不起作用（SC-8）。
+5. **[中][连带]** Global 通融的不对称性使 net 的生命周期配对跨作用域断裂（global create vs Shell release，SC-9），DO-9 存在结构性误报通道。
+6. **[低][符号过载]** L142 宣称定义「⊆」后全文改用「⊑」，L158 又混用二者；⊑ 与 ⊆\* 的记法边界未显式划分，机械转写时易错。
 
-一句话摘要：ScopeId 在 §3.1.3 仅定义 7 构造子、**从未定义 ⊆ 偏序**，而 §3.2.5/§3.3.2 的 Peak/peak 都以 `c.scope⊆scope` 做窗口过滤 ⇒ 峰值数字数学悬空（I15-01，高）；叠加 §7 标 `shell_scope`（非合法 ScopeId，I15-02，高）、两 Peak 定义矛盾（I15-04）、peak 窗口 t 遍历域未定（I15-05）、net 无 scope 参数致泄漏检测失效（I15-06）、标注二值退化（I15-07），DO-8/DO-9 在数学层均无定义基础。
-
-// acceptance-report
-{
-  "criteriaSatisfied": [
-    {"id": "criterion-1", "status": "satisfied", "evidence": "仅覆盖写入 audit/iter15.md，未读/改其它 audit 文件，聚焦 ScopeId⊆ 偏序缺失导致 Peak/peak/net 悬空的跨章主题，未 widening scope"}
-  ],
-  "changedFiles": ["audit/iter15.md"],
-  "testsAddedOrUpdated": [],
-  "commandsRun": [
-    {"command": "read PDR (offset 78, 20) + (offset 98, 20)", "result": "passed", "summary": "读取 §3.1.1 Claim、§3.1.2 ResourceId、§3.1.3 ScopeId、§3.1.4 Signature 真实文本"},
-    {"command": "read PDR (offset 149, 22) + (offset 155, 20)", "result": "passed", "summary": "读取 §3.2.5 Peak(L154)、§3.3.1 net(L163-165)、§3.3.2 peak(L167)、§3.3.3 read/write(L172-173)"},
-    {"command": "grep PDR 「scope|shell|global|method|loop|async」全文", "result": "passed", "summary": "确认 §7 映射标 shell_scope/global_scope、ScopeId 构造子、两 Peak 定义行号"},
-    {"command": "write D:/Godot/Cosmos/audit/iter15.md", "result": "passed", "summary": "覆盖写入独立审计 #15"}
-  ],
-  "validationOutput": ["header 含「独立审计 #15（hy3 单独进程，本轮重跑）」", "共 O1-O7 七节 + Proof Obligation 账本 + 8 条 I15- 缺口", "交叉引用 §3.1.1/§3.1.3/§3.2.5/§3.3.1/§3.3.2/§7(L425-507)/DO-8/DO-9/Iter08/Iter14 真实行号"],
-  "residualRisks": ["未运行 Roslyn Analyzer 验证 §7 标注是否实际生成 shell_scope 字符串（仅基于文档 §7 文本比对）", "ScopeId ⊆ 的「合理定义」仅为条件证明假设，未由文档给出"],
-  "noStagedFiles": true,
-  "diffSummary": "覆盖写入 audit/iter15.md，独立审计 ScopeId⊆ 偏序未定义致 Peak/peak/net 悬空",
-  "reviewFindings": ["blocker: 无——本文件为审计产物不修改 PDR；但发现 §3.1.3 缺 ⊆ 偏序、§7 标 shell_scope 非合法 ScopeId、两 Peak 定义矛盾，需 PDR 侧修正"],
-  "manualNotes": "纯文档审计，未改动 PDR 正文；所有行号基于本轮 PDR 实际 read + grep；未读其它 audit 文件"
-}
+DONE_ITER_15

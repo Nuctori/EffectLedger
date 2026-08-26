@@ -1,125 +1,116 @@
-# Iter14 审计 — DO-7 量纲隔离与 §3.1 Set<Claim> 单集合 ∪ 混合 kind 的矛盾（独立审计 #14，hy3 单独进程，本轮重跑）
+# Iter14 独立审计
 
-- **审计视角**：量纲隔离的代数实现 / 工具执行责任 / 派生度量混算（独立 pass #14，全新上下文）
-- **范围**：§1 DO-7（L19）、§3.1.1 Claim.kind（L80-82）、§3.1.4 Signature=ImmutableHashSet<Claim>（L94）、§3.2 组合律（∪ 混合 kind，L107-147）、§3.3 派生度量（peak 混加 size，L155-173）、§7 映射（kind 混合，L421-507）、§3.4 MA-007（L186）；邻接 §6 三层工具（L329-398，Iter07）、§12.2 预算比较（L656-672，Iter13）
-- **结论摘要**：DO-7 要求「read/write/occupy 不可混算，编译期报错」，但全文用**单一 Set<Claim>（含混合 kind）做 ∪ 组合**（§3.1.4/§3.2.1-2），∪ 对三类 Claim 一视同仁、无 kind 子空间 ⇒ 组合层即混算，与 DO-7 直接矛盾（open，高）；§3.3.2 `peak = max Σ c.size`（仅按 mode≠release 过滤，不按 kind 分离）把 read/write/occupy 三类 size 同数值相加 ⇒ 混算，违反 DO-7（open）；DO-7「编译期报错」未指派任何 L1/L2/L3 工具执行（§6 三层均未提量纲检查，grep 全文「量纲」仅 L19/L186 两处）⇒ 无执行机制（open）；peak 求和结果的量纲单位未定义（bytes? count? mix?），而 §12.2 用 512MB 预算比较仅对 memory 有意义（open）；MA-007「量纲隔离通过 kind 字段实现，转换需显式权重函数」但全文**权重函数未定义** ⇒ 跨量纲合法转换通道缺失（open，partial）。结构性成立（若 Signature 改为按 kind 分桶 R/W/O 则 DO-7 可落地；当前弱解释下 DO-7 不成立但 §3.3 自洽）给条件证明。
+**范围**：跨章一致性专项——DO-7「read/write/occupy 不可混算，编译期报错」（L22）与 §3.1 单一 `Set<Claim>` 混合 kind 做 ∪ 组合（L63、L166、L254–262）是否矛盾；§3.3.2 peak 跨 kind 求和是否混算；MA-007 权重函数是否真正定义（L357 vs L331–338）；DO-7 有无编译期执行机制（L22、L199–200、L1032）。
 
----
+## 结论摘要
 
-## N1. DO-7 与 Set<Claim> 单集合 ∪ 组合的矛盾（核心，高）
-
-**命题** §1 DO-7（L19）：「read/write/occupy 不可混算，编译期报错」。§3.1.4（L94）：`Signature := ImmutableHashSet<Claim>`，即所有 Claim（含 read/write/occupy 三类 kind）落入**同一个集合**。§3.2.1/3.2.2（L107-113）：`(S₁;S₂) = S₁ ∪ S₂`、`(S₁||S₂) = S₁ ∪ S₂`，∪ 对集合内元素**无差别**，不存在「按 kind 划分子空间」或「跨 kind ∪ 报错」的机制。
-
-**数学性质 / 证明状态**：
-- **(PO-I14-a) 组合层即混算（open，高）**：设 `S₁ = {read(tree,..)}`，`S₂ = {write(tree,..)}`，`S₃ = {occupy(tree,..)}`。DO-7 的语义是「read/write/occupy 不可混算」，即 `S₁∪S₂`、`S₁∪S₃`、`S₂∪S₃` 应触发编译期报错。但 §3.2 的 ∪ 定义对 kind 视而不见 ⇒ 这些组合**静默合并**为合法 Signature，未触发任何报错。即组合律（§3.2）与 DO-7（§1）在**同一文档内互斥**：若 DO-7 为真，则 §3.2 的 ∪ 必须携带 kind 子空间约束；若 §3.2 为真，则 DO-7 的「不可混算」从未被实现。状态 = open（高，PDR 级目标与机制矛盾）。
-- 交叉：Iter13 I13-01 已表明 §14「0 阻塞」与文档内部矛盾；本项为「目标 vs 机制」层面的具体矛盾实例。
-
-**文档行号**：§1 DO-7（L19）、§3.1.4（L94）、§3.2.1/3.2.2（L107-113）。
+1. **「单一 Set<Claim> 混合 kind 做 ∪」与 DO-7 在数学层不构成矛盾**（discharged）：∪ 是集合层组合，不执行跨 kind 算术；DO-7 禁止的是**派生度量聚合层**的跨 kind 加法。由于 kind 是 Claim 五元组的分量（L87），按 kind 分桶的分解存在且唯一，可机械执行——§3.1.4b（L194–200）正是该分区。两者分层后相容。
+2. **但 DO-7 的落地链条存在三处真实缺口**：
+   - §3.3.2 Peak 的两个公式（L330、L337）均**无 kind 过滤**，字面上对混合 kind 的 claim 集合做 size 求和——这正是 DO-7 禁止的混算点，与 §3.1.4b「peak 仅在同桶内聚合」（L199）直接冲突；
+   - L337 的「加权聚合公式」中 `weight(c.kind,c.kind)` 只在对角线上求值（恒 =1），**⊥ 分支在该公式中不可达**——公式与 L338 注释「跨 kind ⇒ ×⊥」自相矛盾，加权公式是空洞的（等价于不加权）；
+   - KIND_MIX 的**编译期触发面未定义**：文档从未定义用户可见的何种语法构造/API 调用构成「混算」，A3 判据（L1032）与测试 KIND_MIX_CrossKind_Blocked（L1050）因此无可检验的规范对象。
+3. MA-007 的 weight 函数本体**已定义**（3×3 全函数表，L331–335，discharged）；但其「已解决」声明中的**强制执行部分仅为 asserted**——依赖 §14.3 A3 工具实现，而文档自认工具层留口（L1081、rA6 历史 L1105）。
+4. 新发现：§8.1 默认规则 emit 的 `Unknown(unknown, Unknown, Unknown, scope)`（L698）第二槽位为 kind=Unknown ∉ {read,write,occupy}（L88），**破坏 §3.1.4b 分桶的全性**（三分桶不含 Unknown 桶）。
 
 ---
 
-## N2. §3.3.2 peak 混加三类 size（open）
+## 逐命题小节
 
-**命题** §3.3.2（L159）：`peak(S, scope) = max_{t∈scope} Σ_{c∈S, c.scope⊆t, c.mode≠release} c.size`。
+### 命题 14-1：单一 Set<Claim> 混合 kind 做 ∪ 与 DO-7 相容
 
-**数学性质 / 证明状态**：
-- **(PO-I14-b) peak 求和未按 kind 分离（open）**：求和谓词仅过滤 `mode≠release`，**不按 kind 过滤**，故对同 (scope, t) 窗口，read/write/occupy 三类的 size 被**同数值相加**。例如 §7.4 `Instantiate` 产生 `occupy(memory, scene.estimated_size, create)` 与 `create(tree, new_id, create)`（kind=create 但记为 write? —— 见 N5）、§7.2 `Position` setter 产生 `write(self,"transform",use)`；这些不同 kind 的 size 在同一 peak 窗口求和 ⇒ 把「读取次数」「写入字节」「占用内存」混为单一数值，违反 DO-7「不可混算」。状态 = open。
-- 附加：peak 与 §3.3.3 `read(S)/write(S)`（L172-173，按 kind 计|·|）存在**双重标准**——§3.3.3 承认 kind 之分（按 kind 计数），§3.3.2 却抹去 kind（按 kind 求和时不分）。文档内部对 kind 的处理不一致。状态 = open（弱）。
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | 设 Sig ⊆ Claim 为任意混合 kind 的签名。定义分区 π(Sig) := (Sig∩Sig_read, Sig∩Sig_write, Sig∩Sig_occupy)，其中 Sig_k := {c ∈ Sig \| c.kind=k}。因 kind 是 Claim 的确定性分量（L87），π 是 Sig 的唯一划分：π(Sig) 两两不相交、并为 Sig。∪ 组合（L254、L260）作用于集合层，不改任何 Claim 的 kind 分量，故 π(S₁∪S₂) 各桶 = 对应桶之并 |
+| 状态 | **discharged**（条件证明） |
+| 论证 | DO-7 的「不可混算」约束的是聚合算子（Σ）的定义域，不是集合的存储结构。§3.1.4b 明确「单桶 ImmutableHashSet\<Claim\> 仍是底层存储，分桶为聚合时的类型层约束」（L200），即存储层允许混合、聚合层禁止跨桶——分层消解了表面矛盾。前提：所有聚合算子必须显式带 kind 过滤（见命题 14-3，此前提当前对 Peak 不成立） |
+| 行号 | L22、L63、L87、L166、L194–200、L254、L260 |
 
-**文档行号**：§3.3.2（L159）、§3.3.3（L172-173）、§7.2/§7.4（L436-459）。
+### 命题 14-2：§3.1.4b 分桶的全性被默认 Unknown 规则破坏
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | 分桶规则要求 ∀c∈Signature：c.kind ∈ {read,write,occupy} 且落入恰一桶。但 §8.1 默认规则 emit `{ Unknown(unknown, Unknown, Unknown, scope) }`（L698），其第二个槽位按 Claim 五元组顺序为 kind=Unknown，而 L88 定义 kind ∈ {read, write, occupy}——kind=Unknown 不属于 Kind 域，也不属于任何一桶 |
+| 状态 | **open** |
+| 论证 | §3.2.3 P4 只收口了 mode=Unknown（L279），未收口 kind=Unknown。若默认规则的 Unknown claim 要进入 Signature 并参与聚合，则三分桶划分不是全函数：此类 claim 无桶可归，KIND_MIX 判定对其无定义。另注意 L698 的构造子 `Unknown(unknown, Unknown, Unknown, scope)` 只有 4 个参数，与 3.1.1 的五元组（含 size?）形状不符，本身即非良构项 |
+| 最小补充 | 二选一：(a) 将 Kind 扩为 {read, write, occupy, unknown} 并新增 Sig_unknown 第四桶（聚合遇 unknown 桶一律返回「需人工确认」，不参与数值 Σ）；(b) 规定默认规则产物在入 Signature 前归一为 kind=read ∧ kind=write 双 claim（保守上界），保持三桶全性。同时修正 L698 构造子的参数形状 |
+| 行号 | L88、L199、L698 |
+
+### 命题 14-3：§3.3.2 Peak 字面上执行跨 kind 求和（违反 DO-7）
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | 反例：设 S 含 c₁ = read(tree, "root", use, Method(m), [1,1]) 与 c₂ = occupy(memory, uid, create, Method(m), [64,64])（均可由 §7.1 GetTree / §7.4 Load 映射产出，scope 同为 Method(m)、mode≠release）。代入 L330 公式：Peak(S, Method(m)) = max_i ([1,1] + [64,64]) = [65,65]——节点计数维度与 MB 维度相加。这是量纲混算 |
+| 状态 | **open**（文档内部矛盾：L330/L337 vs L199 + L22） |
+| 论证 | 对照同章其余度量：net 显式过滤 c.kind=occupy（L313–319）、read/write 显式过滤 c.kind=read/write（L343–344）——三者均为 kind-纯。唯独 Peak 的两个公式（L330 主定义、L337 加权形式）过滤条件只有 scope⊆scope ∧ mode≠release，**缺 kind 过滤**。故 §3.1.4b「peak 仅在同桶内聚合」（L199）对 §3.3.2 自身的字面公式不成立：数学层内部自相矛盾，不能仅靠「实现时记得分桶」消解 |
+| 最小补充 | 将 Peak 定义为族：∀k∈{read,write,occupy}，Peak_k(S,scope) := max_{i∈1..ω} Σ_{c∈copy_i(S), c.scope⊆scope, c.kind=k, c.mode≠release} c.size；需要总峰值时显式声明取哪一桶或经 weight 折算。或至少加 c.kind=occupy 过滤（语义上「并发占用 size 之和」本就只应对 occupy 有意义——read/write 的 size 是操作次数不是驻留量） |
+| 行号 | L22、L199、L313–319、L330、L337、L343–344 |
+
+### 命题 14-4：L337 加权 Peak 公式空洞且与其注释矛盾
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | weight : Kind×Kind → ℝ∪{⊥} 中 weight(k,k)=1 对一切 k 成立（L333）。L337 公式每项只计算 weight(c.kind, c.kind)——两个参数恒相同 ⇒ 恒落在对角线 ⇒ 恒 =1 ⇒ 该公式恒等于 L330 的无权公式。⊥ 仅在 k₁≠k₂ 时取值（L334），而公式中不存在以不同 kind 实参调用 weight 的位置 |
+| 状态 | **open**（文档内部矛盾：公式 L337 vs 注释 L338「跨 kind ⇒ ×⊥」） |
+| 论证 | L338 声称「跨 kind ⇒ ×⊥ ⇒ 编译期 KIND_MIX 报错」，但该行为不是公式的数学后果，而是注释外加的操作性断言。作为规范，此公式无法推导出任何 KIND_MIX；它给出的语义反而**允许**跨 kind 求和（每项 ×1 后照加），即恰好把 DO-7 禁止的计算形式化了 |
+| 最小补充 | 删除 L337「聚合公式（含 weight）」块，或将 weight 的强制点改为类型层：聚合 API 的域限定为单桶 Sig_k（命题 14-3 的 Peak_k 族），weight 仅在显式跨桶折算表达式 weight(k₁,k₂)·Peak_{k₂}(...) 中出现，k₁≠k₂ 时该表达式非类型良构 ⇒ 编译期报错 |
+| 行号 | L333–338 |
+
+### 命题 14-5：MA-007 权重函数本体已定义
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | weight 为 3×3 全函数表：对角线（read,read)/(write,write)/(occupy,occupy)=1，非对角 6 对 =⊥；值域 ℝ∪{⊥}；扩展政策显式（新折算对须查表登记，L336）。表完全、无歧义、可机械求值 |
+| 状态 | **discharged**（本体定义）；注：weight 不是度量、不要求乘性/三角不等式，仅作查表禁用函数，无需更多代数律 |
+| 论证 | MA-007 行（L357）称「已解决」，就「函数缺失」这一原始缺口而言属实。遗留两点边界：① weight(k,k)·c.size 中「标量 × SizeVal 区间」运算未显式定义（§3.1.5a 只给出 ⊤ 的 +/×/max/min 律，未给一般标量乘区间；1·[a,b]=[a,b] 平凡成立但未写明）；② 函数定义 ≠ 强制执行（见命题 14-6） |
+| 行号 | L331–336、L357 |
+
+### 命题 14-6：DO-7 的「编译期报错」有无执行机制
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | 文档给出的机制链：§3.1.4b 分桶（L199，「类型层约束」）→ §3.3.2 weight=⊥（L334）→ §14.3 A3 Analyzer 判据「跨 kind 聚合（weight=⊥）⇒ KIND_MIX 编译错误」（L1032）→ 测试 KIND_MIX_CrossKind_Blocked（L1050） |
+| 状态 | **asserted**（机制被声明但关键环节无规范内容） |
+| 论证 | 三处断链：① 「分桶为类型层约束」（L200）但全文未定义承载桶的 C#/类型表示（如幻影类型参数 Signature<K>、或 Sig_read/Sig_write/Sig_occupy 三个独立类型）——没有类型表示就没有「编译期」可言，只有运行期/分析器检查；② A3 的触发模式未定义：派生度量 net/read/write/Peak 均由工具自身实现且（除 Peak 外）结构性 kind-纯，用户代码中何构造构成「跨 kind 聚合」无一处定义——KIND_MIX 因此可能**在任何真实用户代码路径上永不可触发**；③ §8.3.1 只规定 EffectOverride 不得豁免 DO-7（L734）、§12.2 示例只用同 kind 比较（L958），均为消极约束，不提供触发面。结论：DO-7 验收标准「read/write/occupy 不可混算，编译期报错」目前既无可触发的输入、也无承诺的报错载体类型 |
+| 最小补充 | 定义公开聚合 API 的类型签名（如 `Peak(Sig_occupy, ScopeId)`、`Read(Sig_read)`），使跨桶调用成为 C# 类型错误（L1 层即可报错，早于 Analyzer）；并在 §14.3 A3 写明其检测的具体语法模式（对哪个 API/表达式的哪类实参报警），补一条「跨桶调用被拒」的反例测试 |
+| 行号 | L22、L199–200、L334、L734、L958、L1032、L1050 |
+
+### 命题 14-7：L199 悬空引用「见 3.3.2b」
+
+| 项 | 内容 |
+| --- | --- |
+| 数学性质 | —（文档结构缺陷） |
+| 状态 | **open** |
+| 论证 | §3.1.4b 写「跨桶相加需显式 weight（见 3.3.2b）」（L199），但全文不存在编号 3.3.2b 的小节；weight 定义在「定义 3.3.2」内部的注释块中（L331–338）。引用悬空使读者无法从 §3.1.4b 机械定位强制点 |
+| 最小补充 | 将 L199 引用改为「见 §3.3.2 weight 块」，或把 weight 提升为独立编号「定义 3.3.2b（量纲权重）」 |
+| 行号 | L199、L331–338 |
 
 ---
 
-## N3. DO-7「编译期报错」无工具执行（open）
-
-**命题** DO-7 验收标准含「编译期报错」（L19）。§6 三层工具（L329-398）：L1 类型系统（L340-353，sealed/readonly/struct）、L2 Source Generator（L355-388，字段白名单/方法体写集分析）、L3 Roslyn Analyzer（L390-398，RULE001/SHELL001/SHELL003/BUDGET001/SYS001）。
-
-**数学性质 / 证明状态**：
-- **(PO-I14-c) 三层工具均未执行量纲检查（open）**：全文 grep「量纲」仅命中 L19（DO-7 目标）与 L186（MA-007 收敛方案），**§6 任何一层均未提及对 read/write/occupy 混算的静态检测**。L3 的 BUDGET001 仅做「预算累加」（§12.2 显示是 size 累加，未分 kind），SYS001 仅做 System 写冲突，RULE001/SHELL001/SHELL003 与量纲无关。即 DO-7 的「编译期报错」**没有任何机制负责实现**，目标悬空。状态 = open（交叉 Iter07 PO-I7-*，三层完备性未证，但此处是「根本未覆盖该检查」而非「检查不完备」）。
-- 交叉：Iter13 I13-02/I13-06 指出 §6 工具完备性/覆盖性缺口；本项补充「量纲检查根本不在工具职责表内」。
-
-**文档行号**：§1 DO-7（L19）、§6（L329-398）、§3.4 MA-007（L186）、§12.2（L656-672，Iter13 PO-I13-c/d）。
-
----
-
-## N4. peak 量纲单位未定义，与 512MB 预算比较仅对 memory 有意义（open）
-
-**命题** §3.3.2 的 `peak` 输出为标量 Σsize；§12.2（L667）`Texture2D → 默认 occupy{memory, 64MB}`，场景中 20 Enemy 累加 1280MB 与「默认预算 512MB」比较报警。
-
-**数学性质 / 证明状态**：
-- **(PO-I14-d) peak 量纲单位未定义（open）**：`c.size` 在 §3.1.1（L82）`size ∈ Nat?` 无单位标注；但对不同资源，size 语义不同：`occupy(memory,..)` 的 size 是字节，`occupy(audio_channel,1,..)`/`occupy(animation_state,1,..)` 的 size 是「通道/状态计数」，`read(tree,..)` 的「size」其实无 size（读计数在 §3.3.3 用 |·| 而非 size）。§3.3.2 把这些都加进同一 peak 标量 ⇒ 量纲单位未定义（bytes? count? mix?）。状态 = open。
-- **(PO-I14-e) 512MB 预算比较仅对 memory 有意义（open）**：§12.2 用 512MB 预算与累加 size 比较，但累加若混入音频通道数/动画状态数/读计数，则「1280MB」是**跨量纲假数值**。即 §12.2 的预算报警在 DO-7 未落实时可能是无意义的混算结果。状态 = open（交叉 Iter13 PO-I13-d 数值口径冲突）。
-
-**文档行号**：§3.1.1（L82）、§3.3.2（L159）、§12.2（L667，Iter13 PO-I13-d）。
-
----
-
-## N5. MA-007「权重函数」全文未定义（open，partial）
-
-**命题** §3.4 MA-007（L186）：「量纲转换缺失 → 已解决：量纲隔离通过 kind 字段实现，转换需显式权重函数」。
-
-**数学性质 / 证明状态**：
-- **(PO-I14-f) 权重函数未定义（open，partial）**：MA-007 声称「转换需显式权重函数」，但全文**无任何权重函数定义**（grep 无「权重」实现，仅 L186 一处声明）。即：
-  - 「量纲隔离通过 kind 字段实现」——kind 字段确实存在（L81），但如前 N1/N2，kind 字段**未被任何运算符消费**（∪/peak 都无视 kind），故「通过 kind 实现隔离」是**断言而非实现**。
-  - 「转换需显式权重函数」——该函数缺失 ⇒ 合法跨量纲转换（如「1 次 occupy(memory) 折算为 N 次 read」用于统一预算）**无通道**，任何跨 kind 的派生度量只能粗暴混加（回到 N2 问题）。
-  - 故 MA-007 标注「已解决」不实，实为 partial/asserted（机制元素存在，行为未定义）。状态 = open（partial）。
-- 交叉：Iter04 已把 MA-007 还原为 open/asserted；本项给出具体证据（权重函数缺失 + kind 未被运算符消费）。
-
-**文档行号**：§3.4 MA-007（L186）、§3.1.1（L81）、§3.2/§3.3（L107-173）。
-
----
-
-## N6. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged，条件）**：若 Signature 改为 `Signature := (R:Set<Claim(kind=read)>, W:Set<Claim(kind=write)>, O:Set<Claim(kind=occupy)>)`（按 kind 分桶），且 ∪ 定义为桶内各自 ∪、跨桶 ∪ 触发编译期报错（或需显式权重函数折算），则 DO-7 落地（read/write/occupy 不可混算，编译期报错）。证明：kind 子空间在类型层强制分离，跨 kind 操作无类型通路。前提 PO-I14-a（当前 Set<Claim> 未改）未立 ⇒ 条件，实际未消解。
-- **P2（discharged，条件）**：若 peak 定义为 `peak_k(S,scope) = max Σ_{c∈S,kind=k,..} weight(k)·c.size`（k∈{read,write,occupy}，weight 来自 MA-007 权重函数），则 peak 在显式权重下可加、且 DO-7 允许「经权重折算的混算」（明确通道）。证明：权重函数提供合法转换。前提 PO-I14-f（权重函数未定义）未立 ⇒ 条件。
-- **P3（discharged）**：在当前（未落实 DO-7）弱解释下，§3.3 自洽——`peak`/`net`/`read`/`write` 作为「不带量纲标注的纯数值派生度量」内部一致（仅与 DO-7 目标冲突，不与自身冲突）。证明：§3.2-§3.3 公式体系闭合，无内部除零/类型错误（除 Iter11 的 range=0 问题外）。无需额外前提（结构成立，但与 DO-7 外部矛盾）。
-
----
-
-## Proof Obligation 账本（Iter14）
+## Proof Obligation 账本
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I14-a | Set<Claim> ∪ 混合 kind 即混算 | open(高) | Signature 按 kind 分桶 + ∪ 跨桶报错 | L19, L94, L107-113 |
-| PO-I14-b | peak 求和未按 kind 分离 | open | peak 按 kind 分桶或用权重 | L159, L172-173 |
-| PO-I14-c | 三层工具无执行量纲检查 | open | §6 增 L3 量纲检查规则 | L19, L329-398, L186 |
-| PO-I14-d | peak 量纲单位未定义 | open | 定义 size 单位/分资源量纲 | L82, L159 |
-| PO-I14-e | 512MB 预算比较仅对 memory 意义 | open | 预算按资源类型分列 | L667, L159 |
-| PO-I14-f | 权重函数未定义 | open(部分) | 定义 MA-007 权重函数 | L186, L81, L107-173 |
+| ---- | ------ | ------ | ------ | ------ |
+| PO-14-1 | 单一 Set<Claim> 混 kind 存储 + ∪ 组合与 DO-7 相容（经 kind 分区） | discharged | 无（证明见命题 14-1；前提是所有聚合算子 kind-纯，由 PO-14-3 承接） | L63, L166, L194–200 |
+| PO-14-2 | 默认 Unknown claim 可归入三分桶之一（分桶全性） | open | Kind 扩 unknown 第四桶，或默认规则归一为 read+write 双 claim；修正 L698 构造子参数形状 | L88, L199, L698 |
+| PO-14-3 | Peak 公式满足 DO-7（kind-纯聚合） | open | Peak 改为分桶族 Peak_k 或加 c.kind=occupy 过滤 | L330, L337 |
+| PO-14-4 | 加权 Peak 公式能实际产生 ⊥/KIND_MIX（非空洞） | open | 删除 L337 公式，或把 weight 强制点上移到聚合 API 类型签名 | L337–338 |
+| PO-14-5 | weight 函数为全函数表 | discharged | 无（标量×SizeVal 运算建议随 PO-14-4 一句补记） | L331–336 |
+| PO-14-6 | KIND_MIX 存在用户可达的编译期触发面与报错载体 | asserted | 定义分桶的类型表示 + 公开聚合 API 类型签名 + A3 具体语法模式 + 反例测试 | L199–200, L1032, L1050 |
+| PO-14-7 | net/read/write 的 kind 纯度 | discharged | 无（显式 kind 过滤已在公式内） | L313–319, L343–344 |
+| PO-14-8 | §3.1.4b→§3.3.2 交叉引用可达 | open | 改引「§3.3.2 weight 块」或新增小节编号 3.3.2b | L199 |
+| PO-14-9 | MA-007「已解决」声明的完整成立 | asserted | 本体已证（PO-14-5）；强制执行部分待 PO-14-3/14-6 闭合后方可升级 discharged | L357, L1081 |
 
-## 本轮新发现未消解缺口（I14- 前缀，全局唯一）
-
-- **I14-01（高）**：DO-7「read/write/occupy 不可混算」与 §3.1.4 单 Set<Claim> + §3.2 ∪ 混合 kind 直接矛盾；组合层即静默混算，目标从未被实现。
-- **I14-02**：§3.3.2 peak 仅按 mode≠release 过滤、不按 kind 分离，把 read/write/occupy 三类 size 同数值相加，违反 DO-7。
-- **I14-03**：DO-7 的「编译期报错」未指派任何 L1/L2/L3 工具执行（grep 全文「量纲」仅 L19/L186），目标悬空无机制。
-- **I14-04**：peak 求和量纲单位未定义（bytes/count/mix 皆可能），§3.3.3 却按 kind 计数——文档内部对 kind 处理双重标准。
-- **I14-05**：§12.2 用 512MB 预算与混算 peak 比较，若混入音频/动画/读计数则「1280MB」为跨量纲假数值，报警意义存疑（交叉 Iter13 PO-I13-d）。
-- **I14-06**：MA-007 称「转换需显式权重函数」但全文权重函数未定义，且 kind 字段未被任何运算符（∪/peak）消费 ⇒ 「量纲隔离通过 kind 实现」是断言非实现，MA-007「已解决」不实。
-- **I14-07**：DO-7 与 §3.3 的冲突本质是「目标层要求强隔离」但「机制层用无差别集合代数」——二者需二选一（改 Signature 分桶/改 DO-7 降级为「建议」），文档未做选择。
+**统计**：discharged 3 · asserted 2 · open 4。
 
 ---
 
-一句话摘要：DO-7「read/write/occupy 不可混算，编译期报错」与 §3.1.4 单 Set<Claim>+§3.2 无差别 ∪（I14-01，高）、§3.3.2 混加三类 size（I14-02）、§6 三层工具根本未执行量纲检查（I14-03）、peak 量纲单位未定义致 512MB 预算比较失真（I14-05）、MA-007 权重函数全文缺失（I14-06）五处矛盾，DO-7 实际未落地、MA-007「已解决」不实。
+## 本轮新发现缺口清单
 
-// acceptance-report
-{
-  "criteriaSatisfied": [
-    {"id": "criterion-1", "status": "satisfied", "evidence": "仅覆盖写入 audit/iter14.md，未读/改其它 audit 文件，聚焦 DO-7 量纲隔离与 Set<Claim> 混合 kind 矛盾，未 widening scope"},
-    {"id": "criterion-2", "status": "satisfied", "evidence": "文件含 header「独立审计 #14（hy3 单独进程，本轮重跑）」、N1-N6 各节(命题/数学性质/状态/论证/行号)、Proof Obligation 账本、I14- 缺口列表；交叉引用真实行号(L19/L80-82/L94/L107-173/L186/L329-398/L667 等)并经 grep 验证「量纲」仅 L19/L186 两处"}
-  ],
-  "changedFiles": ["audit/iter14.md"],
-  "testsAddedOrUpdated": [],
-  "commandsRun": [
-    {"command": "read PDR (offset 1, 25) + (offset 78, 25) + (offset 103, 110)", "result": "passed", "summary": "读取 §1 DO-7、§3.1.1/3.1.4、§3.2/§3.3、§3.4 MA-007 真实文本"},
-    {"command": "read PDR (offset 421, 90) + (offset 655, 30) + (offset 686, 30)", "result": "passed", "summary": "读取 §7 映射 kind 混合、§12.2 预算比较真实文本"},
-    {"command": "grep PDR 全文「量纲|kind|dimension|权重」", "result": "passed", "summary": "确认「量纲」仅命中 L19/L186，「权重」无实现，§6 无涵盖量纲检查"},
-    {"command": "write D:/Godot/Cosmos/audit/iter14.md", "result": "passed", "summary": "覆盖写入独立审计 #14"}
-  ],
-  "validationOutput": ["header 含「本轮重跑」", "共 N1-N6 六节 + Proof Obligation 账本 + 7 条 I14- 缺口", "交叉引用 §1/§3.1.1/§3.1.4/§3.2/§3.3/§3.4 MA-007/§6/§7/§12.2 真实行号"],
-  "residualRisks": ["未运行 Roslyn Analyzer 源码验证「量纲检查」确无实现（仅基于文档 §6 文本 + grep 推断）", "§12.2 预算比较的具体资源类型拆分未在本次读取范围外验证，引用基于 §12.2 文本"],
-  "noStagedFiles": true,
-  "diffSummary": "覆盖写入 audit/iter14.md，独立审计 DO-7 量纲隔离与 Set<Claim> 混合 kind 矛盾",
-  "reviewFindings": ["blocker: 无——本文件为审计产物不修改 PDR；但发现 DO-7 与 §3.2 ∪ 组合、§3.3.2 peak 混算、§6 工具缺职责、MA-007 权重函数缺失四重矛盾，需 PDR 侧修正（改 Signature 分桶 或 降级 DO-7）"],
-  "manualNotes": "纯文档审计，未改动 PDR 正文；所有行号基于本轮 PDR 实际 read + grep 结果；未读其它 audit 文件"
-}
+1. **【高】Peak 跨 kind 求和（PO-14-3）**：§3.3.2 两个 Peak 公式均无 kind 过滤，与 §3.1.4b「peak 仅在同桶内聚合」及 DO-7 直接矛盾。反例：GetTree 的 read(tree,[1,1]) 与 Load 的 occupy(memory,[64,64]) 同 scope 相加得 [65,65]。这是 DO-7 收口声明（L194「计算性落地」）下的一个未闭合混算点。
+2. **【高】加权公式空洞（PO-14-4）**：L337 中 weight 仅在对角线求值恒为 1，⊥ 分支不可达；公式语义反而形式化地**允许**了 DO-7 禁止的跨 kind 加法，与 L338 注释自相矛盾。
+3. **【中】KIND_MIX 无用户可达触发面（PO-14-6）**：「编译期报错」（L22）缺少触发它的用户侧语法构造定义与报错载体（类型/诊断 ID 之外的绑定）；现有文本下 KIND_MIX 可能只在工具自身实现的假想调用中出现。
+4. **【中】默认 Unknown claim 破坏分桶全性（PO-14-2）**：L698 的 kind=Unknown 不属于 L88 的 Kind 域，亦不属于任何桶；且该构造子仅 4 参，与五元组形状不符。§3.2.3 P4 只收口 mode=Unknown，未收口 kind=Unknown。
+5. **【低】悬空引用 3.3.2b（PO-14-8）**：L199 引用不存在的小节编号。
+6. **【低】标量×SizeVal 未定义**：weight(k,k)·c.size 用到的「标量乘区间」运算未在 §3.1.5a 律表中列出（平凡情形，随 PO-14-4 补一句即可）。
+
+DONE_ITER_14

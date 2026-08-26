@@ -151,14 +151,15 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 public class Sample
 {
+    private readonly GodotShapes.Node3D _n = new();
     public void RemoveFromGroup(object g) { }
-    public void AddChild(object c) { }
     public void M()
     {
         RemoveFromGroup(new object());   // §8.1 release-class：仅释放组隶属，不释放 Tree
-        AddChild(new object());          // §7 acquire Tree(node.id)，无任何对应 Tree release
+        _n.AddChild(new object());       // §7 acquire Tree(node.id)，无任何对应 Tree release
     }
 }";
         var diags = await RunAnalyzer(source);

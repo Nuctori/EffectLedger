@@ -26,11 +26,31 @@ public readonly record struct ZStar
     /// <summary>§3.3.1 — 从具体整数构造（可为负）。</summary>
     public static ZStar Of(long v) => new(false, v);
 
-    // §3.3.1 加法律：任一 ⊤ ⇒ ⊤（未知 + 任何 = 未知）
-    public static ZStar operator +(ZStar a, ZStar b) => (a.IsTop || b.IsTop) ? Top : Of(a.Value + b.Value);
+    // §3.3.1 加法律：任一 ⊤ ⇒ ⊤（未知 + 任何 = 未知）；long 溢出 ⇒ 保守 ⊤（与 ℕ* 环绕策略对齐，R4-F1：不静默回卷翻转符号）
+    public static ZStar operator +(ZStar a, ZStar b)
+    {
+        if (a.IsTop || b.IsTop) return Top;
+        unchecked
+        {
+            var r = a.Value + b.Value;
+            // 同号相加结果符号翻转 ⇒ 溢出 ⇒ 保守 ⊤
+            bool overflow = ((a.Value ^ r) & (b.Value ^ r)) < 0;
+            return overflow ? Top : Of(r);
+        }
+    }
 
-    // §3.3.1 减法律：任一 ⊤ ⇒ ⊤（未知 − 任何 = 未知）
-    public static ZStar operator -(ZStar a, ZStar b) => (a.IsTop || b.IsTop) ? Top : Of(a.Value - b.Value);
+    // §3.3.1 减法律：任一 ⊤ ⇒ ⊤（未知 − 任何 = 未知）；long 溢出 ⇒ 保守 ⊤（R4-F1）
+    public static ZStar operator -(ZStar a, ZStar b)
+    {
+        if (a.IsTop || b.IsTop) return Top;
+        unchecked
+        {
+            var r = a.Value - b.Value;
+            // 异号相减结果符号与被减数不同 ⇒ 溢出 ⇒ 保守 ⊤
+            bool overflow = ((a.Value ^ b.Value) & (a.Value ^ r)) < 0;
+            return overflow ? Top : Of(r);
+        }
+    }
 
     // §3.3.1 max：max(x,⊤)=⊤；max(⊤,x)=⊤（内嵌 ⊤ 律）
     public ZStar Max(ZStar o) => (IsTop || o.IsTop) ? Top : Of(Math.Max(Value, o.Value));
@@ -84,7 +104,8 @@ public readonly record struct SignedInterval
         mid = 0.0;
         range = 0.0;
         if (Lo.IsTop || Hi.IsTop) return false;
-        mid = (Lo.Value + Hi.Value) / 2.0;
+        // R4-F3：先除后加，防 (lo+hi) 在 long 内先溢出（[MaxLong,MaxLong] 原得 -1）
+        mid = Lo.Value / 2.0 + Hi.Value / 2.0;
         range = (double)Hi.Value - Lo.Value;
         return true;
     }

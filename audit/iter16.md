@@ -1,139 +1,123 @@
-# Iter16 审计 — §3.2.3 冲突判定 Compatible 组合子：完备性 / 对称性 / mode 语义覆盖（独立审计 #16，hy3 单独进程，本轮重跑）
+# Iter16 独立审计
 
-- **审计视角**：冲突判定函数的数学定义 / 与并行组合交换律的相容性 / mode 语义覆盖（独立 pass #16，全新上下文）
-- **范围**：§3.2.3 Compatible（L131-138）、§3.1.1 Claim 字段 mode（L79-86）、§3.2.2 并行组合（L126-130）、§7 映射各 mode 标注（L425-507，重点 QueueFree mode=move L429）、§3.4 MA-009（L189）；邻接 Iter08（I8-01 QueueFree mode=move）、Iter15（ScopeId⊆ 不影响本函数，但共享「判定谓词悬空」母题）、Iter01（I1-03 Unknown⊤/MA-010）、Iter14（DO-7 kind 与 mode 混淆）
-- **结论摘要**：§3.2.3 的 `Compatible(m₁,m₂)` 仅以 4 条析取（全部形如 `m₂=use`）显式定义「兼容」情形，其余 12 个有序 mode 对（mode∈{use,create,release,move}，共 16 对）既未列入析取、也**未声明 else-分支=false**，故该函数作为数学定义在严格意义下是**偏函数**——未覆盖对返回 undefined，冲突判定悬空（open，高，DO-9/并发安全数学基础缺失）。更严重的是：(1) **非对称**——`Compatible(create,use)=true` 而 `Compatible(use,create)=false`，但并行组合 `||` 是交换的（S₁||S₂=S₂||S₁），其「需满足」约束却用有序对 `Compatible(c₁.mode,c₂.mode)`，致同一并行组合的依赖顺序不同可能一会通过一会失败，矛盾（open，高）；(2) **误伤正常生命周期**——`create+release`（AddChild 后 RemoveChild，本应良性）与 `release+create`（复用）不在 4 析取内 ⇒ 被判定为冲突 ⇒ 误报，且恰好打中 §7.1 最核心的 add/remove 配对（open，高）；(3) **move 模式语义覆盖残缺**——QueueFree 用 mode=move（Iter08 I8-01），但 move 仅出现在第 4 析取 `(move,use)` 与注释 `(move,move)`，`(move,create)/(move,release)/(release,move)/(create,move)` 全未定义 ⇒ 含 move 的任意非 use 配对冲突判定 undefined（open，高）；(4) **注释引用不存在的「write 模式」**——注释「use+write(同资源)」混用 kind(read/write/occupy) 与 mode(use/create/release/move) 术语，表明设计未厘清 kind×mode 二维（交叉 Iter14 DO-7）；(5) **第1析取 use∧use 与 MA-010 Unknown⊤ 冲突**——若 resource=Unknown（保守），两 use 同「unknown」资源按规则兼容（不报冲突），但 MA-010 要求 Unknown 与任何资源冲突 ⇒ 静默放行本应保守冲突的 Unknown 对（open）；(6) **MA-009「枚举 16 种组合、完备性已收敛」不实**——文档正文从未给出 16 组合表，且上述 create+release 漏判、非对称、move 残缺均未覆盖，实为 asserted（open）。结构性成立（补全 16 对语义 + 强制对称 + 显式 move 规则）给条件证明。
+## 范围
 
----
+跨章形式审计：mode 组合的 Compatible 关系（§3.2.3，L265–279）与其唯一调用点并行组合 §3.2.2（L258–263），含：
+1. 16 有序对判定矩阵的穷举复核（完备性 P2、对称性 P1）；
+2. 用 §7 真实 Godot API→Claim 映射（L604–689）检验 CONFLICT 集在真实映射上的可实例化性，重点核查「写操作标 mode=use」的后果；
+3. §8.1 默认 Unknown 规则（L698–702）与 §3.2.3 P4 的交互。
 
-## P1. 函数偏定义：12/16 有序对未覆盖（核心，高）
+仅依据 `PDR_Effect_Cost_Algebra_v3_FINAL.md` 磁盘内容；行号以 Lxxx 标注。
 
-**命题** §3.2.3（L131-138）：`Compatible(m₁,m₂) := (m₁=use∧m₂=use) ∨ (m₁=create∧m₂=use) ∨ (m₁=release∧m₂=use) ∨ (m₁=move∧m₂=use)`；注释仅列「不兼容：create+create, move+move, use+write(同资源)」。
+## 结论摘要
 
-**数学性质 / 证明状态**：
-- **(PO-I16-a) 偏函数 ⇒ 冲突判定悬空（open，高）**：mode 域为 4 元 `{use,create,release,move}`，有序对共 16 个。4 条析取仅覆盖 `(_,use)` 的 4 个（use/create/release/move 各作 m₁）。剩余 12 个（m₂∈{create,release,move} 的全部、及 m₁=use 且 m₂≠use 的 3 个）既不匹配析取、注释也未穷尽。严格数学定义下：不匹配析取 ⇒ 表达式无值 ⇒ `Compatible` 是**偏函数**，对未覆盖对返回 undefined。§3.2.2 的「需满足 `Compatible(c₁.mode,c₂.mode)`」在 c₁.mode/c₂.mode 落入未覆盖对时**谓词无定义** ⇒ 并行组合 `||` 的良定义性悬空 ⇒ DO-9 并发安全判定无数学基础。状态 = open（高）。
-  - 即使「宽恕读」为「注释即 else=false」，该 else 分支**从未被显式写出**，属隐含约定，非形式化定义；且即便视为 false，下述 P2/P3 的语义错误仍成立。
-- **(PO-I16-b) 注释「use+write(同资源)」引用不存在的模式（open）**：mode 域无 `write`（write 是 kind，见 §3.1.1 L79-86）。注释把 kind「write」当 mode 写，说明 Compatible 的设计残留旧版 kind=mode 设想，kind×mode 二维未厘清（交叉 Iter14 DO-7、N1）。状态 = open（文档自洽缺陷）。
-
-**文档行号**：§3.2.3（L131-138）、§3.1.1（L79-86）、§3.2.2（L126-130）、DO-9（L21）。
-
----
-
-## P2. 非对称性 vs 并行组合交换律矛盾（高）
-
-**命题** §3.2.2（L126-130）：`(S₁ || S₂) = S₁ ∪ S₂`，约束用有序对 `Compatible(c₁.mode, c₂.mode)`（c₁∈S₁, c₂∈S₂）。§3.1/§3.2 隐含 `||` 为可交换算子（同名集合并，满足 A2 交换律）。
-
-**数学性质 / 证明状态**：
-- **(PO-I16-c) `||` 交换律与 Compatible 非对称矛盾（open，高）**：由 4 析取，`Compatible` 不对称：
-  - `Compatible(create, use) = true`（第2析取），但 `Compatible(use, create) = false`（m₂=create≠use，未覆盖）。
-  - `Compatible(release, use) = true`，但 `Compatible(use, release) = false`。
-  - `Compatible(move, use) = true`，但 `Compatible(use, move) = false`。
-  - 即 `Compatible(A,B) ⇏ Compatible(B,A)`。然而 `S₁ || S₂ = S₁ ∪ S₂ = S₂ ∪ S₁ = S₂ || S₁`，并行组合的数学对象与书写顺序无关；但「需满足」约束 `∀c₁∈S₁∀c₂∈S₂ Compatible(c₁.mode,c₂.mode)` **依赖顺序**：把同一对操作写成 `S₁||S₂` 时检查 `(mode₁,mode₂)`，写成 `S₂||S₁` 时检查 `(mode₂,mode₁)`——二者可能一真一假。故「并行组合是否通过兼容性检查」取决于**人为给操作编号的顺序**，与 `||` 的交换性矛盾 ⇒ 冲突判定本身不自洽。状态 = open（高，PDR 级算法规格矛盾）。
-  - 例：AddChild `(write,create)` 与 MoveChild `(write,use)` 同 tree 节点。`(create,use)=true` ⇒ `AddChild||MoveChild` 通过；但 `(use,create)=false` ⇒ `MoveChild||AddChild` 失败。同一物理并行组合两写法结论相反。
-
-**文档行号**：§3.2.2（L126-130）、§3.2.3（L131-138）、Iter14（DO-7 量纲/类型层未强制对称）。
+- **矩阵本身完备且自洽**：16 对全覆盖、CONFLICT 刻画与定义等价、P1/P2 可消解（本报告直接给出机械枚举证明）。文档在此层面**无内部矛盾**。
+- **但存在一个被掩盖的闭式**：Compatible 等价于 `(m₁=use) ∨ (m₁≠m₂)`——即「非 use 且不同即兼容」。§3.2.3 用生命周期配对语言包装的这一极宽规则，是后续全部真实映射反例的根源。
+- **核心反例成立**：§7 大量纯变更 API（Position setter L618、ApplyForce L628、SetVolumeDb L665、Seek L688、MoveChild L611、SetMaterialOverride L657、MoveAndSlide 写分量 L627）全部标 `mode=use`，使 CONFLICT 对这类资源**不可实例化**：任意两个写-写竞争均判兼容。CONFLICT 仅在生命周期类 create/release claim 上可达。
+- **P4 与 §8.1 构成类型层 + 语义层双重矛盾**：`Unknown ∉ mode` 声明域（L90 vs L279）；且 Unknown 按 use 处理对冲突检测是 fail-open，与 §8.1 自称的 fail-closed（L701）叙事冲突。
+- **MA-009 的「已收敛/可机械验证」（L359）表述过强**：可机械验证的只是 4×4 表格本身，而非表格相对并发语义的正确性。
 
 ---
 
-## P3. 误伤正常生命周期：create+release / release+create 被误判冲突（高）
+## 逐命题小节
 
-**命题** §7.1（L426-428）：`AddChild(node) = {write(tree,node.id,create,...), occupy(tree,node.id,create,...)}`；`RemoveChild(node) = {write(tree,node.id,release,...), occupy(tree,node.id,release,...)}`。即 AddChild(创建) 与 RemoveChild(释放) 是**标准生命周期配对**。
+### 命题 C1（矩阵覆盖 / P2 全函数）
 
-**数学性质 / 证明状态**：
-- **(PO-I16-d) create+release 良性却被判冲突（open，高）**：`Compatible(create, release)`：m₂=release≠use ⇒ 不在 4 析取 ⇒ undefined/false。即 AddChild 后接 RemoveChild（同一节点）被兼容性检查判为**冲突**。但创建后释放恰是良性用法（节点新增后移除），应**兼容**。同理 `Compatible(release, create)`（先释放再复用）也 false ⇒ 复用模式误报。
-  - 后果：§7.1 最核心的 add/remove 配对在 `||` 或顺序组合下被反复误判冲突 ⇒ DO-9 的「冲突/泄漏」报警噪声极大，正常节点管理会污染信号；且若把「Compatible=false」当作「危险」而阻止，则正常 remove 被阻断（过度约束）。状态 = open（高）。
-  - 注释仅列 `create+create`、`move+move` 为假，却**未列 `create+release`/`release+create` 为假**——说明设计者未意识到生命周期配对应良性；即便按「else=false」宽恕读，这也是**语义错误**（把良性当冲突），而非单纯「未定义」。
+- **命题**：Compatible 定义（L268–272）覆盖 {use,create,release,move}² 全部 16 个有序对，无未定义项。
+- **数学性质**：全函数性（totality）：∀(m₁,m₂)∈M×M，Compatible(m₁,m₂) ∈ 𝔹 可判定。
+- **状态**：**discharged**
+- **论证**：穷举。use 行（4 对）与 use 列（另 3 对）由子句 `(m₁=use)∨(m₂=use)` 覆盖，共 7 对；剩余 {create,release,move}² 共 9 对中，显式配对子句列出 (create,release),(release,create),(create,move),(move,create),(release,move),(move,release) 共 6 对；剩对角 3 对 (create,create),(release,release),(move,move) 由 CONFLICT（L273）显式排除。7+6+3=16 ✓。
+- **行号**：L268–277。
 
-**文档行号**：§7.1（L426-428）、§3.2.3（L131-138）、DO-9（L21）、Iter08（I8-01 QueueFree mode=move 同属释放语义错配）。
+### 命题 C2（对称性 / P1）
+
+- **命题**：∀m₁,m₂，Compatible(m₁,m₂)=Compatible(m₂,m₁)。
+- **数学性质**：Compatible 为 M×M 上的对称二元关系。
+- **状态**：**discharged**
+- **论证**：子句 `(m₁=use)∨(m₂=use)` 关于变元交换对称；三个配对子句均成对双向书写（L270–271）；CONFLICT 为对称集（仅含对角对，对角对自动对称）。各析取支对称 ⇒ 整体对称。
+- **行号**：L268–274。
+
+### 命题 C3（CONFLICT 刻画的等价性 / 闭合式）
+
+- **命题**：L274 的刻画 `Compatible ⇔ (m₁=use)∨(m₂=use)∨((m₁,m₂)∉CONFLICT)` 与 L268–272 的展开定义在 M×M 上逐点相等。
+- **数学性质**：两公式的外延相等；进一步有极简闭式 **Compatible(m₁,m₂) ⇔ (m₁=use) ∨ (m₁≠m₂)**。
+- **状态**：**discharged**（等价性）；闭式为本次审计新证定理
+- **论证**：对 16 对逐一验证两公式同真值（由 C1 枚举直接读出）。闭式：若 m₁≠m₂ 且双方均非 use，则 (m₁,m₂) 是 6 个异色非 use 对之一 ⇒ 兼容；若 m₁=m₂≠use 则 ∈CONFLICT ⇒ 不兼容；任一为 use ⇒ 兼容。∎
+- **审计含义（关键）**：闭式揭示 §3.2.3 实质上是「**异即兼容**」规则，(create,release)/(create,move)/(release,move) 三组生命周期配对的语义辩护是**修辞性的**——任何假想的第四种非 use 模式 X 也自动与 create/release/move 兼容。文档未陈述此闭式，构成呈现层面的缺口（见缺口 N1）。
+- **行号**：L268–274。
+
+### 命题 C4（CONFLICT 在 §7 白名单映射上的可实例化性——部分成立）
+
+- **命题**（待审假设）：「write 操作标 mode=use 使 CONFLICT 集在真实映射上不可实例化」。
+- **数学性质**：设 Inst(§7) := {c.mode | c 出现于 §7 某 Claim 集}。CONFLICT 可实例化 :⇔ ∃API 对 (A,B) 与归一后同资源 claim c₁∈Sig(A), c₂∈Sig(B)，使 (c₁.mode,c₂.mode) ∈ CONFLICT。
+- **状态**：**open → 裁定为部分反例（假设过强，但暴露真实缺口）**
+- **论证**：
+  - **CONFLICT 可达的部分**（反例于强命题）：DrawRect ×2 并行（L656）经 §3.1.2b 归一同为 `write(CommandBuffer("gpu"), command_buffer, create)` ⇒ (create,create)∈CONFLICT ⇒ §3.2.2 报冲突；同理 Play 同通道 ×2（L663）、EmitSignal 同信号 ×2 并行（L646）、动画 Play ×2（L688 前一行区域）。故 CONFLICT 非空可实例化。
+  - **不可达的部分（真实缺口）**：以下 API 的写效应全部标 `mode=use`：Position setter（L618）、MoveAndSlide 写分量（L627）、ApplyForce/ApplyImpulse（L628–629）、MoveChild（L611）、SetMaterialOverride（L657）、SetVolumeDb（L665）、Seek（L688）。对这些资源的任意 claim c′：Compatible(use, c′.mode)=true（C3 闭式）⇒ §3.2.2 约束对这些 claim **恒真空洞**。典型反例：系统 S₁ 与 S₂ 并行各自执行 Position setter，两条 `write(Self("transform"), "transform", use)` 同资源且兼容——并发写竞争静默通过；更严重的组合：`write(self,…,use)`（任意 setter）∥ QueueFree 的 `release(tree,self.id,release)`（L610）——**对已释放节点写入**亦判兼容。
+  - **结论**：CONFLICT 的实际覆盖域 = 生命周期类 create/release claim；对状态变异类（mutate）claim 覆盖为零。这是检测能力的不对称缺口，不是表格逻辑错误。
+- **行号**：L258–263、L273、L604–689（上列具体行）。
+
+### 命题 C5（生命周期良性配对在并行语境下的误用）
+
+- **命题**：(create,release) 等配对在 ‖ 组合中判兼容是正确的。
+- **数学性质**：Compatible 是单一全局关系，而其正确性依赖组合语境：顺序生命周期配对（`;`）良性 ≠ 真并发（`||`）良性。
+- **状态**：**open（发现反例，文档内部张力）**
+- **论证**：P3（L278）自述其动机是修正 iter23 的「良性生命周期误判」，即为**顺序** create→release 序列翻案。但 Compatible 唯一消费点是 §3.2.2 的**并行**约束（L262）。反例：S₁ = AddChild(n)（emit write(tree,n,create)+occupy(tree,n,create)，L608），S₂ = RemoveChild(n)（emit 对应 release，L609）；S₁‖S₂ 同资源、(create,release) 配对 ⇒ 兼容 ⇒ 无报警——而对同一节点的并发增删是真实竞争。**顺序语境需要的宽松关系被无参数化地用于并发语境**。最小修复：拆分 Compat_seq / Compat_∥，后者将 (create,release)、(create,move)、(release,move) 列入冲突。
+- **行号**：L258–263、L278、L608–610。
+
+### 命题 C6（mode=move 在真实映射上的死值）
+
+- **命题**：CONFLICT 中 (move,move) 及 move 相关 6 个兼容对在 §7 白名单上有实例。
+- **数学性质**：Inst(§7) ⊆ {use, create, release}（待证）。
+- **状态**：**asserted（本审计断言）+ open（需文档回应）**
+- **论证**：全文检索 §7 各表，rA 系列修订后唯一曾 emit move 的 QueueFree 已改为 release（L610 明注「原 mode=move…改 release」）；现存 §7 无任何 `move` claim。故 move 仅能经 §8.3.1 [EffectOverride] 的 mode 覆盖通道进入系统。后果：(a) CONFLICT 的 (move,move) 分量在白名单上映射下不可实例化（vacuous）；(b) 6 个 move 兼容对的「良性转移」语义无任何映射证据支撑。文档应要么删除 move、要么给出至少一个权威 move 映射。
+- **行号**：L90、L273、L610、L719–723（EffectOverride 可覆盖 mode）。
+
+### 命题 C7（P4 的类型违法与 fail-open 矛盾）
+
+- **命题**：「mode=Unknown 按 use 处理」（L279）与定义域声明及 §8.1 一致。
+- **数学性质**：若 Unknown 进入求值域，则 mode 域为 |M|=5，有序对总数 25 ≠ 16；P2 的「16 对全部覆盖」在扩展域上为假。
+- **状态**：**open（文档内部矛盾，明确指出）**
+- **论证**：
+  1. **类型矛盾**：Def 3.1.1（L90）声明 `mode ∈ {use, create, release, move}`；P4 与 §8.1 默认规则（L698: `{ Unknown(unknown, Unknown, Unknown, scope) }`，第三槽为 mode=Unknown）都使用了域外值。Compatible 的 16 对矩阵在 5 元域上未定义 9 个对（含 (Unknown,create) 等），P4 以「按 use 处理」一刀切补齐，但这使 L274 的 CONFLICT 闭合刻画失效（如 (Unknown,create) 归入 use 支而非 ∉CONFLICT 支，刻画不再等价）。
+  2. **fail-open 矛盾**：P4 注释自称「最弱兼容，fail-closed 为保守兼容」（L279）——把未知模式映射为**与一切兼容**恰是冲突检测意义上的 fail-open；§8.1（L701）的 fail-closed 承诺是「需人工确认」，但 §3.2.2 中并行的双 Unknown claim 直接静默合成，无任何人工确认路径。同一文档对 Unknown 的处理哲学自相矛盾。
+- **行号**：L90、L273–279、L698–702。
+
+### 命题 C8（单 Signature 内部一致性未约束）
+
+- **命题**：CONFLICT 检查覆盖所有同资源 claim 对。
+- **状态**：**open**
+- **论证**：§3.2.2 仅量化 ∀c₁∈S₁,c₂∈S₂（跨集合）；单个 Command 携带的 Signature 内部同时含 create 与 release 同资源 claim（畸形签名）不受任何检查。低危但属完备性缺口。
+- **行号**：L258–263、L446 附近（Command 携带 Signature）。
+
+### 命题 C9（MA-009 收敛声明的强度）
+
+- **命题**：「§3.2.3 给出 16 对全函数 + 冲突集 CONFLICT，可机械验证」⇒ MA-009（Compatible 完备性）已收敛（L359）。
+- **状态**：**open（声明过强，构成文档内部张力）**
+- **论证**：「可机械验证」仅对 C1/C2 层面（表格封闭性）成立；MA-009 标题为「Compatible 的**完备性**」，其应有语义是「所有真实并发违规均可由 CONFLICT 捕获」——由 C4/C5 反例，该语义层面**不成立**。收敛声明混淆了「枚举封闭」与「语义可靠」。A4 判据（L1033）继承同一问题：它只保证 CONFLICT 命中必报，不保证应报皆命中。
+- **行号**：L359、L1033。
 
 ---
 
-## P4. move 模式语义覆盖残缺（高，交叉 Iter08 I8-01）
-
-**命题** §7.1（L429）：`QueueFree() = {release(tree,self.id,move,...), release(memory,self.size,move,...)}`，即 QueueFree 用 **mode=move** 表示所有权转移/释放。§3.2.3 的 4 析取仅含 `(move,use)`，注释仅含 `(move,move)`。
-
-**数学性质 / 证明状态**：
-- **(PO-I16-e) 含 move 的非 use 配对全部 undefined（open，高）**：涉及 move 的 7 个有序对（move×{create,release}、{create,release}×move、move×move）中，仅 `(move,use)` 与 `(move,move)` 有定义（后者仅在注释），其余 5 个 `(move,create)/(move,release)/(create,move)/(release,move)` 均未定义 ⇒ QueueFree(move) 与 AddChild(create)/RemoveChild(release) 等配对时冲突判定 undefined。
-  - 更深层：`move` 的代数语义（所有权转移 vs 释放）在 §3.1.1 仅列为 4 mode 之一，无任何「move 与 create/release 的关系」说明。QueueFree 标 move 而非 release（Iter08 I8-01 已指其导致 net 漏算释放项），此处又暴露 move 在冲突层无规则 ⇒ 释放类操作的「冲突/守恒」判定双失守。状态 = open（高，交叉 Iter08）。
-
-**文档行号**：§7.1（L429）、§3.2.3（L131-138）、Iter08（I8-01 / PO-I8-a）。
-
----
-
-## P5. 第1析取 use∧use 与 MA-010 Unknown⊤ 冲突（open）
-
-**命题** §3.2.3 第1析取 `(m₁=use ∧ m₂=use)` ⇒ 兼容；§3.4 MA-010（L189）：变量 path 保守为 `Unknown`，与任何资源冲突。
-
-**数学性质 / 证明状态**：
-- **(PO-I16-f) use∧use 兼容 vs Unknown⊤ 冲突（open）**：当两 Claim 的 resource=Unknown（保守，如 `Load` 变量 path、网络 `self.id+"/"+method`，见 Iter09 I9-05 / Iter01 I1-03），依第1析取二者 `use∧use` ⇒ `Compatible=true` ⇒ 不报冲突。但 MA-010 要求 Unknown 与**任何**资源（含另一 Unknown）冲突 ⇒ 应报冲突。两规则直接矛盾：按 Compatible 规则 Unknown∧Unknown 放行，按 MA-010 应保守冲突。未知哪一为准 ⇒ 保守性失效（漏报风险）。状态 = open（交叉 Iter01 I1-03、Iter09 I9-05）。
-
-**文档行号**：§3.2.3（L131-138）、§3.4 MA-010（L189）、§3.1.2（L88-99 ResourceId.Unknown）。
-
----
-
-## P6. MA-009「枚举 16 种组合、完备性已收敛」不实（open）
-
-**命题** §3.4 MA-009（L189）：「Compatible 的完备性 — 已收敛 — 枚举定义 16 种组合，单元测试覆盖，不追求形式化证明」。
-
-**数学性质 / 证明状态**：
-- **(PO-I16-g) MA-009 实为 asserted（open）**：文档正文（§3.2.3 L131-138）**从未给出 16 组合表**，仅 4 条析取 + 1 行注释；且上述 P1(偏定义)/P2(非对称)/P3(create+release 误判)/P4(move 残缺)/P5(Unknown 矛盾) 表明这「枚举」既不全（12/16 未覆盖）也不对（良性生命周期误判、非对称破坏交换律）。即「完备性已收敛」建立在未写出的隐含约定与错误语义上 ⇒ 实为 asserted，非真正收敛。状态 = open（交叉 Iter04 I4-03、Iter07 I7-01 的「已收敛」过度声称母题）。
-
-**文档行号**：§3.4 MA-009（L189）、§3.2.3（L131-138）。
-
----
-
-## P7. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged，条件）**：若将 `Compatible` 重定义为**对称全函数**并补全生命周期语义：
-  `C(m₁,m₂) :=` 对称闭包 + 良性对 `{ (use,use),(use,create),(create,use),(use,release),(release,use),(create,release),(release,create),(move,use),(use,move),(move,release),(release,move) }` 为真，仅 `(create,create),(release,release),(move,move)` 为假（冲突），则 `Compatible` 成为全函数且对称，`||` 交换律相容，add/remove 配对良性通过。证明：对称闭包 ⇒ `C(A,B)=C(B,A)`；枚举覆盖全部 16 对 ⇒ 全函数。前提 PO-I16-a/c/d 未立 ⇒ 条件，实际未消解。
-- **P2（discharged，条件）**：若显式定义 `move` 的代数语义（`move ≡ 释放旧所有者 + 转移给新所有者`，等价于对旧资源 `release`、对新资源 `create`），则 move 与 create/release 的配对可归约为 P1 的良性对，冲突判定闭合。证明：语义归约。前提 PO-I16-e（move 语义未定义）未立 ⇒ 条件。
-- **P3（discharged，条件）**：若 MA-010 的 Unknown 处理改为「Unknown 资源的 use∧use 亦保守冲突」并显式写入 Compatible 第1析取的例外条款，则与 Unknown⊤ 一致。证明：例外条款对齐 MA-010。前提 PO-I16-f 未立 ⇒ 条件。
-- **P4（discharged）**：在「仅比较 mode、忽略 kind」的当前设计下，§3.2.2 的约束语法自洽（只要把 Compatible 视为给定谓词）；矛盾仅源于该谓词的**定义质量**，非语法层。证明：语法闭合。但语义正确性仍依赖 P1-P3。
-
----
-
-## Proof Obligation 账本（Iter16）
+## Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I16-a | Compatible 偏定义（12/16 对 undefined） | open(高) | 显式穷举 16 对或声明 else=false | L131-138, L126-130 |
-| PO-I16-b | 注释引用不存在的「write 模式」 | open | 厘清 kind×mode，删/改注释 | L138, L79-86 |
-| PO-I16-c | 非对称破坏 \|\| 交换律 | open(高) | 强制 Compatible 对称 | L126-130, L131-138 |
-| PO-I16-d | create+release 良性被判冲突 | open(高) | 补生命周期良性对 | L426-428, L131-138 |
-| PO-I16-e | move 模式语义覆盖残缺 | open(高) | 定义 move 代数+配对规则 | L429, L131-138 |
-| PO-I16-f | use∧use 兼容 vs Unknown⊤ 冲突 | open | 补 Unknown 例外条款 | L131-138, L189 |
-| PO-I16-g | MA-009 完备性不实(asserted) | open | 重写 16 组合表+对称+move | L189, L131-138 |
+| ---- | ------ | ------ | ------ | ------ |
+| PO-I16-1 | P2 全函数（16/16 覆盖） | discharged | （本报告 C1 枚举即证） | L277 |
+| PO-I16-2 | P1 对称性 | discharged | （本报告 C2 即证） | L276 |
+| PO-I16-3 | L268 定义 ≡ L274 刻画；闭式 use∨≠ | discharged | （本报告 C3 即证；建议文档收录闭式） | L268–274 |
+| PO-I16-4 | ‖ 语境下 (create,release)/(create,move)/(release,move) 兼容的合理性 | open | 引入语境参数化 Compat_∥（上述三对改判冲突），并为 AddChild∥RemoveChild 反例补测试 | L262, L270–271, L278 |
+| PO-I16-5 | use 标注的写操作不漏报写写竞争 | open | 细分 mode（如 read/mutate 二分 use），或将 Compatible 提升为 kind×mode 上的关系；至少对 Position setter ∥ Position setter、setter ∥ QueueFree 补反例测试 | L618, L611, L627–629, L657, L665, L688 |
+| PO-I16-6 | mode=move 存在非空真实映射实例 | open | 给出 ≥1 条权威 §7 move 映射，或删除 move 并收缩 CONFLICT | L90, L273, L610 |
+| PO-I16-7 | Unknown ∈ mode 的类型合法化 + fail-closed 语义落地 | open | 将 Def 3.1.1 mode 域扩至含 Unknown 并重述 25 对矩阵；规定 (Unknown,·∉{use}) 判冲突或强制人工确认标记，消除与 §8.1 的哲学矛盾 | L90, L279, L698–702 |
+| PO-I16-8 | 单 Signature 内部 CONFLICT 自检 | open | 在 §3.2.1 或 Command 校验处补 ∀c₁≠c₂∈S 同资源 ⇒ Compatible 约束 | L255–263 |
+| PO-I16-9 | MA-009/A4 的「完备性」措辞与实际保证一致 | open | 将 L359/L1033 措辞降级为「CONFLICT 封闭性已证；对真实映射的检测完备性见 PO-I16-4/5（open）」 | L359, L1033 |
 
-## 本轮新发现未消解缺口（I16- 前缀，全局唯一）
-- **I16-01（高）**：`Compatible(m₁,m₂)` 仅 4 条 `(·,use)` 析取覆盖 16 有序对中的 4 个，其余 12 个未声明 else 值 ⇒ 偏函数，冲突判定语义悬空，DO-9 并发安全数学基础缺失。
-- **I16-02（高）**：`Compatible` 非对称（`(create,use)=true` 但 `(use,create)=false`），而 `||` 交换律要求对称 ⇒ 同一并行组合因书写顺序不同结论相反，算法规格自相矛盾。
-- **I16-03（高）**：`create+release`（AddChild→RemoveChild 正常生命周期）不在兼容析取内 ⇒ 被误判冲突，§7.1 核心 add/remove 配对噪声极大，且可能过度约束正常 remove。
-- **I16-04（高）**：QueueFree 的 `mode=move`（Iter08 I8-01）在冲突层仅 `(move,use)/(move,move)` 有定义，余 5 个含 move 配对 undefined ⇒ 释放类操作冲突/守恒判定双失守。
-- **I16-05**：注释「use+write(同资源)」引用不存在的 write 模式，暴露 kind(mode) 与 mode 二维未厘清（交叉 Iter14 DO-7）。
-- **I16-06**：`use∧use 兼容` 与 MA-010 Unknown⊤「与任何资源冲突」矛盾 ⇒ Unknown∧Unknown 保守性失效、漏报。
-- **I16-07**：MA-009「枚举 16 种组合、完备性已收敛」不实——正文无 16 组合表，且 P1-P5 证明枚举不全不对，实为 asserted。
+## 新发现缺口清单
 
----
-
-一句话摘要：§3.2.3 `Compatible` 仅 4 条 `(·,use)` 析取、余 12 对未声明 else 值 ⇒ 偏函数冲突判定悬空（I16-01，高）；非对称（`(create,use)≠(use,create)`）破坏 `||` 交换律致同组合顺序不同结论相反（I16-02，高）；正常生命周期 `create+release` 误判冲突（I16-03，高）；QueueFree 的 move 模式 5 个配对 undefined（I16-04，高）；use∧use 与 MA-010 Unknown⊤ 矛盾（I16-06）；MA-009「16 组合完备」不实（I16-07）——DO-9 并发安全判定无自洽数学基础。
-
-// acceptance-report
-{
-  "criteriaSatisfied": [
-    {"id": "criterion-1", "status": "satisfied", "evidence": "仅覆盖写入 audit/iter16.md，未读/改其它 audit 文件，聚焦 §3.2.3 Compatible 组合子的完备性/对称性/mode 覆盖，未 widening scope"},
-    {"id": "criterion-2", "status": "satisfied", "evidence": "文件含 header「独立审计 #16（hy3 单独进程，本轮重跑）」、P1-P7 各节(命题/数学性质/状态/论证/行号)、Proof Obligation 账本、I16- 缺口列表；交叉引用真实行号(L79-86/L126-138/L189/L426-429 等) 并经 read 确认 §3.2.3 / §7.1 / §3.4 真实文本"}
-  ],
-  "changedFiles": ["audit/iter16.md"],
-  "testsAddedOrUpdated": [],
-  "commandsRun": [
-    {"command": "read PDR (offset 78, 75) + (offset 124, 45) + (offset 160, 35)", "result": "passed", "summary": "读取 §3.1.1 Claim mode、§3.2.2-3 Compatible、§3.3 派生度量、§3.4 MA 表真实文本"},
-    {"command": "read PDR (offset 421, 90)", "result": "passed", "summary": "读取 §7.1-7.10 映射确认 QueueFree mode=move、AddChild/RemoveChild create/release 标注"},
-    {"command": "write D:/Godot/Cosmos/audit/iter16.md", "result": "passed", "summary": "覆盖写入独立审计 #16"}
-  ],
-  "validationOutput": ["header 含「本轮重跑」", "共 P1-P7 七节 + Proof Obligation 账本 + 7 条 I16- 缺口", "交叉引用 §3.1.1/§3.2.2/§3.2.3/§3.4 MA-009/MA-010/§7.1/DO-9/Iter08/Iter01/Iter14 真实行号"],
-  "residualRisks": ["未运行 Roslyn Analyzer 验证 Compatible 实际代码是否对称（仅基于文档 §3.2.3 文本推导）", "move 的「真实」代数语义未在 PDR 正文找到，归约为假设条件证明"],
-  "noStagedFiles": true,
-  "diffSummary": "覆盖写入 audit/iter16.md，独立审计 §3.2.3 Compatible 组合子完备性/对称性/move 覆盖缺口",
-  "reviewFindings": ["blocker: 无——本文件为审计产物不修改 PDR；但发现 Compatible 偏定义/非对称破坏 || 交换律/生命周期误判/MA-009 不实，需 PDR 侧修正"],
-  "manualNotes": "纯文档审计，未改动 PDR 正文；所有行号基于本轮 PDR 实际 read；未读其它 audit 文件"
-}
+1. **N1（呈现缺口）**：Compatible 的闭式 `(m₁=use)∨(m₁≠m₂)`（C3）未被文档陈述；生命周期配对的三组子句是对该极宽规则的冗余修辞，误导读者以为配对经过语义论证。
+2. **N2（检测盲区）**：状态变异类 API（≥7 个，见 C4 行号清单）因 mode=use 完全逃逸 CONFLICT 检测；这是 §14 A4「兼容冲突 COMPLETE」判据的真实漏洞边界——A4 只对生命周期资源 complete。
+3. **N3（语境无参数化）**：Compatible 未区分顺序/并行语境，导致 iter23 的顺序生命周期修正反向制造了并行语境的假阴性（C5 反例 AddChild∥RemoveChild）。
+4. **N4（死模式）**：move 为白名单映射上的死值，CONFLICT(move,move) vacuous（C6）。
+5. **N5（域外值）**：Unknown 作为事实上的第五个 mode 值游离于 Def 3.1.1 类型声明之外，16 对矩阵在实现域上实为 25 对欠定义；且其 use 化处理与 §8.1 fail-closed 叙事矛盾（C7）。
+6. **N6（相邻发现，超出本轮范围仅记录）**：§3.2.1/3.2.2 均以幂等集合并实现，重复 claim（如同帧两次 EmitSignal 同信号）在去重后计数信息丢失，影响 Peak/net 口径——建议后续迭代单独审计 ∪ 幂等与频次敏感度量的相互作用。

@@ -1,148 +1,149 @@
-# Iter19 审计 — 全文效应/对象/组合子「显式数学性质总表」与落地核查（独立审计 #19，hy3 单独进程，本轮重跑）
+# Iter19 独立审计
 
-- **审计视角**：数学性质总表的完备性 / 每行性质是真定义还是 asserted/缺失（独立 pass #19，全新上下文）
-- **范围**：§3.1（Claim/ResourceId/ScopeId/Signature，L78-104）、§3.2 组合子（L107-154）、§3.3 派生度量（L155-173）、§7.1-7.10 逐条 API（L421-507）；邻接 Iter01-18 全部 open 缺口
-- **结论摘要**：为全文 4 个对象 + 7 个组合子 + 38 条 Godot API 效应构建主表（共 49 行）。量化结论：**49 行中仅 14 行（≈29%）性质在结构上可核验（纯读幂等、集合并、计数定义等），35 行（≈71%）依赖未证/未定义机制（⊆ 偏序、Compatible 偏函数、ω 载体、size 区间载体、kind 混算、scope 标注非法、∞ 类型冲突）**。无任何一行效应/组合子能独立完成「从 Claim 到可核验 net/peak 数值」的端到端证明——所有 occupy/release 守恒、并发安全、峰值检测都悬于未定义的偏序/谓词之上。文档 §14「0 阻塞」与总表 71% 未落地矛盾（交叉 Iter13 I13-01）。
+## 范围 / 结论摘要
 
----
-
-## S1. 数学性质主表（49 行）
-
-> 性质来源列：定义=文档给出可核验数学定义；asserted=声称收敛但无证明；缺失=根本未定义。
-> 证明状态列：良定义=结构自洽可独立核验；条件=依赖某 open 前提成立才良定义；open=悬空/未定义。
-
-### S1-A. 对象（4 行）
-
-| # | 名称 | 显式数学性质 | 证明状态 | 性质来源 | 行号 | 关联 open 缺口 |
-|---|------|-------------|---------|---------|------|---------------|
-| O1 | Claim(kind/mode/resource/scope/size) | 5 元组带类型标注；kind∈{read,write,occupy}、mode∈{use,create,release,move}、size∈Nat? | 条件 | 定义（结构）+缺失（代数律） | L78-86 | I14-01（kind×mode 二维未厘清，DO-7）、I18-03（size=∞ 违 Nat?） |
-| O2 | ResourceId(10 构造子) | tagged union 10 构造子带判别字段 | 条件 | 定义（构造子）+缺失（相等律） | L88-99 | I1-02（Claim 相等/归一化未定义）、I1-03（Unknown⊤ 数学对象缺失）、I13-02（术语表丢结构） |
-| O3 | ScopeId(7 构造子) | tagged union 7 构造子；不含 shell_scope | 缺失 | 定义（构造子）+缺失（⊆ 偏序） | L103-113 | I15-01（⊆ 偏序未定义，高）、I15-02（§7 标 shell_scope 非合法） |
-| O4 | Signature=ImmutableHashSet<Claim> | 不可变集合；∪ 为并 | 条件 | 定义（容器）+缺失（kind 隔离） | L94 | I14-01（单 Set<Claim> 混 kind，DO-7 未落地） |
-
-### S1-B. 组合子（7 行）
-
-| # | 名称 | 显式数学性质 | 证明状态 | 性质来源 | 行号 | 关联 open 缺口 |
-|---|------|-------------|---------|---------|------|---------------|
-| C1 | `;`(顺序组合) | (S₁;S₂)=S₁∪S₂ | 条件 | 定义（集合并）+缺失（kind 隔离） | L107-113 | I14-01（∪ 混 kind）、I18-07（含 ω 时未定义） |
-| C2 | `||`(并行组合) | (S₁||S₂)=S₁∪S₂ 且 ∀同资源 Compatible(mode) | open | 定义（语法）+缺陷（谓词偏） | L126-130 | I16-01（Compatible 偏函数）、I16-02（非对称破交换律） |
-| C3 | `⊔`(条件合并) | 区间 [min,max] 保守合并 size | 缺失 | 定义（公式）+缺失（区间载体） | L143-147 | I2-04（size 单值无区间）、I14-01 |
-| C4 | `S×ω`(循环展开) | (while b do S)=Sig(b)∪(S×ω)，ω=循环次数 | 缺失 | 定义（直觉）+缺失（算子载体） | L143-154 | I18-01（ω 载体未定义）、I18-02（ω=∞ 发散） |
-| C5 | Compatible | 4 条 (·,use) 析取 | 缺失 | 定义（4 析取）+缺失（12 对未覆盖） | L131-138 | I16-01..07（偏函数/非对称/move残缺/MA-009 不实） |
-| C6 | Peak(大写, L154) | max_{i∈1..ω} |{c∈S×i : scope⊆t,mode≠release}|（count） | open | 定义（公式）+缺失（⊆+ω 发散） | L154 | I15-01（⊆）、I18-02（发散）、I17-02（两 Peak 冲突） |
-| C7 | peak(小写, L167) | max_{t∈scope} Σ_{c:scope⊆t,mode≠release} c.size | open | 定义（公式）+缺失（⊆+量纲） | L167 | I15-01（⊆）、I14-02（混 size）、I17-02 |
-
-### S1-C. 派生度量（并入 S1-B 概念，单列 net/read/write 3 行）
-
-| # | 名称 | 显式数学性质 | 证明状态 | 性质来源 | 行号 | 关联 open 缺口 |
-|---|------|-------------|---------|---------|------|---------------|
-| D1 | net(L163-165) | Σcreate/move − Σrelease（全局，无 scope） | open | 定义（公式）+缺失（scope 分组） | L163-165 | I15-06（无 scope，泄漏检测失效）、I17-04（net<0 未定义） |
-| D2 | read/write(L172-173) | 按 kind 计数 |.|.| | 良定义 | 定义（结构闭合） | L172-173 | I14-04（仅此处按 kind，与 peak 双重标准） |
-| D3 | Accumulated VramMB(报告) | Σsize 与 512MB 比较 | 缺失 | 缺失（概念漂移） | L667 | I17-06、I13-04（64MB 口径冲突） |
-
-### S1-D. 效应（§7 共 38 条 API，逐行）
-
-| # | 名称 | 显式数学性质（Claim 集合） | 证明状态 | 性质来源 | 行号 | 关联 open 缺口 |
-|---|------|--------------------------|---------|---------|------|---------------|
-| E1 | GetNode | {read(tree,path,use,shell)} | 条件 | 定义（结构）+缺失（scope 非法） | L425 | I15-02（shell_scope） |
-| E2 | GetTree | {read(tree,"root",use,shell)} | 条件 | 定义+缺失 | L426 | I15-02 |
-| E3 | AddChild | {write(tree,id,create,shell), occupy(tree,id,create,shell)} | open | 定义+缺失（配对/Compatible） | L427 | I16-03（create+release 误判）、I15-02 |
-| E4 | RemoveChild | {write(tree,id,release,shell), occupy(tree,id,release,shell)} | open | 定义+缺失 | L428 | I16-03、I15-02 |
-| E5 | QueueFree | {release(tree,id,move,shell), release(memory,size,move,shell)} | open | 定义+缺陷（mode=move） | L429 | I8-01（move 致 net 漏 release）、I16-04（move 无规则） |
-| E6 | MoveChild | {write(tree,id,use,shell)} | 条件 | 定义+缺失 | L430 | I15-02 |
-| E7 | Position getter | {read(self,"transform",use,shell)} | 条件 | 定义+缺失 | L435 | I15-02 |
-| E8 | Position setter | {write(self,"transform",use,shell)} | 条件 | 定义+缺失 | L436 | I15-02、I8-06（kind×mode 耦合） |
-| E9 | GlobalPosition getter | {read(self,"transform",use,shell), read(tree,parent,use,shell)} | 条件 | 定义+缺失 | L437 | I15-02 |
-| E10 | Rotation g/s | {read/write(self,"transform",use,shell)} | 条件 | 定义+缺失 | L438 | I8-06 |
-| E11 | Scale g/s | {read/write(self,"transform",use,shell)} | 条件 | 定义+缺失 | L439 | I8-06 |
-| E12 | MoveAndSlide | {read(physics,body,use,shell), write(physics,body,use,shell), read(tree,"collision",use,shell)} | 条件 | 定义+缺失 | L444 | I15-02 |
-| E13 | ApplyForce | {write(physics,body,use,shell)} | 条件 | 定义+缺失 | L445 | I15-02 |
-| E14 | ApplyImpulse | {write(physics,body,use,shell)} | 条件 | 定义+缺失 | L446 | I15-02 |
-| E15 | GetSlideCollisionCount | {read(physics,body,use,shell)} | 条件 | 定义+缺失 | L447 | I15-02 |
-| E16 | GetSlideCollision | {read(physics,body,use,shell)} | 条件 | 定义+缺失 | L448 | I15-02 |
-| E17 | Load<T> | {read(disk,path,use,shell), occupy(memory,estSize(T),create,global)} | open | 定义+缺失（scope 不统一） | L456 | I9-01（global vs shell）、I15-02/03（global_scope 命名） |
-| E18 | LoadInteractive | {read(disk,path,use,shell)} | 条件 | 定义+缺失 | L457 | I15-02 |
-| E19 | Instantiate | {read(memory,uid,use,shell), create(tree,new_id,create,shell), occupy(memory,est_size,create,shell)} | open | 定义+缺失（new_id Unknown/∞） | L458 | I9-06（new_id Unknown）、I18-03（∞ 在 ED-004）、I9-01（shell） |
-| E20 | Preload | {read(disk,path,use,shell), occupy(memory,estSize,create,global)} | open | 定义+缺失 | L459 | I9-01、I15-03 |
-| E21 | EmitSignal | {write(signal_bus,signal,create,shell), read(tree,"subscribers_"+sig,use,shell)} | 条件 | 定义+缺失（合成资源） | L465 | I9-04（signal_bus 合成资源未封闭） |
-| E22 | Connect | {write(self,"signal_"+sig,create,shell), occupy(callback,callable.size,create,shell)} | open | 定义+缺失（配对/Compatible） | L466 | I16-03、I9-02（release 不一致） |
-| E23 | Disconnect | {write(self,"signal_"+sig,release,shell), occupy(callback,callable.size,release,shell)} | open | 定义+缺失 | L467 | I9-02（mode=release 正确但 QueueFree 不统一） |
-| E24 | IsConnected | {read(self,"signal_"+sig,use,shell)} | 条件 | 定义+缺失 | L468 | I15-02 |
-| E25 | DrawMesh | {read(gpu,mesh.buffer,use,shell), write(gpu,command_buffer,create,shell), read(gpu,mat.shader,use,shell)} | 条件 | 定义+缺失（合成资源） | L474 | I9-04（command_buffer 合成） |
-| E26 | DrawRect | {write(gpu,command_buffer,create,shell)} | 条件 | 定义+缺失 | L475 | I9-04 |
-| E27 | SetMaterialOverride | {write(self,"material",use,shell), read(gpu,mat.shader,use,shell)} | 条件 | 定义+缺失 | L476 | I9-04 |
-| E28 | Play(stream) | {write(audio_mixer,ch,create,shell), read(memory,buf,use,shell), occupy(audio_channel,1,create,shell)} | open | 定义+缺失（配对/量纲） | L482 | I9-02（release 不一致）、I14-05（量纲混算） |
-| E29 | Stop() | {write(audio_mixer,ch,release,shell), occupy(audio_channel,1,release,shell)} | open | 定义+缺失 | L483 | I9-02 |
-| E30 | SetVolumeDb | {write(audio_mixer,ch,use,shell)} | 条件 | 定义+缺失 | L484 | I15-02 |
-| E31 | IsActionPressed | {read(input,action,use,shell)} | 条件 | 定义（纯读 clean） | L486 | I15-02 |
-| E32 | IsActionJustPressed | {read(input,action,use,shell)} | 条件 | 定义（纯读 clean） | L487 | I15-02 |
-| E33 | GetMousePosition | {read(input,"mouse",use,shell)} | 条件 | 定义（纯读 clean） | L491 | I15-02 |
-| E34 | Rpc | {write(network,id+"/"+method,create,shell), read(memory,args.size,use,shell)} | open | 定义+缺失（Unknown 资源） | L498 | I9-05（self.id+"/"+method 编译期 Unknown） |
-| E35 | RpcId | {write(network,peer+"/"+method,create,shell), read(memory,args.size,use,shell)} | open | 定义+缺失 | L499 | I9-05 |
-| E36 | 动画Play | {write(self,"animation",create,shell), read(memory,anim,use,shell), occupy(animation_state,1,create,shell)} | open | 定义+缺失 | L501 | I9-02、I9-07（量纲） |
-| E37 | 动画Stop | {write(self,"animation",release,shell), occupy(animation_state,1,release,shell)} | open | 定义+缺失 | L502 | I9-02 |
-| E38 | Seek | {write(self,"animation",use,shell)} | 条件 | 定义+缺失 | L507 | I15-02 |
+- **审计对象**：`PDR_Effect_Cost_Algebra_v3_FINAL.md`（磁盘内容，v3.0-FINAL-rA6 状态），仅基于本文档，未读取任何其他项目文件。
+- **范围**：跨章综合。对 `kind ∈ {read, write, occupy}` × `mode ∈ {use, create, release, move}` 共 12 个组合，逐一给出幂等性 / 抵消性 / 单调性 / 可组合性四个数学性质的显式主表；每格标注 discharged / asserted / open 及前提依赖；用 §7 真实 API 映射实例化每格。
+- **结论摘要**：
+  1. 集合层面的 ∪ 幂等性对全部 12 组合 discharged（依赖 L169–L192 Claim=）；但**语义层幂等缺口 open**：∪ 去重抹除重复执行次数，与 AUDIT001 的「60/sec→1」频率语义（L944–L946）直接矛盾。
+  2. 抵消性仅在 occupy 的 create↔release 对上有定义（L309–L321 net）；但 `net(S)`/`net(S,scope)` **不按 resource 分组聚合**（对照 L191 Deviation Σ 明确按资源对齐），跨资源虚假抵消反例可构造 ⇒ 条件 discharged / 根因 open。
+  3. 单调性在 read(S)/write(S)/Peak 上可条件证 discharged；net 对 release 维是反单调（by design），但 move 计为 +size 且无源端借记 ⇒ move 存在时 net 高估、泄漏误报，open。
+  4. 可组合性由 §3.2.3 全函数 Compatible discharged；但 Compatible 仅作用于 `||`，顺序组合 `;` 无任何配对检查 ⇒ 双重 release（double-free）不可检，open。
+  5. **发现 4 处文档内部矛盾**（详见 §C）：Unknown kind 与分桶/weight 体系冲突并使 A5「不冤枉」自相矛盾（最重）；Unknown-mode 按 use 处理与 fail-closed 学说冲突；MoveChild 映射 write/use 与 AddChild write/create 处理不一致且致 move 模式在 §7 全表零实例化。
+  6. 12 组合中仅 6 个有 §7 实例；read×{create,release,move}、write×move、occupy×use、occupy×move 共 6 格无实例且无良构性约束禁止它们 ⇒ well-formedness 谓词缺失，open。
 
 ---
 
-## S2. 量化结论
+## A. (kind × mode) 数学性质主表
 
-**总行数**：49（对象 4 + 组合子 7 + 派生度量 3 + 效应 38）。
+记号：Claim := (kind, resource, mode, scope, size?)（L84–L92）；Signature 为 ImmutableHashSet<Claim>（L166–L167）；Claim= 按 L169–L192；Compatible 按 L265–L280；net 按 L309–L321；Peak 按 L323–L341。状态标记：**D** = discharged（给出论证或前提已闭合）、**A** = asserted（文档断言但无论证）、**O** = open。
 
-**按证明状态分**：
-- **良定义（结构自洽、可独立核验）**：D2（read/write 计数）= 1 行；E31/E32/E33（纯读输入 API，幂等 clean）= 3 行；共 **4 行（≈8%）** 真正落地。
-- **条件（结构写出但依赖 ≥1 个 open 前提才良定义）**：O1/O2/O4（对象，依赖相等/⊆/kind 隔离）、C1（；）、E1-E2/E6-E16/E18/E21/E24-E27/E30/E38 等纯读或单写 use 效应（依赖 scope 合法化）= 约 **10 行（≈20%）**。
-- **open / 缺失（性质悬空、根本不可核验）**：O3（ScopeId⊆）、C2/C3/C4/C5/C6/C7、D1/D3、E3/E4/E5/E17/E19/E20/E22/E23/E28/E29/E34/E35/E36/E37（含 occupy/create/release/move 配对者）= 约 **35 行（≈71%）**。
+| # | kind×mode | §7 实例 | 幂等性 | 抵消性 | 单调性 | 可组合性 |
+|---|-----------|---------|--------|--------|--------|----------|
+| 1 | read×use | GetNode(L606)、IsActionPressed(L671)、Position getter(L616 区) | **D**（前提 L169 五元组相等） | **A/N.A.**（read 不入 net 公式，无抵消语义；文档未明示 N.A. 属断言） | **D**（premise: size ∈ ℕ* 非负，L205–L207；则 S⊆T ⇒ read(S)≤read(T)，L347–L349 求和逐项） | **D**（use 最弱权限，Compatible 恒真，L271 第一析取支） |
+| 2 | read×create | **无实例** | D（形式上同为集合元素去重） | O（无定义） | O（无良构谓词判定该组合是否合法） | O（同左） |
+| 3 | read×release | **无实例** | D（同上） | O | O | O |
+| 4 | read×move | **无实例** | D（同上） | O | O | O |
+| 5 | write×use | Position setter、SetVolumeDb、anim Seek、**MoveChild(L611)** | **D**（L169） | N.A./A（write 不入 net） | **D**（同 #1 论证，write(S) L351–L353） | **D**（use 最弱）⚠ 但见 §C-3：MoveChild 结构变异标 use 使并行 MoveChild 同节点误判兼容 |
+| 6 | write×create | AddChild(L608)、EmitSignal(L646)、DrawRect、Play(L663)、Rpc | **D**（L169） | **O→A**（树/音频/信号生命周期在 write 维**无**抵消度量：net 只看 occupy，L310–L312；DO-9 完全寄生于 occupy 维——文档未证 write 维泄漏不影响 DO 目标） | **D**（write(S) 递增） | **D**（create+create ∈ CONFLICT，L272；并行双 AddChild 同 node.id 必报） |
+| 7 | write×release | RemoveChild、Disconnect、Stop、anim Stop | **D**（L169） | A/N.A.（不入 net） | **D**（write(S) 递增；release 不减 write 量） | **D**（release+release ∈ CONFLICT，L272 ⇒ 并行双释放报警；但顺序双释放漏检，见 PO-A5） |
+| 8 | write×move | **无实例**（§7 全表 mode=move 零出现） | D（形式） | O | O | D（Compatible 有 move 对，L273–L274，形式全函数）但语义空转 |
+| 9 | occupy×use | **无实例** | D（形式） | O（"使用期占用"无净变化语义定义） | O | O |
+| 10 | occupy×create | AddChild occupy(tree)·create(L608)、Load memory·create(L637)、Instantiate(L639)、Connect callback(L647)、Play channel(L663) | **D**（L169；注意跨循环副本 scope 不同 ⇒ 不同 Claim 不合并，这是 Peak 得以计数的机制，L293–L301） | **条件 D**：同一 (resource,scope,size) 的 create+release 在 net 中 +size−size=0；**全局 net 未按 resource 分组**（L312/L317 对照 L191 仅 Deviation 对齐资源）⇒ 跨资源虚假抵消反例成立（§B-2）⇒ 配对抵消条件 discharged、聚合抵消 **open** | **D**：net 贡献 +size（L312）；入 Peak（mode≠release 过滤，L325/L339）；size 含 ⊤ 或 ω=⊤ 时单调退化为 ⊤（L224–L231 律） | **D**（create+create 冲突；create+release/move 配对兼容 L272–L273） |
+| 11 | occupy×release | RemoveChild、QueueFree memory(L610)、Disconnect、Stop、anim Stop | **D**（L169） | **条件 D**（同 #10，配对抵消的负半边）；独立 release（超量释放）在资源分组缺失下可抵消他资源泄漏 ⇒ 同 **open** | **D**（反单调 by design：net 贡献 −size；被 Peak 的 mode≠release 过滤排除，L325——排除本身 discharged） | **D**（release+release ∈ CONFLICT） |
+| 12 | occupy×move | **无实例** | D（形式） | **O**：move 计入 net 正项（L312 `mode∈{create,move}`）但代数中**不存在 move 的源端借记算子**（无 move-out claim 类型），转移语义下 net 必然高估 ⇒ 泄漏误报方向系统性偏差 | **O**（同因） | D（Compatible 形式覆盖 move 对，L273–L274） |
 
-**结论**：总表 49 行中仅 **4 行（8%）** 性质完全良定义、**10 行（20%）** 条件可证、**35 行（71%）** 依赖未证机制。即文档声称的「效应代数」在 **71% 的行上无法给出端到端可核验数学性质**——所有跨 scope 的 Peak/peak（O3/C6/C7/D1）、所有 occupy/release 守恒（E3-E5/E17/E19/E22/E23/E28/E29/E36/E37）、所有并发安全（C2/C5）、所有循环/动态 ∞（C4）均悬空。所谓「显式数学性质」多数只是**集合论外壳**（Claim 五元组、∪ 并、Σ 求和公式），其求值所需的谓词（⊆、Compatible 全函数、size 区间、kind 隔离、scope 合法化、∞ 闭包）**一个都未定义**。总表落地度 ≈ 29%（良定义+条件中仅结构部分），远未达到「每个效应有可核验性质」的审计目标。
+**表级前提汇总**：(i) 全表幂等格共享前提「Claim 五元组字段相等可判定」（L169–L192，含区间相等 L232–L237 与 Unknown 相等 L183–L185）；(ii) 所有单调格共享前提「size ∈ ℕ* 非负 + ⊤ 运算律」（L203–L231）；(iii) 可组合格共享前提「Compatible 为全函数且对称」（L265–L280，P1/P2 可机械验证）。三个前提自身在本版均已 discharged。
 
 ---
 
-## S3. 分类小结
+## B. 逐命题小节（命题 | 数学性质 | 状态 | 论证或反例 | 行号）
 
-- **对象层**：唯一「真定义」是类型构造子本身（Claim 五元组、ResourceId/ScopeId tagged union、Signature 集合）；但**等值/偏序/相等归一化/kind 隔离**四条代数律全缺 ⇒ 对象层性质外壳完整、内核空。
-- **组合子层**：7 个组合子中 0 个端到端良定义。`;` 因 DO-7 混 kind 失守；`||`/`Compatible` 因偏函数失守；`⊔`/`S×ω`/`Peak`/`peak` 因区间载体/ω 载体/⊆ 缺失失守。
-- **效应层**：38 条 API 中纯读 6 条（E31/32/33 + E1/E2/E18 部分）结构 clean；含 occupy/create/release/move 的 14 条（E3-E5/E17/E19/E20/E22/E23/E28/E29/E34/E35/E36/E37）全部 open——它们恰是 DO-8/DO-9 泄漏与峰值检测的核心载体，却无一条能证明其 net/peak 良定义。
-- **派生度量层**：net/peak/Accumulated 全 open；仅 read/write 计数良定义（但文档内部对 kind 处理双重标准，I14-04）。
+### B-1 集合幂等性
+- **命题**：∀S, S∪S = S（Signature 层幂等）。
+- **性质**：幂等性。
+- **状态**：**discharged**（全部 12 组合）。
+- **论证**：Signature 是 ImmutableHashSet（L166），元素去重由 Claim= 保证；五元组逐字段相等可判定（枚举相等 / ScopeId 同构造子同字段 L146–L163 / size 区间相等 L232–L233 / resource 归一 L173–L190）。机械完成。
+- **行号**：L166–L167, L169–L192, L232–L237。
+
+### B-2 net 的跨资源虚假抵消
+- **命题**：net(S,scope)>0 ∧ 无 release 配对 ⇒ 泄漏报警（DO-9，L319–L320）是可靠的。
+- **性质**：抵消性。
+- **状态**：**open**（配对情形条件 discharged；聚合可靠性未证）。
+- **论证（反例）**：net 定义为全体 occupy claim 的带符号求和（L312/L317），**无 resource 分组项**。取 S = {occupy(A,10,create), occupy(B,10,release)}（A≠B，同 scope）：net(S)=+10−10=0 ⇒ 无泄漏报警；实际 A 泄漏 10、B 超额释放 10。对照 L191，Deviation Σ 明确「按资源对齐」，net 却没有同等条款——修订 C 收口 iter37 只加了 scope 分组（L317），resource 分组缺失。**最小补充**：把 net 改写为按 resource 分组的逐资源和（或逐资源和再聚合）。
+- **行号**：L309–L321, L191。
+
+### B-3 语义幂等 / 多重性丢失
+- **命题**：同一方法内两次相同调用（如两次 `GetNode("../Player")`）的效应被计数两次。
+- **性质**：幂等性（语义层）。
+- **状态**：**open**（且构成矛盾，§C-4）。
+- **论证**：两次调用产生完全相同的 Claim（同 kind/resource/mode/scope，缺省 size 均 [1,1]）⇒ 被 ∪ 合并为一个元素；read(S) 因此只计一次。而 AUDIT001 文案宣称「reduce read{tree} from 60/sec to 1」（L946），ED-006 以 60fps 累加频率效应（L751）——两者都预设多重性进入度量，但基础代数（L123–L125, L169）在结构上抹除之。循环情形靠 copy_i 的 Loop(id) scope 标注区分（L295–L296），非循环重复调用无任何区分机制。
+- **行号**：L84–L92, L123–L125, L169–L192, L293–L301, L751, L944–L946。
+
+### B-4 Peak 单调性与 ⊤ 兜底
+- **命题**：S⊆T ⇒ Peak(S,scope) ≤ Peak(T,scope)；ω=⊤ 或任一 size=⊤ ⇒ Peak=⊤。
+- **性质**：单调性。
+- **状态**：**条件 discharged**（前提：区间加法为分量式）。
+- **论证**：max 与 Σ 对集合包含均单调（size 非负）；⊤ 律保证 max(x,⊤)=⊤、x+⊤=⊤（L224–L228），ω=⊤ 分支 L298 显式兜底。**残余缺口**：Σ c.size 作用在 Interval 载体上，但 §3.1.5a 只定义了 ℕ* 标量的 +/×/max/min（L222–L231），§3.1.5b 只定义了 merge_I（L232–L237）——**区间加法 [a,b]+[c,d]=[a+c,b+d] 与区间序 ≤ 从未显式定义**，Peak/read/write/net 四个派生度量全部踩在此未定义运算上。
+- **行号**：L203–L237, L293–L301, L323–L341, L347–L353。
+
+### B-5 Compatible 全函数性与对称性
+- **命题**：Compatible 覆盖 16 有序对且对称。
+- **性质**：可组合性。
+- **状态**：**discharged**。
+- **论证**：CONFLICT={(create,create),(move,move),(release,release)} 三对无序对 ⇒ 16 有序对划分完备（4×4 矩阵，3 冲突对 ×2 对称 + 其余兼容）；对称性由「∉CONFLICT」谓词的对合性立得。机械可验。
+- **行号**：L265–L280。
+
+### B-6 顺序组合无配对检查
+- **命题**：`(S₁;S₂)` 下同资源双重 release 可被检测。
+- **性质**：可组合性。
+- **状态**：**open**（命题为假）。
+- **论证**：`;` 定义为纯集合并（L120–L125），Compatible 仅作为 `||` 的前置条件（L128–L134）。release;release（如 free 后再 QueueFree，或 Disconnect 两次）在顺序组合下静默通过，CONFLICT 集永不触发。文档未提供「为何只有并行需要兼容检查」的论证；而 double-free 恰是真实 Godot 缺陷类。
+- **行号**：L120–L134, L265–L280。
+
+### B-7 Unknown kind 与分桶/weight 体系
+- **命题**：未映射 API 的默认 Signature `{ Unknown(unknown, Unknown, Unknown, scope) }` 能无害进入派生度量（A5「不冤枉」，L1034）。
+- **性质**：可组合性 / 良构性。
+- **状态**：**open**（且构成矛盾，§C-1）。
+- **论证**：默认规则 emit 的 kind 字面为 `Unknown`（L698），但 kind 枚举定义为 {read,write,occupy}（L85–L86），分桶只认三桶（L194–L201），weight 定义域为 Kind×Kind 且跨 kind=⊥（L332–L336）。kind=Unknown 的 claim 要么类型非法，要么落入所有桶外 ⇒ 聚合时 weight(Unknown,Unknown) 无定义或=⊥ ⇒ 每个未映射 API 触发 KIND_MIX 编译错误，与 A5「NO 误报」测试（L1073–L1075）直接冲突。二者不可同时成立。
+- **行号**：L85–L92, L194–L201, L332–L341, L698–L703, L1034, L1073–L1075。
+
+### B-8 move 的守恒性
+- **命题**：move 表示占用的转移，net 对其计 +size 是正确的。
+- **性质**：抵消性 / 单调性。
+- **状态**：**open**。
+- **论证**：net 把 move 计入正项（L312），但 Claim 代数中没有「move-out」负项构造子；转移语义要求源端 −size、目标端 +size。当前定义下任何含 move 的程序 net 严格高估。缓解因素：§7 全表零个 mode=move 实例（QueueFree 已于 iter27 改 release，L610），故缺陷潜伏不触发——但这同时意味着 move 是**死代码模式**（见 §C-3）。
+- **行号**：L309–L321, L605–L671（§7 全表无 move）。
+
+### B-9 条件组合 ⊔ 的半格性质
+- **命题**：⊔ 是 join-semilattice 的 join（幂等/交换/结合）。
+- **性质**：幂等性 + 可组合性。
+- **状态**：**discharged**。
+- **论证**：⊔ 按 Claim= 配对后逐 Claim 取 merge_I（L285–L290）；merge_I([a,b],[c,d])=[min(a,c),max(b,d)]（L235）是区间上的 join（min/max 幂等交换结合，⊤ 分量经 L236 接入 L224–L231 律）；未配对 claim 直通。逐点继承半格三律。输出闭于 SizeVal（L289）。
+- **行号**：L232–L237, L282–L291。
+
+### B-10 循环副本的作用域区分
+- **命题**：S×ω 中各副本互不合并（Peak 可计数的前提）。
+- **性质**：幂等性（否定面）/单调性。
+- **状态**：**discharged**。
+- **论证**：copy_i 的 scope 标注为 Loop(id)（L295–L296），不同副本若标注可区分（Loop(id) ⊑ Loop(id) 仅同名可比，L148–L156）⇒ Claim 不等 ⇒ ∪ 不去重。**边界缺口（asserted 级）**：嵌套同名 Loop(id) 或同一 Loop 内多次分配同资源仍会合并——id 的唯一性生成规则未定义。
+- **行号**：L146–L163, L293–L306。
 
 ---
 
-## S4. Proof Obligation 账本（Iter19）
+## C. 文档内部矛盾清单
+
+| # | 矛盾 | 位置 | 严重度 |
+|---|------|------|--------|
+| C-1 | 默认规则 emit `kind=Unknown`（L698），而 kind 枚举限 {read,write,occupy}（L85）、分桶（L194）与 weight（L332）均无 Unknown 情形 ⇒ 要么类型非法要么 KIND_MIX 洪泛，后者使 §14 A5「不冤枉」（L1034）与其反例测试（L1073）不可能同时为真 | L85, L194–L201, L332, L698, L1034, L1073 | **高** |
+| C-2 | P4「mode=Unknown 按 use 处理…fail-closed 为保守兼容」（L279）：Unknown-as-use 使 create∥Unknown 判兼容 ⇒ 冲突检测 fail-**open**；将其称为「保守/fail-closed」与 §8.1/L702/L1034 的 fail-closed 学说语义相反 | L279, L700–L703, L1034 | 中 |
+| C-3 | MoveChild 映射 `write(tree,node.id,**use**)`（L611）与同类结构变更 AddChild 的 `write(...,**create**)`（L608）处理不一致；且副作用是 §7 全表 mode=move 零实例，使 §3.2.3 的 move 配对律（L273–L274）与 net 的 move 正项（L312）成为无实例死代码 | L273–L274, L312, L608, L611 | 中 |
+| C-4 | ∪ 幂等抹除重复调用次数（L123–L125, L169），而 AUDIT001 文案以「60/sec→1」报告频率收益（L946）、ED-006 以 60fps 累加（L751）：度量口径与代数载体不匹配 | L123–L125, L169, L751, L946 | 中 |
+
+---
+
+## D. Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I19-a | 总表 71% 行性质悬空，效应代数未落地 | open(高) | 补齐 ⊆/Compatible/size 区间/kind 隔离/∞ 闭包 | L78-173, L421-507 |
-| PO-I19-b | 对象层缺等值/偏序/归一化代数律 | open(高) | 定义 Claim=、ResourceId=、ScopeId⊆ | L78-113 |
-| PO-I19-c | 组合子层 0 个端到端良定义 | open(高) | 见 PO-I19-a 各机制 | L107-154 |
-| PO-I19-d | 含 occupy 的 14 条 API 无 net/peak 证明 | open(高) | 配对 mode 统一 + net(scope) | L427-507 |
-| PO-I19-e | 总表与 §14「0 阻塞」矛盾 | open(高) | 修订 §14 或补收敛 | L774, 总表 |
-
-## 本轮新发现未消解缺口（I19- 前缀，全局唯一）
-- **I19-01（高）**：量化证明全文 49 个效应/对象/组合子中仅 4 行（8%）性质完全良定义、10 行（20%）条件可证、35 行（71%）悬空——「每个效应有显式数学性质」目标未达成。
-- **I19-02**：对象层类型外壳完整但四条代数律（等值/偏序/归一化/kind 隔离）全缺，性质为空壳。
-- **I19-03**：组合子层 7/7 无端到端良定义，核心载体（⊆、Compatible 全函数、size 区间、ω 载体、∞ 闭包）一个未定义。
-- **I19-04**：含 occupy 的 14 条 API（泄漏/峰值检测核心载体）全部 open，DO-8/DO-9 数学基础全失。
-- **I19-05**：总表量化结果（71% 未落地）与 §14「21 问题全收敛、0 阻塞」直接矛盾，文档级结论错误（交叉 Iter13 I13-01）。
+|----|------|------|------------------|------|
+| PO-A1 | 每 kind 存在合法 mode 子集（well-formedness） | open | 增加 WF ⊆ Kind×Mode 关系（建议 WF=read×{use}, write×{use,create,release}, occupy×{create,release}±{move}），并在 Claim 构造处强制 | L84–L92 |
+| PO-A2 | net 聚合的抵消可靠性 | open | net(S,scope) 改为按 resource 分组求和后再比较（复用 L169 Claim= 的 resource 归一即可机械化） | L309–L321, L191 |
+| PO-A3 | 区间算术封闭性 | open | 显式定义分量式 [a,b]+[c,d]、Interval 上的 max/≤ 及其与 ⊤ 律（L222–L231）的相容性引理 | L203–L237, L323–L341 |
+| PO-A4 | 多重性载体 | open | 引入 multiset<Claim> 或 frame-count 标注，或证明 AUDIT001/ED-006 的频率语义可在现集合代数内表达 | L123–L125, L751, L946 |
+| PO-A5 | 顺序组合的 double-release 检测 | open | 为 `;` 增加逐资源 release-after-release / create-after-create 序检查，或显式声明 out-of-scope 并说明理由 | L120–L134, L265–L280 |
+| PO-A6 | Unknown kind 的类型地位 | open | 二选一：①默认规则改 emit 具体 kind（保守取 occupy+mode=Unknown）并入桶；②扩展 Kind 加 Unknown 构造子并定义 weight(Unknown,·)=⊥ 外的专用通道，同步修 A5 | L85, L194, L332, L698, L1034 |
+| PO-A7 | move 的守恒语义 | open | 定义 move-out 负项或在 net 中将 move 移出正项；否则删除 move 模式消除死代码 | L273–L274, L312, L611 |
+| PO-A8 | Loop(id) 标识唯一性 | open | 定义 id 生成规则（编译期唯一路径哈希），否则嵌套同名 Loop 下 B-10 的副本区分失效 | L146–L163, L293–L306 |
+| PO-A9 | 6 个无实例组合的处置 | open | 对 read×{create,release,move}、write×move、occupy×use、occupy×move 给出语义定义或经 WF（PO-A1）显式禁止 | L84–L92, L605–L671 |
 
 ---
 
-一句话摘要：为全文 49 个效应/对象/组合子建显式数学性质总表，量化得 **仅 4 行（8%）完全良定义、10 行（20%）条件可证、35 行（71%）悬空**——所有跨 scope 峰值、occupy/release 守恒、并发安全、循环/动态 ∞ 均依赖未定义谓词（⊆/Compatible/size 区间/ω/∞ 闭包），「效应代数」在 71% 行上无法给出端到端可核验性质，与 §14「0 阻塞」矛盾（I19-01，高）。
+## E. 新发现缺口清单
 
-// acceptance-report
-{
-  "criteriaSatisfied": [
-    {"id": "criterion-1", "status": "satisfied", "evidence": "仅覆盖写入 audit/iter19.md，未读/改其它 audit 文件，聚焦全文效应/对象/组合子数学性质总表与落地量化核查，未 widening scope"}
-  ],
-  "changedFiles": ["audit/iter19.md"],
-  "testsAddedOrUpdated": [],
-  "commandsRun": [
-    {"command": "read PDR (offset 78, 100) + (offset 421, 90)", "result": "passed", "summary": "读取 §3.1-3.3 对象/组合子/派生度量与 §7.1-7.10 全部 API 映射真实文本"},
-    {"command": "write D:/Godot/Cosmos/audit/iter19.md", "result": "passed", "summary": "覆盖写入独立审计 #19 数学性质总表"}
-  ],
-  "validationOutput": ["header 含「独立审计 #19（hy3 单独进程，本轮重跑）」", "共 49 行主表（对象4+组合子7+派生度量3+效应38）+ 量化结论 + 分类小结 + PO 账本 + 5 条 I19- 缺口", "量化：4 行(8%)良定义 / 10 行(20%)条件 / 35 行(71%)悬空"],
-  "residualRisks": ["效应行性质分类（条件 vs open）依赖 Iter08/09/15/16/18 交叉缺口，未逐行重证代数", "scope 标注非法(shell_scope)判定基于 §3.1.3 文法比对，未运行源码验证"],
-  "noStagedFiles": true,
-  "diffSummary": "覆盖写入 audit/iter19.md，独立审计全文效应/对象/组合子数学性质总表与落地量化",
-  "reviewFindings": ["blocker: 无——本文件为审计产物不修改 PDR；但发现 71% 行性质悬空、效应代数未落地，需 PDR 侧补 ⊆/Compatible/size区间/kind隔离/∞闭包"],
-  "manualNotes": "纯文档审计，未改动 PDR 正文；所有行号基于本轮 PDR 实际 read；未读其它 audit 文件"
-}
+1. **net 无 resource 分组**（PO-A2/B-2）：修订 C 收口了 scope 分组却遗漏 resource 分组；Deviation 已按资源对齐（L191）而 net 没有，属收口不对称。这是本轮最重要的可证缺陷——DO-9 泄漏检测存在构造性反例。
+2. **区间算术未定义**（PO-A3/B-4）：四个派生度量的求和运算踩在未定义的 Interval 加法/序上；merge_I 不能替代加法。
+3. **Unknown kind 类型逃逸**（PO-A6/C-1）：默认规则产出的对象在 §3 类型体系中无处安放，并使 §14 的 A5 判据内部不自洽。
+4. **顺序组合零检查**（PO-A5/B-6）：Compatible 只护住 `||` 一条路；`;` 上的 double-free/double-create 完全静默。
+5. **多重性丢失 vs 频率型诊断**（PO-A4/C-4）：集合代数与 AUDIT001/ED-006 的频率语义互相矛盾。
+6. **良构性谓词缺失 + move 死代码**（PO-A1/A7/A9/C-3）：12 组合中 6 个无实例无约束；MoveChild 的 use 标注既削弱并行冲突检测又使 move 全家成为死代码。
+7. **Loop(id) 唯一性未规约**（PO-A8/B-10）：循环副本机制的正确性隐含依赖 id 唯一，但生成规则缺失。

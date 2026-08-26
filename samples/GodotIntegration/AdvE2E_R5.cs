@@ -89,13 +89,14 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class EmptyReason {
-        private readonly Node3D _n = new();
+        private readonly GodotShapes.Node3D _g = new();
         [EffectOverride("""")]
-        public void AddChild(object c) { _n.child = c; } // acquire 无 release
-        public void Spawn() { AddChild(new object()); }
+        public void AddChild(object c) { } // 空 reason：标注保留 ⇒ EAA0801；生成器 emit 与否与本测无关
+        public void Spawn() { _g.AddChild(new object()); }
     }
 }";
         var (diags, _) = await RunBoth(src);
@@ -110,13 +111,14 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class WsReason {
-        private readonly Node3D _n = new();
+        private readonly GodotShapes.Node3D _g = new();
         [EffectOverride(""   "")]
-        public void AddChild(object c) { _n.child = c; }
-        public void Spawn() { AddChild(new object()); }
+        public void AddChild(object c) { }
+        public void Spawn() { _g.AddChild(new object()); }
     }
 }";
         var (diags, _) = await RunBoth(src);
@@ -131,13 +133,12 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
-    public sealed class Node3D { public object? child; }
     public sealed class BadEpsilon {
-        private readonly Node3D _n = new();
+        private readonly GodotShapes.Node3D _g = new();
         [AcceptDeviation(0.7)]
-        public void AddChild(object c) { _n.child = c; }
-        public void Spawn() { AddChild(new object()); }
+        public void Spawn() { _g.AddChild(new object()); }
     }
 }";
         var (diags, _) = await RunBoth(src);
@@ -173,13 +174,12 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
-    public sealed class Node3D { public object? child; }
     [EffectOverride(""类级 reason"")]
     public sealed class OnClass {
-        private readonly Node3D _n = new();
-        public void AddChild(object c) { _n.child = c; } // 方法未标注 ⇒ 不受类级影响
-        public void Spawn() { AddChild(new object()); }   // acquire 无 release ⇒ 仍报 EAA0901
+        private readonly GodotShapes.Node3D _g = new();
+        public void Spawn() { _g.AddChild(new object()); }   // acquire 无 release ⇒ 仍报 EAA0901
     }
 }";
         var (diags, gen) = await RunBoth(src);

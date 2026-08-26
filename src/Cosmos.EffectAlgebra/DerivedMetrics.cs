@@ -14,8 +14,8 @@ public readonly record struct LoopCount
 
     private LoopCount(NatStar count) { Count = count; }
 
-    /// <summary>§3.2.5 — 有限循环次数 ω=n。</summary>
-    public static LoopCount Of(ulong n) => new(NatStar.Of(n));
+    /// <summary>§3.2.5 — 有限循环次数 ω=n（ω≥1，0 无意义，会使 scale 退化为 [0,0] 致 Leak 误报）。</summary>
+    public static LoopCount Of(ulong n) => n == 0 ? throw new ArgumentOutOfRangeException(nameof(n), "LoopCount 必须 ≥1（0 会使规模缩放为 [0,0] 致守恒误报）") : new(NatStar.Of(n));
 
     /// <summary>§3.2.5 — 静态未知循环次数 ω=⊤（上界开放，供 Peak/net 以 ⊤ 兜底）。</summary>
     public static readonly LoopCount Top = new(NatStar.Top);
@@ -49,8 +49,19 @@ public static class Combination
     /// <summary>§3.2.1 — 序列组合 (S₁ ; S₂) := S₁ ∪ S₂（join-semilattice 并，幂等/交换/结合）。</summary>
     public static Signature Sequence(Signature a, Signature b) => Signature.Union(a, b);
 
-    /// <summary>§3.2.2 — 并行组合 (S₁ ∥ S₂) := S₁ ∪ S₂（跨调用点 Compatible 检查由 L3 Analyzer 补）。</summary>
-    public static Signature Parallel(Signature a, Signature b) => Signature.Union(a, b);
+    /// <summary>§3.2.2 — 并行组合 (S₁ ∥ S₂) := S₁ ∪ S₂。
+    /// R4-F4：跨分支同归一化资源做 Compatible 前置守卫——CONFLICT 对（如 create×create）抛 PARA_CONFLICT，
+    /// 不再静默 Union 吞掉冲突证据（L3 分析器看不到直接调用，前置条件必须在函数内执行）。</summary>
+    public static Signature Parallel(Signature a, Signature b)
+    {
+        foreach (var ca in a.OccupyClaims)
+            foreach (var cb in b.OccupyClaims)
+                if (ResourceId.Normalize(ca.Resource).Equals(ResourceId.Normalize(cb.Resource))
+                    && !Compatible.IsCompatible(ca.Mode, cb.Mode))
+                    throw new InvalidOperationException(
+                        $"PARA_CONFLICT: 并行分支对资源 {ca.Resource} 的 mode {ca.Mode}×{cb.Mode} 冲突（CONFLICT 集，§3.2.3）");
+        return Signature.Union(a, b);
+    }
 
     // §3.2.5 × ω 的 size 缩放：ω=⊤ ⇒ 上界开放（[lo, ⊤]）；否则区间端点按 §3.1.5a 乘法缩放。
     // lo 恒有限（§3.1.5 下界不可为 ⊤），故 lo×ω 无 NaN 路径；hi=⊤ 时 ⊤×有限=⊤ 保持开放。

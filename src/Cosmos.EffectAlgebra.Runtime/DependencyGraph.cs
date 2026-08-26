@@ -23,13 +23,27 @@ public sealed class DependencyGraph
     /// <summary>§1/§3 — 注册 Fiber（用于拓扑排序解析依赖）。</summary>
     public void Register(Fiber f) => _fibers[f.Id] = f;
 
-    /// <summary>§3 — 加显式边（同 Scope 内 B.Requires ⊇ A.Provides）。返回是否新增。</summary>
+    /// <summary>§3 — 加显式边（同 Scope 内 B.Requires ⊇ A.Provides）。返回是否新增。
+    /// R7-N5（hickey-x3）：同 Scope 前置条件在图内强制——堵住 PluginRuntime.Graph 公共后门绕过 AddDependency 校验的通道。</summary>
     public bool AddHardEdge(Fiber dependent, Fiber provider)
-        => _hard.Add((dependent.Id, provider.Id));
+    {
+        ValidateSameScope(dependent, provider, hard: true);
+        return _hard.Add((dependent.Id, provider.Id));
+    }
 
-    /// <summary>§3 step2 — 加隐式边（B 的某逆引用 A 提供的资源）。返回是否新增。</summary>
+    /// <summary>§3 step2 — 加隐式边（B 的某逆引用 A 提供的资源）。返回是否新增。同 Scope 校验同上（R7-N5）。</summary>
     public bool AddSoftEdge(Fiber dependent, Fiber provider)
-        => _soft.Add((dependent.Id, provider.Id));
+    {
+        ValidateSameScope(dependent, provider, hard: false);
+        return _soft.Add((dependent.Id, provider.Id));
+    }
+
+    private static void ValidateSameScope(Fiber dependent, Fiber provider, bool hard)
+    {
+        if (dependent.Scope != provider.Scope)
+            throw new InvalidOperationException(
+                $"依赖边前置条件违反（§3 step1）：{dependent.Id}.Scope({dependent.Scope}) != {provider.Id}.Scope({provider.Scope})，跨 Scope {(hard ? "硬" : "软")}边 teardown 语义未定义（R7-N5）");
+    }
 
     /// <summary>§3 — 移除某 Fiber 的全部边（dead 后清理）。</summary>
     public void Remove(FiberId id)

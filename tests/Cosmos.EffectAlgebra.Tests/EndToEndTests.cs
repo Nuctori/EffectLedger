@@ -159,13 +159,13 @@ public class Enemy
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } } }
 public class Leaker
 {
-    public object child;
-    public void AddChild(object x) { }
+    private readonly GodotShapes.Node3D _n = new();
     public async Task Leak()
     {
-        AddChild(new object());
+        _n.AddChild(new object());
     }
 }";
         var diags = await RunAnalyzer(source);
@@ -179,14 +179,14 @@ public class Leaker
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } } }
 public class Intended
 {
-    public object child;
-    public void AddChild(object x) { }
+    private readonly GodotShapes.Node3D _n = new();
     [EffectOverride(""帧内临时占用，已知泄漏"")]
     public async Task Temp()
     {
-        AddChild(new object());
+        _n.AddChild(new object());
     }
 }";
         var diags = await RunAnalyzer(source);

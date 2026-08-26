@@ -1,139 +1,160 @@
-# Iter13 审计 — §11-13 工作量/术语/社区发布/§14 一致性（独立审计 #13，hy3 单独进程，本轮重跑）
+# Iter13 独立审计
 
-- **审计视角**：文档级一致性 / 元声明真伪 / 工作量与风险闭环（独立 pass #13，全新上下文）
-- **范围**：§11 工作量（L623-635）、§12 社区发布（L639-738，重点 §12.1 阶段、§12.2 AUDIT001/002/003）、§13 术语表（L742-763，重点 ResourceId/ScopeId）、§14 文档历史（L767-775）；邻接 §3.1.2 ResourceId 构造子、§3.4 MA-002/006/009、§7.4 Instantiate、§3.1.1 size、Iter04（§14 矛盾）、Iter08/09（映射）、Iter11（Deviation）、Iter12（风险依赖）
-- **结论摘要**：§14 v3.0「21 个开放问题全部收敛，0 个阻塞」与文档自身 §3.4（MA-002/006/009 open）及全文审计证据直接矛盾，属 PDR 级结论错误（高，open）。术语表 L748 把 §3.1.2 的 10 构造子 tagged union 平铺为 9 类别字符串，丢失结构（open）。§12.2 AUDIT002「occupy{memory}+10 per death」的 +10 无出处（§7.4 Instantiate 的 size 是 `scene.estimated_size` 估计值、非 10；MA-008 默认=1），AUDIT003「保守估计 64MB」与 MA-008「默认 size=1」矛盾（open）。§11 12-19 周未含本文已暴露 open 问题（Δ 正确性、L2/L3 完备、Deviation 修复、ScopeId⊆、QueueFree mode=move 等）的消解成本 ⇒ 低估（open）。§12 阶段1采用吸引力依赖 R-3 误报消解（Iter12 I12-03），阶段间「采用→反馈→修正」负反馈未建模（open）。结构性成立（阶段目标数字为声明、MIT 协议事实）给条件证明。
+## 范围 / 结论摘要
 
----
-
-## M1. §14 v3.0「0 阻塞」与文档自身矛盾（核心，高）
-
-**命题** §14（L774）：v3.0「21 个开放问题全部收敛，0 个阻塞，明确三层安全模型（L1/L2/L3）」；v3.0-FINAL 同样声称「21 个开放问题全部收敛」。
-
-**数学性质 / 证明状态**：
-- **(PO-I13-a) PDR 级结论错误（open，高）**：§14 的「0 阻塞」断言依赖「所有开放问题已收敛」，但文档内部即证伪：
-  - §3.4 中 MA-002（∞ 代数性质，open）、MA-006（⊔ 非半环，open）、MA-009（Compatible 完备性，open）三条在 Iter04 已还原为 open；单 §3.4 内部即 ≥3 个未收敛项。
-  - 全文自 Iter01 至 Iter12 暴露的 open 项（Delta Sync 正确性、L2/L3 完备性、Deviation 除零、QueueFree mode=move、ScopeId⊆ 未定义、默认规则漏报 occupy/release、[EffectOverride] 无校验、白名单覆盖率 <5% 等）均未被 §14 承认。
-  - **(论证)** 「21 个问题全收敛」与「§3.4 自带 ≥3 open + §4-9 跨节 open」构成直接矛盾 ⇒ 该元声明为假，非可证性质。状态 = open（高，PDR 结论错误）。
-- 交叉：Iter04 已点名「§14 声明与 §3.4 矛盾」，Iter20（总账）将回收此矛盾为文档级 blocker。
-
-**文档行号**：§14（L767-775，L774）、§3.4（L176-190，MA-002/006/009）、Iter04（§14 矛盾论证）。
+- **范围**：§11 工作量估算（L852–864）、§12 社区发布策略（L868–958，含 AUDIT001/002/003 示例 L944–957、§12.3 渠道表 L961–967）、§13 术语表（L975–996）、§14 文档历史（L1086–1100）；核查其与正文数学声明（§3 定义层、§7 映射、§14.1–14.4 工具层判据）的一致性。
+- **方法**：仅基于本文档磁盘内容；每条命题标注 discharged / asserted / open；可证者给条件证明并写明前提；不可证者给反例或证明缺口。
+- **结论摘要**：§11 算术自洽（discharged）但**模块覆盖不完整**（Audit-only Analyzer 的 AUDIT001–003 与 §14 测试矩阵工程量未入账，open）。§12.2 的示例数字 `20×[64,64]=[1280,1280]` 及与 `[512,512]` 的比较**无法由 §7/§3 现有定义机械导出**——区间加法与区间序在 §3.1.5 中未定义（open，2 条缺口）。AUDIT002 的修复建议（事件 lambda 内 QueueFree）与 §14.3 A1 的 COMPLETE 判据存在**soundness 张力**（open）。§13 术语表 ResourceId 行**遗漏 Occupancy/Callback/Input 三个构造子**、ScopeId 行**遗漏 Shell 构造子**，与 §3.1.2/§3.1.3 直接矛盾（discharged，2 条内部矛盾）；Component 行「无引用类型」与 §4.1.2 string/ImmutableArray 豁免矛盾（discharged）。§14 文档历史本身可信度依赖外部审计文件（本审计禁读），其「双标题已删」声明属实但**遗留两个 `## 14.` 编号重复**未处理（discharged 新发现）。
 
 ---
 
-## M2. 术语表 ResourceId 平铺丢失 tagged union 结构（open）
+## 逐命题小节
 
-**命题** §13（L748）：`ResourceId | 资源标识：tree, self, physics, memory, disk, signal, gpu, audio, network`（9 类别平铺）；§3.1.2（L88-99）定义 `ResourceId := Tree(path)|Self(component)|Physics(bodyId)|Memory(uid)|Disk(path)|Signal(name)|Gpu(bufferId)|AudioMixer(channelId)|Network(peerId,method)|Custom(name)`（**10 构造子**，带字段的 tagged union）。
+### P11-1 §11 各行人周区间求和等于总计
 
-**数学性质 / 证明状态**：
-- **(PO-I13-b) 类型结构信息丢失（open）**：术语表把带字段的 tagged union 降级为无字段的 9 个裸字符串类别，且：① 漏列 `Custom(name)` 第 10 构造子；② 抹去每个构造子的**判别字段**（path/u64/RID/String 等）。后果：
-  - 丢失「ResourceId 相等性基于判别字段」（Iter01 I1-02 / MA-010 的核心）——术语表读者无法从「tree」这个字符串推断相等需比较 `path`，致 `Tree(path)` vs `Tree(Unknown)` 的 Unknown⊤ 保守逻辑不可见。
-  - 与 §7 映射（§7.4 `memory(scene.uid)`、§7.9 `network(self.id+"/"+method)` 用构造子字段造 id）无法对表——映射用字段，术语表无字段 ⇒ 文档内部表示不一致。
-  - 状态 = open（文档一致性缺陷，非安全阻断但放大 I1-02 归一化缺口）。
-- 附带：术语表 ScopeId 列 7 项（method/type/scene/global/loop/conditional/async），与 §3.1.3 `ScopeId := Method|Type|Scene|Global|Loop(id)|Conditional(...)|Async(...)` 基本对应（字段同样被抹），一致性较好；仅 ResourceId 侧结构性丢失。
+- **命题**：Σ 行下界 = 12，Σ 行上界 = 19，总计标注「12-19 周」正确。
+- **数学性质**：整数区间加法（[a,b]+[c,d]=[a+c,b+d]）。
+- **状态**：**discharged**
+- **论证**：下界 1+1+3+2+1+1+1+2=12；上界 2+2+4+3+1+2+2+3=19。逐行核对 L855–862 无遗漏行。周→人月换算按 4 周/月：12 周=3.0 月，19 周=4.75 月，标注「3-5 人月」（L864）为向上取整的保守包装，无算术错误。**前提**：各模块工时彼此独立、可线性相加（无共享基础设施重复计费的声明，文档未给出，属隐含前提而非数学缺陷）。
+- **行号**：L852–864。
 
-**文档行号**：§13（L748）、§3.1.2（L88-99）、§7.4/§7.9 映射（L452-499）、Iter01 I1-02 / MA-010。
+### P11-2 §11 模块清单覆盖文档声明的全部交付物
+
+- **命题**：§11 列出的 8 个模块穷尽了 DO-1~DO-11 + §12 + §14 所需的全部工程量。
+- **数学性质**：集合覆盖（{交付物} ⊆ {已估价模块的能力}）。
+- **状态**：**open**（覆盖失败）
+- **论证（反例）**：
+  1. §12.2 Audit-only 模式的核心交付物 `GodotAuditAnalyzer` 及诊断 AUDIT001/002/003（L900–957）不在 §11 任何一行中。L858 Roslyn Analyzer 行仅列 RULE001/SHELL001/BUDGET001/SYS001 四条规则；BUDGET001≠AUDIT003（后者要求 SizeVal 归一估算 + GlobalBudget 累加比较，语义不同）。而 §12.1 阶段 1 是整个社区策略的入口（DO-11），其实现工作量缺失。
+  2. §14.4 C# 测试矩阵（L1040–1079，约 10 个正/反例测试）被 rA3/rA6 声明为「完备性已证」的必要条件（L1081），但其工程量未入任何行。
+  3. 数学层运行库（SizeVal/⊤ 代数/net(S,scope)/Peak/weight 的可执行实现）散落于「Domain 基架」「运行时验证」，无独立项，1–2 人周的「运行时验证」难以同时覆盖采样器+Trace+偏差+校准+⊤ 语义。
+- **行号**：L852–864, L900–957, L1040–1081。
+
+### P11-3 总人周与「3-5 人月」的单位一致性
+
+- **状态**：**discharged**（并入 P11-1 论证；4 周/月约定下 19 周 = 4.75 ≤ 5 月成立）。
+- **行号**：L864。
+
+### P12-1 阶段化采用目标（1000/500/50/10）与正文无冲突
+
+- **命题**：§12.1 四阶段目标数值与正文数学声明不矛盾。
+- **状态**：**asserted**（非形式命题）
+- **论证**：「1000 下载」「500 项目」等是市场目标，非文档内可推导命题；文档内无任何行与之冲突，但也无任何证据支撑。标注 asserted（既非 discharged 亦非 open——无数学内容可消解）。
+- **行号**：L878, L884, L890, L897。
+
+### P12-2 AUDIT003 数字 `20 × [64,64] = [1280,1280]` 可由 §3 机械导出
+
+- **命题**：场景中 20 个 Enemy 各贡献 occupy{memory,[64,64]}，累加得 [1280,1280]，超过 GlobalBudget [512,512] 触发报警。
+- **数学性质**：区间数乘自然数（n 点累加）。
+- **状态**：**open**（导出链断裂）
+- **论证（证明缺口）**：
+  1. §3.1.5 只定义了 Interval 载体 [lo,hi]、merge_I（join，L232）与 ⊤ 的标量运算律（§3.1.5a）；**区间加法 [a,b]+[c,d]:=[a+c,b+d] 从未被定义**。Σ_{i=1..20} [64,64] 在 §3.3.1/3.3.2 的求和中依赖此运算（对单点区间退化为 ℕ 加法尚可救，但对一般区间如 [1,⊤]+[64,64] 未定义 hi=⊤ 时 lo 相加与否）。
+  2. 标量乘 `[64,64]×20` 记法（L936）更无定义；§3.2.5 的 (S×ω) 是 Signature 层副本复制，不是 size 区间的数乘。二者恰好同值纯属记号巧合，机械推导必须先补定义。
+  3. 比较 `[1280,1280] > [512,512]`（L956, L1047）：§3.1.5a 的 compare 仅对 ℕ* 标量定义（∀x<⊤），**区间上的序（逐分量？hi 序？lo 序？）未定义**。「SizeVal 同源比较」（L1048）是断言不是定义。
+  - **条件证明**：若补充 (i) 区间 Pointwise 加法 [a,b]+[c,d]:=[a+c,b+d]（含 ⊤ 律 a+c 当任一端 ⊤ ⇒ ⊤）；(ii) 预算序 B ⊑ Budget :⇔ B.hi > Budget.hi（或逐分量 ≥）；则 n·[s,s]=[n·s,n·s] 对 n∈ℕ 可归纳证出，20×[64,64]=[1280,1280]>[512,512] 成立。在此之前该数字是**游离字面量的区间伪装**——恰违反 L214 自设的「禁止游离字面量」纪律的精神。
+- **行号**：L214, L226–236, L935–936, L956, L1047–1048。
+
+### P12-3 AUDIT002 泄漏判定 `occupy{memory,[size,⊤]} per death` 与 §7.4 映射一致
+
+- **命题**：`ExplosionScene.Instantiate<Explosion>()` 无 QueueFree ⇒ net(S,scope)>0 ⇒ AUDIT002。
+- **数学性质**：§3.3.1 net(S,scope) 的 create−release 守恒差。
+- **状态**：**asserted → 条件 discharged**
+- **论证**：§7.4 Instantiate 映射（L639）emit occupy(memory, scene.estimated_size, create)；QueueFree emit release(memory, self.size, release)（L610，mode 已修正为 release）。若无 release 配对，net 含 +size 项、−size 项缺空 ⇒ net>0，判定成立。**前提**：(a) ExplosionScene 为显式 .tscn ⇒ estimated_size=[s,s]（L214(d)、§3.1.5(c)）；动态变量场景才落 [1,⊤]。L949 的消息文案把两者合并写作 `[size,⊤]`，对显式场景是**过保守的错误上界**（应为 [s,s]），文案与映射不完全一致（轻微）。(b) AddChild 的 write(tree,...)+occupy(tree,...)（L608）与 QueueFree 的 release 配对须在同一 scope 过滤集内（⊆*，L138–150）——示例中 Die() 方法域内配对，成立。
+- **行号**：L608–610, L639, L948–952。
+
+### P12-4 AUDIT002 修复建议（lambda 内 QueueFree）满足 A1 soundness
+
+- **命题**：`fx.Finished += () => fx.QueueFree();` 使泄漏判定消解且不产生漏报。
+- **数学性质**：控制流可达性下的 release 必然性。
+- **状态**：**open**（soundness 缺口）
+- **论证**：§14.3 A1（L1030）将泄漏检测定义为「控制流**无** QueueFree/release-class 调用 ⇒ 必报」。反之，A1 的补集判定（有调用即消解）只保证 completeness 的反面，不保证**该 release 在运行时必然执行**：Finished 信号是否发射取决于节点生命周期（若 fx 在 Finished 前被外部 free/换场景移除，lambda 永不执行 ⇒ 实际泄漏而工具沉默 = 漏报）。§8.3.1 要求 override 提供「真实 release 路径证明」（L779），但 L951 的官方修复建议自身未附该证明条件。二者构成文档内部张力：要么 A1 反向消解需附加「信号可达性」前提，要么修复建议应改为无条件释放路径。§14.4 NoFalsePositive_QueueFree_Present 测试（L1060–1063）同样只测静态出现，未测动态不发射情形。
+- **行号**：L779, L951, L1030, L1060–1063。
+
+### P12-5 AUDIT001 「60/sec → 1」可由代数导出
+
+- **命题**：_Process 中每帧 GetNode ⇒ read{tree} 60/sec；缓存于 _Ready 后降为 1。
+- **状态**：**open**（时间维度缺失）
+- **论证**：§3 代数是无时间轴的集合代数；Signature 是 Claim 集，read(S)=Σsize（§3.3.3）无频率概念。ED-006（L802 附近，静态假设 60fps）提供了事实依据，但「fps × 每帧 claim 数 ⇒ 速率」的换算规则从未进入 §3 形式系统——ω（循环次数）语义上是循环展开计数（§3.2.5），_Process 由引擎驱动的每帧重入并未被建模为 ω=60 或 ω=⊤ 的循环组合。「60/sec」与「1」分别是速率和总次数，量纲都不同，却写在同一 reduction 句中。**最小补充**：定义 _Process 体 ⇒ (S × ω_frame)，ω_frame ∈ {60(帧率假设), ⊤}，并把 AUDIT001 文案改为同量纲比较（如 read 总量 60·|claim| vs 1·|claim|）。
+- **行号**：L262–275（§3.2.5），L944–946。
+
+### P13-1 术语表 ResourceId 行与 §3.1.2 构造子一致
+
+- **命题**：L981 列举 = §3.1.2 ∪ §3.1.2b 构造子全集。
+- **状态**：**discharged（不一致，即内部矛盾）**
+- **论证**：§3.1.2（L92–111）构造子全集：Tree, Self, Physics, Memory, Disk, Signal, Gpu, AudioMixer, **Occupancy**(L107), **Callback**(L108), Network, **Input**(L110), Custom；§3.1.2b 另有 CommandBuffer, SignalBus。术语表 L981 列：tree, self, physics, memory, disk, signal, gpu, **audio**, network, custom, CommandBuffer, SignalBus —— 缺 **Occupancy、Callback、Input** 三者；且写「audio」而构造子名为 AudioMixer（Occupancy("audio") 是字段值非构造子名）。rA4（L1098③）明确声称已扩构造子使「全部可机械归一」，但术语表未同步——文档历史声明与磁盘现状矛盾。后果：以术语表为准的使用者会认为 audio_channel/input/callback 类资源无规范标识。
+- **行号**：L92–111, L981, L1098。
+
+### P13-2 术语表 ScopeId 行与 §3.1.3 构造子一致
+
+- **命题**：L982 列举 = §3.1.3 全集。
+- **状态**：**discharged（不一致）**
+- **论证**：§3.1.3（L134–140）含 Method, Type, Scene, Global, Loop, Conditional, Async, **Shell**（ST-04 收口新增，rA2 L1096 明确记录）。术语表 L982 缺 **Shell**。而 §7 全部映射使用 shell_scope ⇒ Shell（L138），术语表使用者无法查到该作用域。另：L982 写「偏序 ⊆ 见 §3.1.3b」——§3.1.3b 实际定义的是 ⊑ 与 ⊆*，裸符号 ⊆ 在 L147 处定义为 (⊑)∨(scope=Global)，引用尚可对上，此项不算矛盾。
+- **行号**：L134–140, L147, L982, L1096。
+
+### P13-3 术语表 Component 行「无引用类型」与 §4.1.2 一致
+
+- **命题**：Component = readonly record struct，无引用类型。
+- **状态**：**discharged（矛盾）**
+- **论证**：L984 断言「无引用类型」，但 §4.1.2（L431–440）白名单显式豁免 **string**（引用类型）与 **ImmutableArray\<T\>**（引用类型）。二者不可同真。修法：术语表改为「除 string / ImmutableArray\<T\> 白名单豁免外无引用类型」。
+- **行号**：L431–440, L984。
+
+### P13-4 其余术语行与正文一致（Claim/Signature/Entity/System/Shell）
+
+- **状态**：**discharged**
+- **论证**：Claim 五元组（L978 ↔ L84–90）✓；Signature 分桶表述（L979 ↔ §3.1.4b L168–175）✓；Entity 二元组（L985 ↔ §4.1.3）✓；System 纯函数签名（L988 ↔ §4.1.6）✓。**轻微张力**：L989 称 Shell 为「同态映射」，§5.1.1（L459）称「函子」且同时给对象映射与态射映射——函子严格强于同态（多对象部分）；DO-10（L25）亦用「同态」。非致命，建议统一为「函子（对象+态射双映射）」或注明混用。
+- **行号**：L25, L459–472, L978–989。
+
+### P13-5 PDR 行唯一性
+
+- **命题**：术语表 `**PDR**` 行仅出现一次。
+- **状态**：**discharged**
+- **论证**：grep 全文 `**PDR**` 仅 L996 一行命中；rA6（L1100）关于删除 L997 重复行的声明与磁盘现状相符。
+- **行号**：L996, L1100。
+
+### P14-1 文档历史章节编号唯一
+
+- **命题**：全文恰有一个「文档历史」章节标题且编号唯一。
+- **状态**：**discharged（新发现矛盾）**
+- **论证**：`## 15` 全文零命中（rA5/rA6 关于删除 `## 15.文档历史` 的声明属实）；但磁盘现存 **两个 `## 14.`**：L1000「编译期工具层完备性规范」与 L1086「文档历史」。rA4①/rA5 只删了 15 号重复，未解决 14 号撞号——工具层规范的编号应为 15（或文档历史改 15）。交叉引用受损：L1014/L1030 等「§14.2/§14.3」指工具层，而 rA3 历史行（L1097）说「新增 §14 L2/L3 判据」，读者按最后出现的 §14（文档历史）解析会落空。
+- **行号**：L1000, L1086, L1097–1100。
+
+### P14-2 历史收敛声明与正文现状自洽
+
+- **命题**：v3.0-FINAL-rA6 声明「iter51 的 8 open + iter52/iter53 复核项全部真实闭合」与正文一致。
+- **状态**：**asserted**
+- **论证**：可文档内核验的子项均通过：§3.1.5c 有定义体（L244–249）✓；§3.1.2 扩构造子在位（L107/108/110）✓；§3.1.4a 缩写映射表在位（L186–189）✓；§9.1 先判 ⊤（代码注释见 L536 附近）✓；merge_I 套用 ⊤ 律（L233）✓；cardinality Peak 废弃标注（L281）✓。**不可核验项**：涉及 audit/iter01–iter53 外部文件的陈述（50 轮审计、iter52/iter53 争讼）依审计纪律禁读，无法独立复核，故整体只能 assert 不能 discharge。
+- **行号**：L1086–1100 及上述对应行。
+
+### P14-3 v3.0-FINAL 行自我否定的诚实性
+
+- **命题**：L1094 承认 v3.0 曾虚报「21 开放问题收敛、0 阻塞」后被证伪——与正文各「已解决/已收敛」标注体系不矛盾。
+- **状态**：**discharged**
+- **论证**：正文 §3.4/§4.2 等表的「已解决」均为 rA 后状态且有修订块背书；历史行如实记录了旧虚报，属自洽的时间线陈述，无矛盾。
+- **行号**：L1093–1094。
 
 ---
 
-## M3. §12.2 AUDIT002(+10) 与 AUDIT003(64MB) 数值无出处（open）
-
-**命题** §12.2（L662-672）：
-- AUDIT002：`Instantiate<Explosion>() has no guaranteed QueueFree() path. Resource leak: occupy{memory} +10 per death, never released.`
-- AUDIT003：`Texture2D AlbedoMap has no [Budget]. Using conservative estimate 64MB. Scene 'Level1' accumulated VramMB: 1280MB (default budget 512MB).`
-
-**数学性质 / 证明状态**：
-- **(PO-I13-c) +10 来源不明（open）**：§7.4 `Instantiate(scene)` 的 Claim 为 `occupy(memory, scene.estimated_size, create, shell_scope)`——size 是 `scene.estimated_size`（估计值，MA-005 open），**不是常数 10**。且 MA-008「默认 size=1（单位资源）」。AUDIT002 报告写死「+10 per death」与 §7.4 的 `estimated_size`、MA-008 的默认 1 均不对应 ⇒ 该报警数值是**作者手填示例**，非由 §7.4 映射规则推导。状态 = open（示例与机制脱节，削弱「自动推导」宣称）。
-- **(PO-I13-d) 64MB 与 MA-008 默认 size=1 矛盾（open）**：AUDIT003「Texture2D → 默认 occupy{memory, 64MB}」；但 MA-008（L185）明定「默认 size = 1（单位资源），显存/内存等精确资源显式标注 size」。即同一文档内：显存/内存的默认 size 在 MA-008 是 1，在 §12.2 是 64MB ⇒ 直接矛盾。若按 MA-008 默认 1，则「20 个 Enemy × 1 = 20MB」而非「1280MB」，报警阈值逻辑全变。状态 = open（数值口径冲突，致 §12.2 的「保守估计」无法与 §3 代数对齐）。
-- 附带：AUDIT003「默认预算 512MB」与 §12.1 阶段2「[GlobalBudget(VramMB=512)]」一致（自洽）；但 512 与 64MB 单纹理估计的组合未给推导。
-
-**文档行号**：§12.2（L656-672，AUDIT002/AUDIT003）、§7.4（L458，Instantiate size）、MA-008（L185）、§12.1（L644）。
-
----
-
-## M4. §11 工作量未计入已暴露 open 问题的消解成本（open）
-
-**命题** §11（L623-635）：总计 12-19 周（3-5 人月），逐项列 Domain/Shell/SG/Analyzer/Interop/映射/运行时/测试。
-
-**数学性质 / 证明状态**：
-- **(PO-I13-e) 工作量低估（open）**：§11 的模块拆分未显式列出「证明义务消解」子项。本文（Iter01-Iter12）已暴露且未收敛的高影响 open 项需要额外工程/形式化投入，至少含：
-  - Delta Sync 一致性判据设计与证明（Iter06 PO-I6-e，高，核心）；
-  - L2/L3 检测完备性 soundness 证明（Iter07 PO-I7-b/c/d，高）；
-  - Deviation 公式 range=0 除零修复 + 区间载体定义（Iter11 PO-I11-a/b/c，高）；
-  - ScopeId⊆ 偏序定义与 Peak 跨 scope 并（Iter15 PO-I15-*，open）；
-  - QueueFree mode=move → release 修正（Iter08 PO-I8-a / Iter17，高）；
-  - 默认规则含 occupy/release 或强制白名单覆盖（Iter10 PO-I10-a，高）；
-  - [EffectOverride]/[AcceptDeviation] 校验（Iter10 PO-I10-g / Iter11 PO-I11-g，安全）；
-  - 白名单覆盖率从 <5% 提升至覆盖（Iter10 PO-I10-f）；
-  - ResourceId 相等性/Unknown⊤ 数学对象定义（Iter01 I1-03）。
-  - 这些均**不在** §11 的 8 个模块中（SG/Analyzer 仅列「实现」未列「完备性证明」；运行时仅列「偏差检测」未列「Deviation 良定义修复」）。故 12-19 周是「按现有（含 open）设计实现」的估时，非「收敛全部 open 问题」的估时 ⇒ 低估。状态 = open（工作量估算与风险/证明缺口脱钩）。
-
-**文档行号**：§11（L623-635）、Iter06/07/10/11/15/17 对应 PO。
-
----
-
-## M5. §12 阶段1采用吸引力依赖 R-3 误报消解，负反馈未建模（open）
-
-**命题** §12.1（L641-657）：阶段1（Audit-only）目标「1000 下载，收集误报反馈」；阶段2-4 逐级侵入。
-
-**数学性质 / 证明状态**：
-- **(PO-I13-f) 采用吸引力依赖未证误报消解（open）**：阶段1核心卖点是「零改动 + 自动推导 + 报警」。但 Iter12 I12-03 指出 R-3（误报率高，高/高）的缓解依赖 L3 Analyzer 完备性（open）与白名单覆盖率（<5%，open）；即阶段1的「报警质量」建立在未证机制上。文档把「收集误报反馈」当阶段1成功指标，但**未建模**：若阶段1报警因漏报 occupy/release（Iter10 I10-01）而**漏报真实泄漏**（误报的反向——false negative），则「1000 下载」的采用吸引力反而建立在危险的不完整信号上 ⇒ 采用吸引力与机制可靠性正相关假设未证。状态 = open（采用策略风险未闭环）。
-- **(PO-I13-g) 阶段间负反馈未建模（open，弱）**：§12.1 是线性四阶段推进，未定义「阶段1反馈 → 阶段2设计修正」的回写机制（如误报分布如何改变默认规则、白名单如何随反馈扩充）。Iter10 PO-I10-f（覆盖率<5%）若仅靠阶段1反馈扩充，其速率/成本未在 §11 工作量体现 ⇒ 与 M4 同源。状态 = open（弱）。
-
-**文档行号**：§12.1（L641-657）、Iter12 I12-03、Iter10 PO-I10-f。
-
----
-
-## M6. 可消解的 proof obligation（履行尝试）
-
-- **P1（discharged，条件）**：若 §14 的「21 问题全收敛」改为「已实现机制层收敛，形式化证明 open 项见审计账本」，则 §14 与 §3.4/全文一致。证明：措辞弱化排除矛盾。前提 PO-I13-a（声明未修订）未立 ⇒ 条件，实际未消解。
-- **P2（discharged，条件）**：若术语表 ResourceId 改回带字段 10 构造子（或注明「详见 §3.1.2」），则术语表与 §3.1.2/§7 映射一致。证明：结构对齐。前提 PO-I13-b（平铺未改）未立 ⇒ 条件。
-- **P3（discharged，条件）**：若 AUDIT002 的 +10 改为 `scene.estimated_size`、AUDIT003 的 64MB 改为与 MA-008 默认 size=1 统一的口径，则 §12.2 报警与 §3/§7 代数一致。证明：数值口径对齐。前提 PO-I13-c/d（数值未修订）未立 ⇒ 条件。
-- **P4（discharged）**：MIT 协议（§12.3）、阶段目标数字（1000/500/50/10 下载）为声明性事实，不依赖代数机制 ⇒ 结构性成立。证明：工程事实独立。
-
----
-
-## Proof Obligation 账本（Iter13）
+## Proof Obligation 账本表
 
 | ID | 命题 | 状态 | 消解所需最小补充 | 行号 |
-|----|------|------|----------------|------|
-| PO-I13-a | §14「0 阻塞」与 §3.4/全文矛盾 | open(高) | 修订 §14 声明或补齐收敛证明 | L774, L176-190 |
-| PO-I13-b | 术语表 ResourceId 丢 tagged union | open | 改回 10 构造子+字段 | L748, L88-99 |
-| PO-I13-c | AUDIT002 +10 无出处 | open | 改 `scene.estimated_size` | L662, L458 |
-| PO-I13-d | AUDIT003 64MB 与 MA-008 默认1 矛盾 | open | 统一 size 口径 | L667, L185 |
-| PO-I13-e | §11 工作量未含 open 消解成本 | open | 补证明义务子项估时 | L623-635 |
-| PO-I13-f | 阶段1采用依赖未证误报消解 | open | 建模漏报反向风险 | L641-657, Iter12 |
-| PO-I13-g | 阶段间负反馈未建模 | open(弱) | 定义反馈回写机制 | L641-657 |
+| ---- | ------ | ------ | ------ | ------ |
+| PO-13-1 | §11 模块覆盖全部交付物 | open | §11 表增列「Audit-only Analyzer（AUDIT001–003）」与「§14 测试矩阵实现」两行并给人周；或将 BUDGET001 显式扩义涵盖 AUDIT003 并说明 | L852–864, L900–957, L1040 |
+| PO-13-2 | 区间加法定义 | open | §3.1.5 增 [a,b]+[c,d]:=[a+c,b+d] 及 ⊤ 分量律（否则 Σ 与 merge 之外的一切累加悬空） | L226–236 |
+| PO-13-3 | 区间×标量（n 副本 size 数乘）定义 | open | 声明 n·[a,b]:=[n·a,n·b] 或改由 Σ copy_i 推导并禁止 `×20` 记号 | L936, L1047 |
+| PO-13-4 | SizeVal/预算比较序定义 | open | §3.1.5 增预算序（如 B.exceeds(Budget):⇔ B.hi>Budget.hi ∧ B.lo>Budget.lo 取保守交叠语义二选一），使 AUDIT003 比较机械可判 | L956, L1047–1048 |
+| PO-13-5 | lambda 内 release 的消解条件 | open | A1 补「release 路径必达性」前提（如信号源生命周期证明），或修改 L951 官方修复建议为无条件释放路径；同步修 §14.4 反例测试 | L951, L1030, L1060–1063 |
+| PO-13-6 | _Process 帧率→效应换算的形式化 | open | 定义 (S×ω_frame)、ω_frame∈{60,⊤}，统一 AUDIT001 文案量纲 | L944–946, §3.2.5 |
+| PO-13-7 | 术语表 ResourceId 行补 Occupancy/Callback/Input、audio→AudioMixer | open（矛盾待修） | 单行文本替换即可，机械修改 | L981 |
+| PO-13-8 | 术语表 ScopeId 行补 Shell | open（矛盾待修） | 单行文本替换即可 | L982 |
+| PO-13-9 | 术语表 Component「无引用类型」改为带白名单豁免表述 | open（矛盾待修） | 单行文本替换即可 | L984, L431–440 |
+| PO-13-10 | 双 `## 14.` 编号去重 | open（结构矛盾） | 工具层规范改号 15（连带 §14.x 引用）或文档历史改号 | L1000, L1086 |
 
-## 本轮新发现未消解缺口（I13- 前缀，全局唯一）
-- **I13-01（高）**：§14 v3.0「21 开放问题全收敛，0 阻塞」与 §3.4（MA-002/006/009 open）及全文审计证据直接矛盾，是 PDR 级结论错误。
-- **I13-02**：术语表 L748 把 §3.1.2 的 10 构造子 tagged union 平铺为 9 无字段类别，漏列 `Custom`，丢失相等性判别字段 ⇒ 与 §7 映射无法对表。
-- **I13-03**：AUDIT002「+10 per death」与 §7.4 `scene.estimated_size`、MA-008 默认 1 均不对应，属手填示例，非机制推导。
-- **I13-04**：AUDIT003「保守估计 64MB」与 MA-008「默认 size=1」矛盾，致 §12.2 数值无法与 §3 代数对齐。
-- **I13-05**：§11 12-19 周未计入 Delta 正确性/L2-L3 完备/Deviation 修复/ScopeId⊆/QueueFree mode 等已暴露 open 的消解成本 ⇒ 低估。
-- **I13-06**：§12 阶段1采用吸引力依赖 R-3 误报消解（未证机制），且漏报反向风险未登记；阶段间负反馈未建模。
-- **I13-07**：§14 与 §3.4 矛盾需由 Iter20 总账回收为文档级 blocker（交叉 Iter04 / Iter20）。
+（discharged 项 P11-1/P11-3/P12-3/P13-4/P13-5/P14-3 不入 open 账本。）
 
----
+## 新发现缺口清单
 
-一句话摘要：§14 v3.0「0 阻塞」与文档自身 §3.4（MA-002/006/009 open）及全文审计证据直接矛盾、属 PDR 级结论错误（I13-01，高）；术语表 ResourceId 平铺丢失 10 构造子 tagged union（I13-02）；AUDIT002 的 +10、AUDIT003 的 64MB 分别与 §7.4/MA-008 数值口径冲突（I13-03/04）；§11 工作量未含已暴露 open 的消解成本（I13-05）；§12 阶段1采用依赖未证误报消解且负反馈未建模（I13-06）。
-
-// acceptance-report
-{
-  "criteriaSatisfied": [
-    {"id": "criterion-1", "status": "satisfied", "evidence": "仅覆盖写入 audit/iter13.md，未读/改其它 audit 文件（仅本轮前已读的 iter04 作交叉引用，未再读新 audit 文件），聚焦 §11-14 文档一致性审计"}
-  ],
-  "changedFiles": ["audit/iter13.md"],
-  "testsAddedOrUpdated": [],
-  "commandsRun": [
-    {"command": "read D:/Godot/Cosmos/PDR_Effect_Cost_Algebra_v3_FINAL.md (offset 623, 152 lines)", "result": "passed", "summary": "读取 §11-14 真实文本确认工作量/发布/术语/历史"},
-    {"command": "read PDR (offset 176, 30) + (offset 452, 12) + (offset 88, 18)", "result": "passed", "summary": "交叉确认 §3.4 MA-002/006/009、§7.4 Instantiate size、§3.1.2 ResourceId 10 构造子"},
-    {"command": "write D:/Godot/Cosmos/audit/iter13.md", "result": "passed", "summary": "覆盖写入独立审计 #13"}
-  ],
-  "validationOutput": ["header 含「独立审计 #13（hy3 单独进程，本轮重跑）」", "共 M1-M6 六节 + Proof Obligation 账本 + 7 条 I13- 缺口", "交叉引用 §3.1.2/§3.4/§7.4/§14/MA-008/Iter04/Iter12 真实行号"],
-  "residualRisks": ["未运行外部工具验证 §12.2 报警数值是否由 Analyzer 真实产出（仅基于文档文本比对 +10/64MB 与 §7.4/MA-008 口径）", "§3.3 Peak 公式 ω 语义未在本轮读取，依赖 Iter04/Iter18 交叉引用"],
-  "noStagedFiles": true,
-  "diffSummary": "覆盖写入 audit/iter13.md，独立审计 §11-14 文档级一致性缺口",
-  "reviewFindings": ["blocker: 无——本文件为审计产物不修改 PDR；但发现 §14「0 阻塞」为 PDR 级结论错误、术语表/AUDIT 数值口径冲突，需 PDR 侧修正"],
-  "manualNotes": "纯文档审计，未改动 PDR 正文；所有行号基于本轮 PDR 实际 read；iter04 为任务前已读，未再读其它 audit 文件"
-}
+1. **【高】区间代数不完备（PO-13-2/3/4 合并根因）**：§3.1.5 只有载体 + join(merge_I) + ⊤ 标量律，缺加法、数乘、序三条运算；§12.2/§14.4 的全部具体数字（[1280,1280]、> [512,512]）目前都是不可推导的装饰品。这与 L214「禁止游离字面量」的自我要求直接冲突——字面量被区间语法包裹后仍是游离的。
+2. **【高】工作量账本系统性低估**：社区策略入口（Audit-only Analyzer）与完备性证据载体（测试矩阵）双双缺席 §11；按 P11-2 反例，「3-5 人月」至少漏计 AUDIT001–003 诊断器与 10 例测试矩阵，实际下界应上调。
+3. **【中】A1 反向判定的 soundness 漏洞**：事件回调中的 release 被当作无条件释放路径，可能造成真泄漏静默（与 fail-closed 原则 L775 相悖）。
+4. **【中】时间/频率维度缺位**：AUDIT001 的 per-second 语义在无时间轴的集合代数中无立足点；ED-006 的 60fps 假设停留在文字层。
+5. **【低】三处术语表失同步**（ResourceId 三构造子缺失、ScopeId 缺 Shell、Component 表述过强）——均为 rA4/rA2 修订未回灌术语表的一类性失误，提示需要「修订时同步检查 §13」的流程约束。
+6. **【低】章节编号 14 重复**：历史条目反复宣称「双标题已删」却引入/保留了新的编号碰撞，说明历次收口仅验证「目标串消失」未验证「编号全局唯一」。

@@ -1,4 +1,5 @@
 // Objects.cs — PDR §3.1.1/§3.1.2/§3.1.3b/§3.1.4a/§3.1.4b 实现：Claim 五元组、ResourceId 单点真相、ScopeId 偏序、Signature 三桶量纲隔离。LANDING_PLAN §3.1：L1 纯代数核心。
+using System.Collections.Generic;
 using System.Collections.Immutable;
 
 namespace Cosmos.EffectAlgebra;
@@ -111,7 +112,7 @@ public abstract record ScopeId
 public enum Kind { Read, Write, Occupy }
 
 /// <summary>
-/// §3.2.3 — 模式。Unknown 按 Use 处理（fail-closed 最弱兼容，§3.2.3 P4）。
+/// §3.2.3 — 模式。Unknown 按 Use 处理（fail-open/permissive：静默放行，§3.2.3 P4；勿标 fail-closed——R4-F8/R10-F6）。
 /// </summary>
 public enum Mode { Use, Create, Release, Move, Unknown }
 
@@ -157,11 +158,21 @@ public sealed class Signature
     /// <summary>§3.2.1 — 空签名（⊔ 单位元）。</summary>
     public static readonly Signature Empty = new();
 
-    /// <summary>§3.2.1 — 从一组 Claim 构造签名（自动按 Normalize 键去重分桶）。</summary>
+    /// <summary>§3.2.1 — 从一组 Claim 构造签名（自动按 Normalize 键去重分桶）。
+    /// P0-4（hickey-x3 F4）：归一化后完全相同的重复 Claim 显式报错——集合语义会静默坍缩并发数量
+    /// （两份占用算一份，Peak/net 系统性减半）；并发表达必须走 <see cref="Combination.Loop"/> 的 LoopCount（ω）。</summary>
     public static Signature Of(params Claim[] claims)
     {
         var s = new Signature();
-        foreach (var c in claims) s = s.Add(c);
+        var seen = new HashSet<Claim>();
+        foreach (var c in claims)
+        {
+            var n = c.Normalize();
+            if (!seen.Add(n))
+                throw new ArgumentException(
+                    $"重复 Claim({n.Kind},{n.Resource},{n.Mode},{n.Scope})：Signature 是集合，并发副本会被静默去重导致峰值/净占用低估。并发表达须用 Combination.Loop(footprint, LoopCount.Of(n), scope)（P0-4）");
+            s = s.Add(n);
+        }
         return s;
     }
 
@@ -174,6 +185,7 @@ public sealed class Signature
             case Kind.Read: s._read = s._read.Add(n); break;
             case Kind.Write: s._write = s._write.Add(n); break;
             case Kind.Occupy: s._occupy = s._occupy.Add(n); break;
+            default: throw new ArgumentOutOfRangeException(nameof(c), $"未知 Kind: {n.Kind}");
         }
         return s;
     }
@@ -188,8 +200,26 @@ public sealed class Signature
         return s;
     }
 
-    /// <summary>§3.2.4 ⊔：join-semilattice 合并（幂等/交换/结合，非半环）。同 Claim 取 size merge_I。</summary>
-    public static Signature Join(Signature a, Signature b) => Union(a, b);
+    /// <summary>§3.2.4 ⊔：join-semilattice 合并（幂等/交换/结合，非半环）。
+    /// R4-F2：按 (Kind, 归一化 Resource, Mode, Scope) 配对同 Claim 键，size 取 Interval.Merge（merge_I）——
+    /// 条件分支 [10,10]⊔[50,50] ⇒ 单条 [10,50]（Peak=max 而非求和），与 PDR §3.2.4 规格一致。</summary>
+    public static Signature Join(Signature a, Signature b)
+    {
+        var merged = new Dictionary<(Kind, ResourceId, Mode, ScopeId), Interval>();
+        void Accumulate(Claim c)
+        {
+            var n = c.Normalize();
+            var key = (n.Kind, n.Resource, n.Mode, n.Scope);
+            var size = n.Size ?? Interval.Default;
+            merged[key] = merged.TryGetValue(key, out var cur) ? cur.Merge(size) : size;
+        }
+        foreach (var c in a.AllClaims()) Accumulate(c);
+        foreach (var c in b.AllClaims()) Accumulate(c);
+        var claims = new List<Claim>(merged.Count);
+        foreach (var kv in merged)
+            claims.Add(new Claim(kv.Key.Item1, kv.Key.Item2, kv.Key.Item3, kv.Key.Item4, kv.Value));
+        return Of(claims.ToArray());
+    }
 
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
@@ -205,10 +235,15 @@ public sealed class Signature
     {
         unchecked
         {
+            // 顺序无关折叠：XOR 累加（ImmutableHashSet 迭代序不保证），桶内顺序不影响哈希
             var h = 0;
-            foreach (var c in _read) h = (h * 31) ^ c.GetHashCode();
-            foreach (var c in _write) h = (h * 31) ^ c.GetHashCode();
-            foreach (var c in _occupy) h = (h * 31) ^ c.GetHashCode();
+            foreach (var c in _read) h ^= c.GetHashCode();
+            foreach (var c in _write) h ^= c.GetHashCode();
+            foreach (var c in _occupy) h ^= c.GetHashCode();
+            // 区分空桶与跨桶移动（Claim 含 Kind 已区分，额外混入桶计数防退化）
+            h ^= _read.Count * 17;
+            h ^= _write.Count * 31;
+            h ^= _occupy.Count * 53;
             return h;
         }
     }

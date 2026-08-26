@@ -86,7 +86,7 @@ public class EffectScriptContractTests
             { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "create",
               "scope": {"scene":"Battle"}, "size": [1,1] }
           ] },
-        { "lifetime": [60, 180], "loop": 0,
+        { "lifetime": [60, 180],
           "scope": { "scene": "Battle" },
           "footprint": [
             { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "release",

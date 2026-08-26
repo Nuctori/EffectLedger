@@ -38,10 +38,13 @@ public sealed class AdvE2E_R2
         return await withAnalyzers.GetAnalyzerDiagnosticsAsync();
     }
 
+    // P0-2 对齐（hickey-x3 F3）：桩类型放 GodotShapes 命名空间（分析器的 Godot 类型启发式），
+    // 消费者经接收者调用 _n.AddChild(...)——与真实 Godot 用法一致；用户自有撞名方法不再被裸名定罪。
     private const string Header = @"
 using Cosmos.EffectAlgebra;
-namespace AdvR2 {
-    public sealed class Node3D { public object? child; }
+namespace GodotShapes {
+    public sealed class Node3D { public object? child; public void AddChild(object c) { } public void RemoveChild() { } }
+    public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } }
 ";
     private const string Footer = @"
 }";
@@ -52,16 +55,16 @@ namespace AdvR2 {
     public async Task E2E_R2_OverrideDoesNotSuppressDO9Leak()
     {
         var src = Header + @"
+    namespace AdvR2 {
     public sealed class AllTaggedLeak {
         private readonly Node3D _n = new();
-        public void AddChild(object c) { _n.child = c; }
         [EffectOverride(""known leak A"")]
-        public void TagA() { AddChild(new object()); }
+        public void TagA() { _n.AddChild(new object()); }
         [EffectOverride(""known leak B"")]
-        public void TagB() { AddChild(new object()); }
+        public void TagB() { _n.AddChild(new object()); }
         [EffectOverride(""known leak C"")]
-        public void TagC() { AddChild(new object()); }
-    }" + Footer;
+        public void TagC() { _n.AddChild(new object()); }
+    } }" + Footer;
         var diags = await RunAnalyzer(src);
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("TagA"));
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("TagB"));
@@ -74,14 +77,14 @@ namespace AdvR2 {
     public async Task E2E_R2_AcceptDeviationDoesNotSuppressCompileTimeDO()
     {
         var src = Header + @"
+    namespace AdvR2 {
     public sealed class DeviateLeak {
         private readonly Node3D _n = new();
-        public void AddChild(object c) { _n.child = c; }
         [AcceptDeviation(0.3)]
-        public void MarkedA() { AddChild(new object()); }
+        public void MarkedA() { _n.AddChild(new object()); }
         [AcceptDeviation(0.3)]
-        public void MarkedB() { AddChild(new object()); AddChild(new object()); }
-    }" + Footer;
+        public void MarkedB() { _n.AddChild(new object()); _n.AddChild(new object()); }
+    } }" + Footer;
         var diags = await RunAnalyzer(src);
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("MarkedA"));
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("MarkedB"));
@@ -95,13 +98,13 @@ namespace AdvR2 {
     public async Task E2E_R2_OverrideSuppressesA3NotDO9()
     {
         var src = Header + @"
+    namespace AdvR2 {
     public sealed class SignalOverride {
-        public void Connect(object s, object c) { }
-        public void IsConnected(object s) { }
-        public void AddChild(object x) { }
+        private readonly Node3D _n = new();
+        private readonly SignalHub _bus = new();
         [EffectOverride(""intent: paired signal + node lifecycle"")]
-        public void Mixed() { Connect(new object(), new object()); IsConnected(new object()); AddChild(new object()); }
-    }" + Footer;
+        public void Mixed() { _bus.Connect(new object(), new object()); _bus.IsConnected(new object()); _n.AddChild(new object()); }
+    } }" + Footer;
         var diags = await RunAnalyzer(src);
         Assert.DoesNotContain(diags, d => d.Id == "EAA0303" && d.GetMessage().Contains("Mixed"));
         Assert.DoesNotContain(diags, d => d.Id == "EAA0304" && d.GetMessage().Contains("Mixed"));
@@ -131,12 +134,12 @@ namespace AdvR2 {
     public async Task E2E_R2_EmptyReason_StillReportsLeak()
     {
         var src = Header + @"
+    namespace AdvR2 {
     public sealed class EmptyReason {
         private readonly Node3D _n = new();
-        public void AddChild(object c) { _n.child = c; }
         [EffectOverride("""")]
-        public void Marked() { AddChild(new object()); }   // 空 reason：不形成静默逃逸
-    }" + Footer;
+        public void Marked() { _n.AddChild(new object()); }   // 空 reason：不形成静默逃逸
+    } }" + Footer;
         var compilation = MakeCompilation(src);
         var diags = await RunAnalyzer(src);
         Assert.DoesNotContain(compilation.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);

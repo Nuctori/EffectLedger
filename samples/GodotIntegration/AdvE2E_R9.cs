@@ -215,17 +215,16 @@ namespace A.B.C.D.E {
     {
         var src = @"
 using Cosmos.EffectAlgebra;
+namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
-    public sealed class Node3D { public object? child; }
     public sealed class Spammer {
-        private readonly Node3D _node = new();
+        private readonly GodotShapes.Node3D _node = new();
         public void TenAdds() {
-            AddChild(new object()); AddChild(new object()); AddChild(new object());
-            AddChild(new object()); AddChild(new object()); AddChild(new object());
-            AddChild(new object()); AddChild(new object()); AddChild(new object());
-            AddChild(new object());
+            _node.AddChild(new object()); _node.AddChild(new object()); _node.AddChild(new object());
+            _node.AddChild(new object()); _node.AddChild(new object()); _node.AddChild(new object());
+            _node.AddChild(new object()); _node.AddChild(new object()); _node.AddChild(new object());
+            _node.AddChild(new object());
         }
-        private void AddChild(object c) { _node.child = c; }
     }
 }";
         var comp = MakeCompilation(src);

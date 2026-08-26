@@ -141,7 +141,7 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
         { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "create",
           "scope": {"scene":"Battle"}, "size": [1,1] }
       ] },
-    { "lifetime": [60, 180], "loop": 0,
+    { "lifetime": [60, 180],
       "footprint": [
         { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "release",
           "scope": {"scene":"Battle"}, "size": [1,1] }

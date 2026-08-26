@@ -7,7 +7,7 @@ namespace Cosmos.EffectAlgebra;
 /// <summary>
 /// §3.2.3 — Compatible：16 对全函数 + 对称。无未覆盖对（P2）。
 /// CONFLICT = {(Create,Create),(Move,Move),(Release,Release)}。
-/// Unknown 按 Use 处理（fail-closed 最弱兼容，P4）。
+/// Unknown 按 Use 处理（fail-open/permissive：未知模式静默放行，R4-F8/R10-F6 术语统一——本行为是「放行」不是「拒绝」，勿再标 fail-closed）。
 /// </summary>
 public static class Compatible
 {
@@ -29,13 +29,13 @@ public static class Compatible
 }
 
 /// <summary>
-/// §3.3.2b — weight: Kind × Kind → ℝ ∪ {⊥}。⊥ 表示跨 kind 无定义 ⇒ 聚合须报错 KIND_MIX（L3）。
-/// 类型表达为 partial 函数：同 kind ⇒ 1.0；跨 kind ⇒ double.NaN（约定为 ⊥ 编码，注释契约）。
+/// §3.3.2b — weight: Kind × Kind → ℝ ∪ {⊥}。⊥ 表示跨 kind 无定义 ⇒ 聚合须抛 KIND_MIX（L3）。
+/// 类型表达为 partial 函数：同 kind ⇒ 1.0；跨 kind ⇒ 抛 InvalidOperationException（非 NaN 毒值）。
 /// </summary>
 public static class Weight // §3.3.2b weight: Kind × Kind → ℝ ∪ {⊥}
 {
-    /// <summary>§3.3.2b — 返回 NaN 表示 ⊥（跨 kind 未定义，触发 KIND_MIX）。</summary>
-    public static double Of(Kind a, Kind b) => a == b ? 1.0 : double.NaN;
+    /// <summary>§3.3.2b — 跨 kind 未定义 ⇒ 抛（fail-fast），非返回 NaN。</summary>
+    public static double Of(Kind a, Kind b) => a == b ? 1.0 : throw new InvalidOperationException($"KIND_MIX: 跨 kind 权重未定义 {a}×{b}（需 L3 报错）");
 }
 
 /// <summary>
@@ -68,19 +68,19 @@ public sealed class NetTable
     }
 
     // §3.3.1 release 取 size 的「负向」[-hi,-lo]（非负 ℕ* 经 ZStar 转有符号）。
-    // 任一端 IsTop ⇒ 对应 ZStar.Top（net 未知 ⇒ IsConserved fail-closed 返回 false，交人工确认）。
+    // 任一端 IsTop 或超出 long 表示域 ⇒ 对应 ZStar.Top（R4-F1：禁止 (long) 强转静默翻转符号，net 未知 ⇒ IsConserved fail-closed 返回 false）。
     private static SignedInterval Negate(Interval s)
     {
-        var lo = s.Hi.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Hi.Value);  // -hi
-        var hi = s.Lo.IsTop ? ZStar.Top : ZStar.Of(-(long)s.Lo.Value);  // -lo
+        var lo = s.Hi.IsTop || s.Hi.Value > long.MaxValue ? ZStar.Top : ZStar.Of(-unchecked((long)s.Hi.Value));  // -hi
+        var hi = s.Lo.IsTop || s.Lo.Value > long.MaxValue ? ZStar.Top : ZStar.Of(-unchecked((long)s.Lo.Value));  // -lo
         return new SignedInterval(lo, hi); // [-hi, -lo]
     }
 
-    // §3.3.1 create/move 正号：[lo, hi]（非负 ℕ* 转 ZStar）。
+    // §3.3.1 create/move 正号：[lo, hi]（非负 ℕ* 转 ZStar）；超 long 域 ⇒ Top（R4-F1，同上）。
     private static SignedInterval ToSigned(Interval s)
     {
-        var lo = s.Lo.IsTop ? ZStar.Top : ZStar.Of((long)s.Lo.Value);
-        var hi = s.Hi.IsTop ? ZStar.Top : ZStar.Of((long)s.Hi.Value);
+        var lo = s.Lo.IsTop || s.Lo.Value > long.MaxValue ? ZStar.Top : ZStar.Of(unchecked((long)s.Lo.Value));
+        var hi = s.Hi.IsTop || s.Hi.Value > long.MaxValue ? ZStar.Top : ZStar.Of(unchecked((long)s.Hi.Value));
         return new SignedInterval(lo, hi);
     }
 

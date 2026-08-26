@@ -82,11 +82,13 @@ public static class LoadValidation
         }
     }
 
-    /// <summary>§3/§7.1/§5 — 组合校验（调用方在 Load 前执行）。</summary>
+    /// <summary>§3/§7.1/§5 — 组合校验（调用方在 Load 前执行）。
+    /// R4-F5：补接 §5 net 闭合（类文档声称含 §5，原实现漏掉）——四道锁装进门里，不要求每个调用方记得单独调 VerifyNetClosure。</summary>
     public static void ValidateForLoad(Fiber fiber, IReadOnlyCollection<Fiber> allFibers)
     {
         ValidateScaleClosure(fiber);
         ValidateReleaseClass(fiber);
         ValidateDoubleRelease(fiber, allFibers);
+        VerifyNetClosure(new[] { fiber }); // §5 per-Fiber 闸门（CheckAll 本就逐 Fiber 独立判定）
     }
 }

@@ -57,7 +57,12 @@ public sealed class Fiber
             foreach (var inv in Inverses)
                 if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(Coeffect.Provides))
                     claims.Add(new Claim(Kind.Occupy, inv.Resource, Mode.Release, inv.Scope, null));
-            return Signature.Union(Effect, Signature.Of(claims.ToArray()));
+            // R7-N5/P0-4 配套：内部聚合走 Union（显式集合语义），不经带重复检测的 Of——
+            // 多个逆释放同一 Provides 是合法声明（net 按资源聚合，不按声明计数）。
+            var sig = Effect;
+            foreach (var c in claims)
+                sig = Signature.Union(sig, Signature.Of(c));
+            return sig;
         }
     }
 

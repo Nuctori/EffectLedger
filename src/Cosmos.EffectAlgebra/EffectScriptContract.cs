@@ -24,16 +24,37 @@ public static class EffectScriptContract
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("events", out var evArr) || evArr.ValueKind != JsonValueKind.Array)
             throw new FormatException("EFFECT_SCRIPT §4：根须含 'events' 数组");
+        // R6-E1（hickey-x）：根级未知键静默忽略会让拼写错误（budgat / 大写 Budget）静默禁用整个预算门——
+        // fail-fast 白名单：根级只认 events/budget，其余键拒绝并列出合法键集。
+        RejectUnknownKeys(root, "根", "events", "budget");
 
         var events = new List<EffectEvent>();
         foreach (var ev in evArr.EnumerateArray())
             events.Add(ParseEvent(ev));
 
         IReadOnlyDictionary<ResourceId, NatStar> caps = Budget.None.Caps;
-        if (root.TryGetProperty("budget", out var bud) && bud.ValueKind == JsonValueKind.Object)
+        if (root.TryGetProperty("budget", out var bud))
+        {
+            // R6-E3（hickey-x）：budget 键存在但类型不对（数组/字符串等）⇒ 抛，而非静默跳过让 gate(2) 整体失效。
+            if (bud.ValueKind != JsonValueKind.Object)
+                throw new FormatException($"budget 须为对象（形如 {{\"gpu:x\": 5}}），实际为 {bud.ValueKind}");
             caps = ParseBudget(bud);
+        }
 
         return new EffectScript(events.ToImmutableArray(), new Budget(caps));
+    }
+
+    /// <summary>R6-E1（hickey-x）— 对象层未知键白名单校验：layer 为层名（如「根」），合法键列表进报错。</summary>
+    static void RejectUnknownKeys(JsonElement obj, string layer, params string[] known)
+    {
+        foreach (var prop in obj.EnumerateObject())
+        {
+            bool ok = false;
+            foreach (var k in known)
+                if (prop.Name == k) { ok = true; break; }
+            if (!ok)
+                throw new FormatException($"{layer}层未知键 \"{prop.Name}\"（合法键: {string.Join(", ", known)}；区分大小写与拼写）");
+        }
     }
 
     /// <summary>§4 — 序列化 <see cref="EffectScript"/> 为契约 JSON（round-trip 用）。</summary>
@@ -68,6 +89,9 @@ public static class EffectScriptContract
             if (items.Length != 2) throw new FormatException("lifetime 数组须 [lo,hi]");
             var lo = ParseTop(items[0]);
             var hi = ParseTop(items[1]);
+            // R10-F2 / EFFECT_SCRIPT.md §「已知锐边」：[⊤,⊤] 寿命视为非法输入——Lo=⊤ 的事件永不存活，
+            // 会让 create-without-release 泄漏剧本在端点采样下静默全绿（假绿）。fail-fast 拒绝。
+            if (lo.IsTop) throw new FormatException("lifetime 下界不可为 \"⊤\"（[⊤,⊤] 非法：事件永不存活会掩盖泄漏，EFFECT_SCRIPT.md）");
             return new Interval(lo, hi);
         }
         throw new FormatException("lifetime 须为 [lo,hi] 数组（hi 可为 \"⊤\" 表示∞）");
@@ -106,7 +130,12 @@ public static class EffectScriptContract
     static LoopCount ParseLoop(JsonElement el)
     {
         if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return LoopCount.Top;
-        if (el.ValueKind == JsonValueKind.Number) return LoopCount.Of(el.GetUInt64());
+        if (el.ValueKind == JsonValueKind.Number)
+        {
+            var v = el.GetUInt64();
+            if (v == 0) throw new FormatException("loop 必须 ≥1（0 无意义）或 \"⊤\"");
+            return LoopCount.Of(v);
+        }
         throw new FormatException("loop 须为数字或 \"⊤\"");
     }
 
@@ -164,6 +193,13 @@ public static class EffectScriptContract
         foreach (var prop in bud.EnumerateObject())
         {
             var r = ParseResourceKey(prop.Name);
+            // R2-N1（hickey-x）：⊤ 须可往返——接受 "⊤"/"inf" 字符串为 NatStar.Top，否则序列化侧写出的 ⊤ 解析回有限值造成语义翻转。
+            if (prop.Value.ValueKind == JsonValueKind.String)
+            {
+                var s = prop.Value.GetString();
+                if (s == "⊤" || s == "inf") { dict[r] = NatStar.Top; continue; }
+                throw new FormatException($"budget[\"{prop.Name}\"] 字符串值仅接受 \"⊤\" 或 \"inf\"（表示无上限），实际 \"{s}\"");
+            }
             dict[r] = NatStar.Of(prop.Value.GetUInt64());
         }
         return dict;
@@ -196,7 +232,8 @@ public static class EffectScriptContract
         ScopeId.Scene sc => new Dictionary<string, object?> { ["scene"] = sc.Name },
         ScopeId.Method m => new Dictionary<string, object?> { ["type"] = "method", ["scene"] = m.Name },
         ScopeId.Type t => new Dictionary<string, object?> { ["type"] = "type", ["scene"] = t.Name },
-        _ => new Dictionary<string, object?> { ["type"] = "global" }
+        ScopeId.Global => new Dictionary<string, object?> { ["type"] = "global" },
+        _ => throw new FormatException($"不可序列化的 scope: {s}")
     };
 
     static object SerializeClaim(Claim c) => new Dictionary<string, object?>
@@ -215,14 +252,15 @@ public static class EffectScriptContract
         ResourceId.Memory m => new Dictionary<string, object?> { ["memory"] = m.Uid },
         ResourceId.Occupancy o => new Dictionary<string, object?> { ["occupancy"] = o.Channel },
         ResourceId.SignalBus sb => new Dictionary<string, object?> { ["signalBus"] = sb.Name.Value },
-        _ => new Dictionary<string, object?> { ["memory"] = 0 }
+        _ => throw new FormatException($"不可序列化的 resource: {r}")
     };
 
     static object SerializeBudget(IReadOnlyDictionary<ResourceId, NatStar> caps)
     {
         var d = new Dictionary<string, object?>();
         foreach (var kv in caps)
-            d[ResourceKey(kv.Key)] = kv.Value.Value;
+            // R2-N1（hickey-x）：⊤ 序列化为 "⊤" 而非 .Value(=0)——否则 C# 合法的无上限预算 round-trip 后变 0，产生虚假 PeakExceeded/Leak。
+            d[ResourceKey(kv.Key)] = kv.Value.IsTop ? (object)"⊤" : kv.Value.Value;
         return d;
     }
 
@@ -233,7 +271,7 @@ public static class EffectScriptContract
         ResourceId.Memory m => "memory:" + m.Uid,
         ResourceId.Occupancy o => "occupancy:" + o.Channel,
         ResourceId.SignalBus sb => "signalBus:" + sb.Name.Value,
-        _ => "memory:0"
+        _ => throw new FormatException($"不可序列化的 budget 键资源: {r}")
     };
 
     static JsonElement Require(JsonElement e, string prop)
