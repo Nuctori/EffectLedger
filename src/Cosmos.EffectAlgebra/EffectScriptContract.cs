@@ -29,8 +29,9 @@ public static class EffectScriptContract
         RejectUnknownKeys(root, "根", "events", "budget");
 
         var events = new List<EffectEvent>();
+        int evIdx = 0;
         foreach (var ev in evArr.EnumerateArray())
-            events.Add(ParseEvent(ev));
+            events.Add(ParseEvent(ev, $"events[{evIdx++}]"));
 
         IReadOnlyDictionary<ResourceId, NatStar> caps = Budget.None.Caps;
         if (root.TryGetProperty("budget", out var bud))
@@ -67,26 +68,30 @@ public static class EffectScriptContract
         root["events"] = evList;
         if (script.Budget.Caps.Count > 0)
             root["budget"] = SerializeBudget(script.Budget.Caps);
-        return JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
+        // rich-hickey2 R1-F4：UnsafeRelaxedJsonEscaping —— ⊤ 是契约一等公民（budget/lifetime/loop 合法值），
+        // 默认编码器把它转成 \u264b 破坏 AI 可读性与幂等 round-trip（Parse 接受 "⊤"/"inf"，序列化侧须输出同形）。
+        return JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
     }
 
     // ── 事件解析 ──
-    static EffectEvent ParseEvent(JsonElement ev)
+    static EffectEvent ParseEvent(JsonElement ev, string layer)
     {
-        if (ev.ValueKind != JsonValueKind.Object) throw new FormatException("event 须为对象");
-        var life = ParseInterval(Require(ev, "lifetime"));
-        var scope = ParseScope(Require(ev, "scope"));
+        if (ev.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: event 须为对象");
+        // rich-hickey2 R1-F2：事件层与根层同型未知键白名单——拼写错误（如大写 "Loop"）不得被静默吞掉后落回缺省 ω=1。
+        RejectUnknownKeys(ev, layer, "lifetime", "scope", "loop", "footprint");
+        var life = ParseInterval(Require(ev, "lifetime", layer));
+        var scope = ParseScope(Require(ev, "scope", layer));
         var loop = ev.TryGetProperty("loop", out var l) ? ParseLoop(l) : LoopCount.Of(1);
-        var fp = ParseFootprint(Require(ev, "footprint"));
+        var fp = ParseFootprint(Require(ev, "footprint", layer), layer);
         return new EffectEvent(life, scope, fp, loop);
     }
 
-    static Interval ParseInterval(JsonElement el)
+    static Interval ParseInterval(JsonElement el, string layer = "lifetime")
     {
         if (el.ValueKind == JsonValueKind.Array)
         {
             var items = el.EnumerateArray().ToArray();
-            if (items.Length != 2) throw new FormatException("lifetime 数组须 [lo,hi]");
+            if (items.Length != 2) throw new FormatException($"{layer}: lifetime 数组须 [lo,hi]");
             var lo = ParseTop(items[0]);
             var hi = ParseTop(items[1]);
             // R10-F2 / EFFECT_SCRIPT.md §「已知锐边」：[⊤,⊤] 寿命视为非法输入——Lo=⊤ 的事件永不存活，
@@ -106,24 +111,28 @@ public static class EffectScriptContract
         throw new FormatException("lifetime 端点须为数字或 \"⊤\"");
     }
 
-    static ScopeId ParseScope(JsonElement el)
+    static ScopeId ParseScope(JsonElement el, string layer = "scope")
     {
         if (el.ValueKind != JsonValueKind.Object)
-            throw new FormatException("scope 须为对象");
+            throw new FormatException($"{layer}: scope 须为对象");
+        // rich-hickey2 R1-F5：零字段 scope 对象 ⇒ 拒绝——resource 侧要求非空身份，scope 侧不许凭空捏匿名者参与冲突分组。
+        if (!el.TryGetProperty("scene", out _) && !el.TryGetProperty("type", out _))
+            throw new FormatException($"{layer}: scope 须含 scene 或 type（至少一个字段）");
         // Global 无 name（修 auditR4 CRITICAL：SerializeScope 输出 {"type":"global"} 无 scene，原 Parse 强制 scene ⇒ round-trip 必炸）。
         var hasScene = el.TryGetProperty("scene", out var sc);
-        var name = hasScene ? sc.GetString() ?? throw new FormatException("scope.name 缺失") : "";
+        var name = hasScene ? ReqStr(sc, $"{layer}.scene") : "";
         // 缺 type ⇒ 默认 Scene(name)（与 SerializeScope 的 Scene 形态 {"scene":"S"} 一致）；
         // 仅未知 type（如 "gloabl"）才抛，避免静默当成 Scene("")（修 reviewer LOW）。
         if (!el.TryGetProperty("type", out var ty))
             return new ScopeId.Scene(name);
-        return ty.GetString() switch
+        // rich-hickey2 R1-F4：type 非字符串 ⇒ FormatException（带字段名），不漏 BCL InvalidOperationException。
+        return ReqStr(ty, $"{layer}.type") switch
         {
             "method" => new ScopeId.Method(name),
             "type" => new ScopeId.Type(name),
             "global" => new ScopeId.Global(),
             "scene" => new ScopeId.Scene(name),
-            _ => throw new FormatException($"未知 scope.type: {ty.GetString()}")
+            _ => throw new FormatException($"{layer}: 未知 scope.type: {ty.GetString()}")
         };
     }
 
@@ -139,22 +148,26 @@ public static class EffectScriptContract
         throw new FormatException("loop 须为数字或 \"⊤\"");
     }
 
-    static Signature ParseFootprint(JsonElement el)
+    static Signature ParseFootprint(JsonElement el, string layer = "footprint")
     {
-        if (el.ValueKind != JsonValueKind.Array) throw new FormatException("footprint 须为 claim 数组");
+        if (el.ValueKind != JsonValueKind.Array) throw new FormatException($"{layer}: footprint 须为 claim 数组");
         var claims = new List<Claim>();
+        int cIdx = 0;
         foreach (var c in el.EnumerateArray())
-            claims.Add(ParseClaim(c));
+            claims.Add(ParseClaim(c, $"{layer}[{cIdx++}]"));
         return Signature.Of(claims.ToArray());
     }
 
-    static Claim ParseClaim(JsonElement c)
+    static Claim ParseClaim(JsonElement c, string layer = "claim")
     {
-        var kind = ParseKind(Require(c, "kind").GetString() ?? throw new FormatException("kind 缺失"));
-        var res = ParseResource(Require(c, "resource"));
-        var mode = ParseMode(Require(c, "mode").GetString() ?? throw new FormatException("mode 缺失"));
-        var scope = ParseScope(Require(c, "scope"));
-        var size = c.TryGetProperty("size", out var sz) ? ParseInterval(sz) : Interval.Default;
+        if (c.ValueKind == JsonValueKind.Object)
+            RejectUnknownKeys(c, layer, "kind", "resource", "mode", "scope", "size");
+        // rich-hickey2 R1-F4：kind/mode 非字符串 ⇒ 带字段名的 FormatException（原 GetString() 漏 BCL 异常）。
+        var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"));
+        var res = ParseResource(Require(c, "resource", layer));
+        var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
+        var scope = ParseScope(Require(c, "scope", layer), $"{layer}.scope");
+        var size = c.TryGetProperty("size", out var sz) ? ParseInterval(sz, $"{layer}.size") : Interval.Default;
         return new Claim(kind, res, mode, scope, size).Normalize();
     }
 
@@ -171,16 +184,16 @@ public static class EffectScriptContract
         _ => throw new FormatException($"未知 mode: {m}")
     };
 
-    static ResourceId ParseResource(JsonElement el)
+    static ResourceId ParseResource(JsonElement el, string layer = "resource")
     {
-        if (el.ValueKind != JsonValueKind.Object) throw new FormatException("resource 须为对象");
+        if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: resource 须为对象");
         if (!el.TryGetProperty("gpu", out var g) && !el.TryGetProperty("commandBuffer", out g) &&
             !el.TryGetProperty("memory", out g) && !el.TryGetProperty("occupancy", out g) &&
             !el.TryGetProperty("signalBus", out g))
             throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus 之一");
         // 修 auditR2/R4 C2：resource 值缺失/类型错 ⇒ fail-fast（原静默兜底 "gpu"/""/0 会静默改写数据，比报错更危险）。
-        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, "gpu")));
-        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, "commandBuffer"));
+        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
+        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, $"{layer}.commandBuffer"));
         if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number ? mem.GetUInt64() : throw new FormatException("memory 须为数字 uid（如 {\"memory\":42}）"));
         if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, "occupancy"));
         if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, "signalBus")));
@@ -200,7 +213,11 @@ public static class EffectScriptContract
                 if (s == "⊤" || s == "inf") { dict[r] = NatStar.Top; continue; }
                 throw new FormatException($"budget[\"{prop.Name}\"] 字符串值仅接受 \"⊤\" 或 \"inf\"（表示无上限），实际 \"{s}\"");
             }
-            dict[r] = NatStar.Of(prop.Value.GetUInt64());
+            // rich-hickey2 R1-F4：非数字非"⊤"字符串值 ⇒ FormatException（原 GetUInt64() 漏 BCL InvalidOperationException）。
+            var pv = prop.Value;
+            if (pv.ValueKind != JsonValueKind.Number)
+                throw new FormatException($"budget[\"{prop.Name}\"] 须为数字或 \"⊤\"/\"inf\" 字符串，实际为 {pv.ValueKind}");
+            dict[r] = NatStar.Of(pv.GetUInt64());
         }
         return dict;
     }
@@ -274,9 +291,9 @@ public static class EffectScriptContract
         _ => throw new FormatException($"不可序列化的 budget 键资源: {r}")
     };
 
-    static JsonElement Require(JsonElement e, string prop)
+    static JsonElement Require(JsonElement e, string prop, string layer = "根")
     {
-        if (!e.TryGetProperty(prop, out var v)) throw new FormatException($"缺少字段: {prop}");
+        if (!e.TryGetProperty(prop, out var v)) throw new FormatException($"{layer}: 缺少字段: {prop}");
         return v;
     }
 

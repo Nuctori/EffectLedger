@@ -135,13 +135,15 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 {
   "events": [
     { "lifetime": [0, 120], "loop": 1,
+      "scope": { "scene": "Battle" },
       "footprint": [
-        { "kind": "occupy", "resource": {"gpu": {"bufferId":"mesh1"}}, "mode": "create",
+        { "kind": "occupy", "resource": {"gpu": "mesh1"}, "mode": "create",
           "scope": {"scene":"Battle"}, "size": [1,1] },
         { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "create",
           "scope": {"scene":"Battle"}, "size": [1,1] }
       ] },
-    { "lifetime": [60, 180],
+    { "lifetime": [60, 180], "loop": 1,
+      "scope": { "scene": "Battle" },
       "footprint": [
         { "kind": "occupy", "resource": {"commandBuffer":"gpu"}, "mode": "release",
           "scope": {"scene":"Battle"}, "size": [1,1] }
@@ -150,6 +152,9 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
   "budget": { "commandBuffer:gpu": 64 }
 }
 ```
+
+> 契约要点（rich-hickey2 R1）：事件级 `scope` 必填；`resource` 为扁平字符串形态 `{"gpu":"mesh1"}`；
+> 键区分大小写且只认白名单（事件层：lifetime/scope/loop/footprint），未知键直接报错——拼写错误不会被静默吞掉。
 
 验证失败 → `AuditResult.Violations` 返回反例（哪个时刻、哪个资源、超什么界）→ AI 改 JSON 重投。**闭环无需运行游戏。**
 

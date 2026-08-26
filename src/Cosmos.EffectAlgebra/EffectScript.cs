@@ -41,6 +41,10 @@ public readonly record struct EffectEvent
     {
         if (lifetime.Lo.IsTop)
             throw new ArgumentException("EffectEvent lifetime 下界不可为 ⊤（[⊤,⊤] 非法：事件永不存活会掩盖泄漏审计）");
+        // rich-hickey2 R1-F3：封 default(LoopCount) 后门——struct default 绕过 LoopCount.Of 的 ≥1 校验，
+        // 会让 Audit 除法 DivideByZero / 闭包路径规模缩放为 [0,0] 致 Leak 误报。构造期拒绝，一处收口覆盖全部消费路径。
+        if (!loop.Count.IsTop && loop.Count.Value == 0)
+            throw new ArgumentException("EffectEvent loop 须 ≥1 或 ⊤（default(LoopCount) 非法；用 LoopCount.Of(n≥1) 或 LoopCount.Top）", nameof(loop));
         Lifetime = lifetime;
         Scope = scope;
         Footprint = footprint;
@@ -154,6 +158,7 @@ public sealed partial class EffectScript
         var grp = new Dictionary<(ResourceId, ScopeId, int), HashSet<int>>();   // gate(3) 每 (res,scope,mode) 的活跃事件集合
         var netScope = new Dictionary<ResourceId, ScopeId>();                   // gate(1) 资源→首个贡献者 scope（用于 Violation 归因）
         var peakScope = new Dictionary<ResourceId, ScopeId>();                  // gate(2) 资源→首个峰值贡献者 scope
+        var peakReported = new HashSet<ResourceId>();                           // rich-hickey2 R1：PeakExceeded 每（归一化）资源只报首个反例——同一违例逐采样点重复上报是时间序列不是问题集
         ScopeId ResolveNetScope(ResourceId r) => netScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
         ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s : new ScopeId.Global();
 
@@ -244,7 +249,7 @@ public sealed partial class EffectScript
             {
                 var nk = ResourceId.Normalize(kv.Key);
                 var p = (topCount.TryGetValue(nk, out var tc) && tc > 0) ? NatStar.Top : peakSum.GetValueOrDefault(nk, NatStar.Of(0));
-                if (p.CompareToFinite(kv.Value) > 0)
+                if (p.CompareToFinite(kv.Value) > 0 && peakReported.Add(nk))
                 {
                     var scope = ResolvePeakScope(nk);
                     // R4-V2（hickey-x）：上报归一化键 nk（与查找一致），否则同一违例随用户拼写呈现两种资源身份。

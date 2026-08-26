@@ -632,6 +632,8 @@ public class EffectScriptEdgeTests
             violations.Add(new Violation(closureT, kv.Key, ls, "Leak", ""));
         }
 
+        // rich-hickey2 R1：PeakExceeded 语义改为「问题集」（每资源只报首个反例），参照实现同型去重（跨全部采样点）。
+        var peakSeen = new HashSet<ResourceId>();
         foreach (var t in samplePoints)
         {
             // gate(1) 累积 net
@@ -679,7 +681,7 @@ public class EffectScriptEdgeTests
                     if ((c.Size ?? Interval.Default).Hi.IsTop) { sum = NatStar.Top; break; }
                     sum = sum + (c.Size ?? Interval.Default).Hi;
                 }
-                if (sum.CompareToFinite(kv.Value) > 0)
+                if (sum.CompareToFinite(kv.Value) > 0 && peakSeen.Add(ResourceId.Normalize(kv.Key)))
                 {
                     var sc2 = dipScope.TryGetValue(ResourceId.Normalize(kv.Key), out var s2) ? s2 : new ScopeId.Global();
                     violations.Add(new Violation(t, kv.Key, sc2, "PeakExceeded", ""));
