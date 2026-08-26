@@ -346,17 +346,45 @@ public sealed partial class EffectScript
 }
 
 /// <summary>§2.3 — 峰值预算壳（软约束）。缺省 = 该资源无上限（⊤）。审计时 Peak ≤ Caps[r]，超限报 PeakExceeded。
-/// 未设 cap（默认 ⊤）= 通过；显式有限 cap = 拒绝常驻资源并发（用户主动限制，非 bug，修 OPEN-4）。</summary>
-public readonly record struct Budget
+/// 未设 cap（默认 ⊤）= 通过；显式有限 cap = 拒绝常驻资源并发（用户主动限制，非 bug，修 OPEN-4）。
+/// rich-hickey2 R3（V3-E）：构造期防御拷贝为 ImmutableDictionary——外部字典改动不透传、getter 不可回写、
+/// None 不可被 IDictionary 强转污染；Equals/GetHashCode 按内容（record struct 名副其实的值语义）。</summary>
+public readonly record struct Budget : IEquatable<Budget>
 {
-    /// <summary>§2.3 — 每资源峰值上限；缺省该资源无上限。</summary>
+    /// <summary>§2.3 — 每资源峰值上限；缺省该资源无上限。恒为不可变底座（ImmutableDictionary）。</summary>
     public IReadOnlyDictionary<ResourceId, NatStar> Caps { get; }
 
-    /// <summary>§2.3 — 从上限表构造。</summary>
-    public Budget(IReadOnlyDictionary<ResourceId, NatStar> caps) { Caps = caps; }
+    /// <summary>§2.3 — 从上限表构造（防御拷贝，null ⇒ 空预算）。</summary>
+    public Budget(IReadOnlyDictionary<ResourceId, NatStar>? caps)
+        => Caps = caps is null
+            ? ImmutableDictionary<ResourceId, NatStar>.Empty
+            : (caps as ImmutableDictionary<ResourceId, NatStar>) ?? caps.ToImmutableDictionary();
 
-    /// <summary>§2.3 — 空预算（所有资源无上限）。</summary>
-    public static readonly Budget None = new(new Dictionary<ResourceId, NatStar>());
+    /// <summary>§2.3 — 空预算（所有资源无上限；不可变单例，不可经 IDictionary 强转写入）。</summary>
+    public static readonly Budget None = new(ImmutableDictionary<ResourceId, NatStar>.Empty);
+
+    /// <summary>rich-hickey2 R3 V3-001 — 值相等：按键值对内容比较，与底座实例身份无关（§2.3；default(Budget).Caps=null 视为空预算）。</summary>
+    public bool Equals(Budget other)
+    {
+        var a = Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty;
+        var b = other.Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty;
+        if (a.Count != b.Count) return false;
+        foreach (var kv in a)
+            if (!b.TryGetValue(kv.Key, out var v) || !v.Equals(kv.Value)) return false;
+        return true;
+    }
+
+    /// <summary>§2.3 — 与 Equals 同源的内容哈希（null Caps 视为空）。</summary>
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var h = 17;
+            foreach (var kv in Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty)
+                h = h * 31 + (kv.Key.GetHashCode() ^ kv.Value.GetHashCode());
+            return h;
+        }
+    }
 }
 
 /// <summary>§3.2 — 审计结果。Passed=全部 gate 通过；Violations 携带反例（时刻/资源/类型/当前值 vs 上限），供 AI 直接回修 JSON。

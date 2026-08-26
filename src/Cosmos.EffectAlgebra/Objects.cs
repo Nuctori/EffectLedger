@@ -178,6 +178,10 @@ public sealed class Signature
 
     private Signature Add(Claim c)
     {
+        // rich-hickey2 R3 V3-005：Signature 边界校验——record struct 的 with/default 后门可产出 null Resource/Scope
+        // 与未定义 Kind，非法状态在进入集合前拦截（fail-fast，与重复-Claim 守卫同型）。
+        if (c.Resource is null) throw new ArgumentException($"Claim.Resource 不可为 null（with/default 后门？）：{c.Kind} {c.Mode}", nameof(c));
+        if (c.Scope is null) throw new ArgumentException($"Claim.Scope 不可为 null（with/default 后门？）：{c.Kind} {c.Resource}", nameof(c));
         var n = c.Normalize();
         var s = new Signature { _read = _read, _write = _write, _occupy = _occupy };
         switch (n.Kind)
