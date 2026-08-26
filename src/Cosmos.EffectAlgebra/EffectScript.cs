@@ -131,7 +131,8 @@ public sealed partial class EffectScript
         }
         var samplePoints = new List<NatStar>();
         foreach (var v in endpoints) samplePoints.Add(NatStar.Of(v)); // SortedSet 已排序 ⇒ 输出确定性（§5）
-        if (anyOpenEnd) samplePoints.Add(NatStar.Of(maxFinite + 1));
+        // rich-hickey2 R2-003：maxFinite=ulong.MaxValue 时 +1 回绕为 0（幽灵 t=0 尾段点）——Max 处尾段已由 Max 点覆盖，不加点。
+        if (anyOpenEnd && maxFinite != ulong.MaxValue) samplePoints.Add(NatStar.Of(maxFinite + 1));
         if (samplePoints.Count == 0) samplePoints.Add(NatStar.Of(0)); // 空脚本/全 ⊤：采 t=0
         var closureT = anyFinite ? NatStar.Of(maxFinite) : NatStar.Of(0);
 
@@ -198,13 +199,11 @@ public sealed partial class EffectScript
                         if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
                         else
                         {
-                            // 保守 ⊤：×/＋ 溢出（ulong 环绕）即标 ⊤，不静默低估峰值（与 exit 路径一致，补 auditR 仅修 exit 漏修 enter 的裸 ulong* 回卷）。
                             var hi = (c.Size ?? Interval.Default).Hi;
                             var w = e.Loop.Count;
-                            var curSum = peakSum.GetValueOrDefault(r, NatStar.Of(0));
-                            var mul = (!hi.IsTop && !w.IsTop && hi.Value <= ulong.MaxValue / w.Value) ? hi.Value * w.Value : ulong.MaxValue;
-                            peakSum[r] = (curSum.IsTop || mul == ulong.MaxValue || curSum.Value > ulong.MaxValue - mul)
-                                ? NatStar.Top : NatStar.Of(curSum.Value + mul);
+                            // rich-hickey2 R2-001：弃 ulong.MaxValue 哨兵（合法峰值 Max 被碰撞误判 ⊤，假阳性）——
+                            // NatStar 算术自带「环绕 ⇒ 保守 ⊤」，哨兵不再藏进值域。
+                            peakSum[r] = peakSum.GetValueOrDefault(r, NatStar.Of(0)) + hi * w;
                         }
                     }
                 }
@@ -218,15 +217,12 @@ public sealed partial class EffectScript
                         else
                         {
                             var cur = peakSum.GetValueOrDefault(r, NatStar.Of(0));
-                            // 保守 ⊤：± 溢出（ulong 环绕）即标 ⊤，不静默低估峰值（修 auditR peakSum 裸 ulong* 回卷）。
+                            // rich-hickey2 R2-001：与 enter 路径同型——NatStar 乘法环绕⇒⊤，弃哨兵；此分支两端恒有限。
                             var hi = (c.Size ?? Interval.Default).Hi;
                             var w = e.Loop.Count;
-                            var sub = (!hi.IsTop && !w.IsTop && hi.Value <= ulong.MaxValue / w.Value)
-                                ? NatStar.Of(hi.Value * w.Value) : NatStar.Top;
-                            var curSum = cur.IsTop ? NatStar.Top
-                                : (!hi.IsTop && !w.IsTop) ? NatStar.Of(cur.Value) : NatStar.Top;
-                            peakSum[r] = (curSum.IsTop || sub.IsTop) ? NatStar.Top
-                                : NatStar.Of(sub.Value <= curSum.Value ? curSum.Value - sub.Value : 0);
+                            var prod = hi * w;
+                            peakSum[r] = (prod.IsTop || cur.IsTop) ? NatStar.Top
+                                : prod.Value <= cur.Value ? NatStar.Of(cur.Value - prod.Value) : NatStar.Of(0);
                         }
                     }
                 }

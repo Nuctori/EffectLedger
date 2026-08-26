@@ -55,8 +55,14 @@ public readonly record struct ZStar
     // §3.3.1 max：max(x,⊤)=⊤；max(⊤,x)=⊤（内嵌 ⊤ 律）
     public ZStar Max(ZStar o) => (IsTop || o.IsTop) ? Top : Of(Math.Max(Value, o.Value));
 
-    // §3.3.1 min：min(x,⊤)=x；min(⊤,x)=x（内嵌 ⊤ 律）
-    public ZStar Min(ZStar o) => (IsTop || o.IsTop) ? Top : Of(Math.Min(Value, o.Value));
+    // §3.3.1 min：min(x,⊤)=x；min(⊤,x)=x（内嵌 ⊤ 律，与 NatStar.Min 对偶；rich-hickey2 R2-002 修——原 (IsTop||o.IsTop)?Top 把 Max 的上界律误抄给 Min，Min(x,⊤) 坍缩为 ⊤）
+    public ZStar Min(ZStar o)
+    {
+        if (IsTop && o.IsTop) return Top;
+        if (IsTop) return o;
+        if (o.IsTop) return this;
+        return Of(Math.Min(Value, o.Value));
+    }
 
     /// <summary>§3.3.1 调试字符串（无代数语义，仅 ⊤ 或有符号值表示）。</summary>
     public override string ToString() => IsTop ? "⊤" : Value.ToString();

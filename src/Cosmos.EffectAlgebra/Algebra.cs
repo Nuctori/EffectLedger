@@ -116,6 +116,9 @@ public static class Peak
         NatStar sum = NatStar.Of(0);
         foreach (var c in sig.AllClaims())
         {
+            // rich-hickey2 R2-005：量纲隔离与 NetTable.Compute 单一真源——峰值只聚合 occupy 桶，
+            // read/write 的 size 是 IO 量不是并发占用量（原仅滤 release，跨桶求和高估峰值 ⇒ 假阳性）。
+            if (c.Kind != Kind.Occupy) continue;
             if (!c.Scope.IncludedIn(scope)) continue;
             if (c.Mode == Mode.Release) continue; // §3.3.2 c.mode≠release：release 不贡献峰值
             if ((c.Size ?? Interval.Default).Hi.IsTop) return NatStar.Top; // ω=⊤ 兜底（§3.2.5）

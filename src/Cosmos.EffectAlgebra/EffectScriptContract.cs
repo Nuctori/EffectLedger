@@ -103,11 +103,13 @@ public static class EffectScriptContract
     }
 
     // hi="⊤" 或数字字符串；lo 必须有限。
-    static NatStar ParseTop(JsonElement el)
+    static NatStar ParseTop(JsonElement el, string layer = "lifetime")
     {
         if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return NatStar.Top;
+        // rich-hickey2 R2-006：负数/小数等非 UInt64 数字 ⇒ 契约 FormatException，不漏 BCL 异常。
         if (el.ValueKind == JsonValueKind.Number)
-            return NatStar.Of(el.GetUInt64());
+            return el.TryGetUInt64(out var n) ? NatStar.Of(n)
+                : throw new FormatException($"{layer}: 端点须为非负整数或 \"⊤\"");
         throw new FormatException("lifetime 端点须为数字或 \"⊤\"");
     }
 
@@ -213,11 +215,11 @@ public static class EffectScriptContract
                 if (s == "⊤" || s == "inf") { dict[r] = NatStar.Top; continue; }
                 throw new FormatException($"budget[\"{prop.Name}\"] 字符串值仅接受 \"⊤\" 或 \"inf\"（表示无上限），实际 \"{s}\"");
             }
-            // rich-hickey2 R1-F4：非数字非"⊤"字符串值 ⇒ FormatException（原 GetUInt64() 漏 BCL InvalidOperationException）。
+            // rich-hickey2 R2-006：非数字非"⊤"字符串值，或负数/小数 ⇒ FormatException（原 GetUInt64() 漏 BCL 异常）。
             var pv = prop.Value;
-            if (pv.ValueKind != JsonValueKind.Number)
-                throw new FormatException($"budget[\"{prop.Name}\"] 须为数字或 \"⊤\"/\"inf\" 字符串，实际为 {pv.ValueKind}");
-            dict[r] = NatStar.Of(pv.GetUInt64());
+            if (pv.ValueKind != JsonValueKind.Number || !pv.TryGetUInt64(out var cap))
+                throw new FormatException($"budget[\"{prop.Name}\"] 须为非负整数或 \"⊤\"/\"inf\" 字符串，实际为 {pv.ValueKind}");
+            dict[r] = NatStar.Of(cap);
         }
         return dict;
     }
