@@ -92,14 +92,16 @@ public static class EffectScriptContract
         {
             var items = el.EnumerateArray().ToArray();
             if (items.Length != 2) throw new FormatException($"{layer}: lifetime 数组须 [lo,hi]");
-            var lo = ParseTop(items[0]);
-            var hi = ParseTop(items[1]);
+            var lo = ParseTop(items[0], $"{layer}.lo");
+            var hi = ParseTop(items[1], $"{layer}.hi");
             // R10-F2 / EFFECT_SCRIPT.md §「已知锐边」：[⊤,⊤] 寿命视为非法输入——Lo=⊤ 的事件永不存活，
             // 会让 create-without-release 泄漏剧本在端点采样下静默全绿（假绿）。fail-fast 拒绝。
-            if (lo.IsTop) throw new FormatException("lifetime 下界不可为 \"⊤\"（[⊤,⊤] 非法：事件永不存活会掩盖泄漏，EFFECT_SCRIPT.md）");
-            return new Interval(lo, hi);
+            if (lo.IsTop) throw new FormatException($"{layer}: 下界不可为 \"⊤\"（[⊤,⊤] 非法：事件永不存活会掩盖泄漏，EFFECT_SCRIPT.md）");
+            // rich-hickey2 R4-001：lo>hi 校验从内部 ArgumentException 翻为契约 FormatException（外部输入方言单一）。
+            try { return new Interval(lo, hi); }
+            catch (ArgumentException ex) { throw new FormatException($"{layer}: {ex.Message}", ex); }
         }
-        throw new FormatException("lifetime 须为 [lo,hi] 数组（hi 可为 \"⊤\" 表示∞）");
+        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（hi 可为 \"⊤\" 表示∞）");
     }
 
     // hi="⊤" 或数字字符串；lo 必须有限。
@@ -138,26 +140,37 @@ public static class EffectScriptContract
         };
     }
 
-    static LoopCount ParseLoop(JsonElement el)
+    static LoopCount ParseLoop(JsonElement el, string layer = "loop")
     {
         if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return LoopCount.Top;
+        // rich-hickey2 R4-002：TryGetUInt64 守 -1/1.5 ⇒ 契约 FormatException（与 ParseTop/ParseBudget 单一真源）。
         if (el.ValueKind == JsonValueKind.Number)
         {
-            var v = el.GetUInt64();
-            if (v == 0) throw new FormatException("loop 必须 ≥1（0 无意义）或 \"⊤\"");
+            if (!el.TryGetUInt64(out var v))
+                throw new FormatException($"{layer}: 须为非负整数或 \"⊤\"");
+            if (v == 0) throw new FormatException($"{layer}: 必须 ≥1（0 无意义）或 \"⊤\"");
             return LoopCount.Of(v);
         }
-        throw new FormatException("loop 须为数字或 \"⊤\"");
+        throw new FormatException($"{layer}: 须为数字或 \"⊤\"");
     }
 
     static Signature ParseFootprint(JsonElement el, string layer = "footprint")
     {
         if (el.ValueKind != JsonValueKind.Array) throw new FormatException($"{layer}: footprint 须为 claim 数组");
         var claims = new List<Claim>();
-        int cIdx = 0;
-        foreach (var c in el.EnumerateArray())
-            claims.Add(ParseClaim(c, $"{layer}[{cIdx++}]"));
-        return Signature.Of(claims.ToArray());
+        // rich-hickey2 R4-001：把内部集合的 ArgumentException（重复 Claim/lo>hi）翻译为契约 FormatException——
+        // 外部 JSON 路径异常方言单一，调用方 `catch(FormatException)` 不漏接。
+        try
+        {
+            int cIdx = 0;
+            foreach (var c in el.EnumerateArray())
+                claims.Add(ParseClaim(c, $"{layer}[{cIdx++}]"));
+            return Signature.Of(claims.ToArray());
+        }
+        catch (ArgumentException ex)
+        {
+            throw new FormatException($"{layer}: {ex.Message}", ex);
+        }
     }
 
     static Claim ParseClaim(JsonElement c, string layer = "claim")

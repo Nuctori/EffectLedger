@@ -36,6 +36,10 @@ public static class Combination
     /// </summary>
     public static Signature Loop(Signature body, LoopCount ω, ScopeId loopScope)
     {
+        // rich-hickey2 R4-003：与 EffectEvent 构造期守卫对称——直接调 Combination.Loop 不许 default(LoopCount) 静默产 [0,0] 签名
+        // （ω=0 不会让 Loop 抛，size 端点 ×0=0 ⇒ Leak 误报/守恒坍缩）。失败模式单一真源。
+        if (!ω.Count.IsTop && ω.Count.Value == 0)
+            throw new ArgumentOutOfRangeException(nameof(ω), "LoopCount 必须 ≥1 或 ⊤（ω=0 会使 size 缩放为 [0,0] 致守恒误报；请用 LoopCount.Of(n≥1) 或 LoopCount.Top，勿传 default(LoopCount)）");
         var result = Signature.Empty;
         foreach (var c in body.ReadClaims)
             result = Signature.Union(result, Signature.Of(c with { Scope = loopScope, Size = Scale(c.Size ?? Interval.Default, ω.Count) }));

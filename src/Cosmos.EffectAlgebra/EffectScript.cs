@@ -398,14 +398,28 @@ public readonly record struct AuditResult
     /// <summary>§3.2 — 违例清单（可空）。</summary>
     public ImmutableArray<Violation> Violations { get; }
 
-    /// <summary>R1-HIGH-3（hickey-x）— gate(2) 实际检查的预算资源数。0 ⇒ 峰值门整体未运行（无预算声明），调用方应显式知情而非默认全绿。</summary>
+    /// <summary>§3.2 R1-HIGH-3（hickey-x）— gate(2) 实际检查的预算资源数。0 ⇒ 峰值门整体未运行（无预算声明），调用方应显式知情而非默认全绿。</summary>
     public int CapsChecked { get; }
 
-    /// <summary>§3.2 — 构造审计结果（兼容旧签名，CapsChecked=0）。</summary>
-    public AuditResult(bool passed, ImmutableArray<Violation> violations) { Passed = passed; Violations = violations; CapsChecked = 0; }
+    /// <summary>§3.2 — 构造审计结果（兼容旧签名，CapsChecked=0）。
+    /// rich-hickey2 R4-004：Passed 必须等于 Violations.IsEmpty（矛盾状态不可构造），
+    /// 否则下游 `Passed==true && Violations≠∅` 是把"诚实"切成两半。调用方如确需 CapsChecked=0，可显式委托三参。</summary>
+    public AuditResult(bool passed, ImmutableArray<Violation> violations)
+        : this(passed, violations, 0) { }
 
-    /// <summary>R1-HIGH-3 — 全参构造（含覆盖面计数）。</summary>
-    public AuditResult(bool passed, ImmutableArray<Violation> violations, int capsChecked) { Passed = passed; Violations = violations; CapsChecked = capsChecked; }
+    /// <summary>§3.2 R1-HIGH-3 — 全参构造（含覆盖面计数）。rich-hickey2 R4-004：同型 Passed≡Violations.IsEmpty 守卫。</summary>
+    public AuditResult(bool passed, ImmutableArray<Violation> violations, int capsChecked)
+    {
+        if (passed != violations.IsDefaultOrEmpty)
+            throw new ArgumentException($"AuditResult 不变量：Passed 必须等于 Violations.IsEmpty（passed={passed}, violations={violations.Length}）", nameof(passed));
+        Passed = passed;
+        Violations = violations;
+        CapsChecked = capsChecked;
+    }
+
+    /// <summary>rich-hickey2 R4-004：派生只读——峰值门是否实际运行过（§3.2；R1-HIGH-3）。
+    /// CapsChecked=0 ⇒ 零预算或未走 gate(2)，调用方应知情而非把"没查"当"全绿"。</summary>
+    public bool IsPeakChecked => CapsChecked > 0;
 }
 
 /// <summary>§3.2 — 单条违例（反例）。携带供 AI 回修的充分信息：哪个时刻、哪个资源、哪类问题、当前值 vs 上限/阈值。</summary>
