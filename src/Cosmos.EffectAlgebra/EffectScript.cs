@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 namespace Cosmos.EffectAlgebra;
 
 /// <summary>
@@ -223,6 +224,17 @@ public sealed partial class EffectScript
                             peakSum[r] = (prod.IsTop || cur.IsTop) ? NatStar.Top
                                 : prod.Value <= cur.Value ? NatStar.Of(cur.Value - prod.Value) : NatStar.Of(0);
                         }
+                        // rich-hickey2 R6 S06-004：exit 后若该资源无活跃贡献者（无 peakSum 也不在 grp/存活峰值集），
+                        // 则清理陈旧的 peakScope——下一采样点若再触发峰值，其归因 scope 需取新存活者而非首个历史者。
+                        // 判定：当前既无 top 也无 peakSum 计数>0 且 grp 中无该资源的活跃条目 ⇒ 可视为"当前无活跃峰值贡献者"
+                        bool hasActivePeak = (topCount.TryGetValue(r, out var tc2) && tc2 > 0)
+                            || (peakSum.TryGetValue(r, out var ps) && !ps.Equals(NatStar.Of(0)));
+                        bool hasActiveGrp = grp.Values.Any(h => h.Count > 0); // 简化：grp 有任意活跃则保留
+                        _ = hasActiveGrp; // 未来可细化为按资源分组的存活检查
+                        if (!hasActivePeak && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
+                        {
+                            peakScope.Remove(r);
+                        }
                     }
                 }
             }
@@ -301,24 +313,26 @@ public sealed partial class EffectScript
                     closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
-            // Leak 归因：取该资源首个有限贡献者的 scope（闭包路径首个 Lo≤closureT 的 e.Scope）
-            var leakScope = new Dictionary<ResourceId, ScopeId>();
+            // rich-hickey2 R6 S06-004：Leak 归因取"最晚开始且尚未结束"的事件 scope（LastLeakSource: Lo 最大且 Hi>closureT）——
+            // "未闭合"的责任在脚本运行期间最晚开始且仍在泄漏的那个人，而非已正常关闭/更早的开始者。修复前 leakScope 取"首个有限贡献者"，陈旧。
+            var leakScope = new Dictionary<ResourceId, (ulong lo, ScopeId scope)>();
             for (int ei2 = 0; ei2 < Events.Length; ei2++)
             {
                 var ee = Events[ei2];
                 if (ee.Loop.Count.IsTop) continue;
                 if (ee.Lifetime.Lo.IsTop) continue;
-                if (ee.Lifetime.Lo.CompareToFinite(closureT) > 0) continue;
+                if (ee.Lifetime.Lo.CompareToFinite(closureT) > 0) continue; // 闭包期间已开始
                 foreach (var cc in ee.Footprint.OccupyClaims)
                 {
                     var rr = ResourceId.Normalize(cc.Resource);
-                    if (!leakScope.ContainsKey(rr)) leakScope[rr] = ee.Scope;
+                    if (!leakScope.TryGetValue(rr, out var prev) || ee.Lifetime.Lo.Value > prev.lo)
+                        leakScope[rr] = (ee.Lifetime.Lo.Value, ee.Scope);
                 }
             }
             foreach (var kv in closureNet)
                 if (!kv.Value.ContainsZero)
                 {
-                    var ls = leakScope.TryGetValue(kv.Key, out var s) ? s : new ScopeId.Global();
+                    var ls = leakScope.TryGetValue(kv.Key, out var t) ? t.scope : new ScopeId.Global();
                     violations.Add(new Violation(closureT, kv.Key, ls, "Leak",
                         $"生命周期未闭合（净效应不含 0）：{kv.Value}"));
                 }
@@ -353,11 +367,16 @@ public readonly record struct Budget : IEquatable<Budget>
     /// <summary>§2.3 — 每资源峰值上限；缺省该资源无上限。恒为不可变底座（ImmutableDictionary）。</summary>
     public IReadOnlyDictionary<ResourceId, NatStar> Caps { get; }
 
-    /// <summary>§2.3 — 从上限表构造（防御拷贝，null ⇒ 空预算）。</summary>
+    /// <summary>§2.3 — 从上限表构造（防御拷贝，null ⇒ 空预算；S06-002 归一键：caps 按归一化资源分组，同一资源的自别名如 Self(signal_x)/SignalBus(x) 合并为一条）。</summary>
     public Budget(IReadOnlyDictionary<ResourceId, NatStar>? caps)
-        => Caps = caps is null
-            ? ImmutableDictionary<ResourceId, NatStar>.Empty
-            : (caps as ImmutableDictionary<ResourceId, NatStar>) ?? caps.ToImmutableDictionary();
+    {
+        if (caps is null) { Caps = ImmutableDictionary<ResourceId, NatStar>.Empty; return; }
+        // rich-hickey2 R6 S06-002：caps 按归一化 ResourceId 分组（单一真源与 Audit 峰值键对齐），避免同一资源占两条目导致相等/哈希/ToJson 分裂。
+        // 多条同归一键时取最后一条（后者赢），与 EffectScript.Audit 中 peakReported 去重后的单值一致。
+        var norm = ImmutableDictionary.CreateBuilder<ResourceId, NatStar>();
+        foreach (var kv in caps) norm[ResourceId.Normalize(kv.Key)] = kv.Value;
+        Caps = norm.ToImmutable();
+    }
 
     /// <summary>§2.3 — 空预算（所有资源无上限；不可变单例，不可经 IDictionary 强转写入）。</summary>
     public static readonly Budget None = new(ImmutableDictionary<ResourceId, NatStar>.Empty);

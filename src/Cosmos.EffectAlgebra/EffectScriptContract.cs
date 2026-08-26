@@ -82,7 +82,7 @@ public static class EffectScriptContract
         var life = ParseInterval(Require(ev, "lifetime", layer));
         var scope = ParseScope(Require(ev, "scope", layer));
         var loop = ev.TryGetProperty("loop", out var l) ? ParseLoop(l) : LoopCount.Of(1);
-        var fp = ParseFootprint(Require(ev, "footprint", layer), layer);
+        var fp = ParseFootprint(Require(ev, "footprint", layer), layer, scope);
         return new EffectEvent(life, scope, fp, loop);
     }
 
@@ -154,17 +154,24 @@ public static class EffectScriptContract
         throw new FormatException($"{layer}: 须为数字或 \"⊤\"");
     }
 
-    static Signature ParseFootprint(JsonElement el, string layer = "footprint")
+    static Signature ParseFootprint(JsonElement el, string layer = "footprint", ScopeId? eventScope = null)
     {
         if (el.ValueKind != JsonValueKind.Array) throw new FormatException($"{layer}: footprint 须为 claim 数组");
         var claims = new List<Claim>();
         // rich-hickey2 R4-001：把内部集合的 ArgumentException（重复 Claim/lo>hi）翻译为契约 FormatException——
         // 外部 JSON 路径异常方言单一，调用方 `catch(FormatException)` 不漏接。
+        // rich-hickey2 R6 S06-001：双真相校验——claim scope 必须与所属 event scope 一致（单一真相为事件级）。
         try
         {
             int cIdx = 0;
             foreach (var c in el.EnumerateArray())
-                claims.Add(ParseClaim(c, $"{layer}[{cIdx++}]"));
+            {
+                var claim = ParseClaim(c, $"{layer}[{cIdx}]");
+                if (eventScope is not null && !claim.Scope.Equals(eventScope))
+                    throw new FormatException($"{layer}[{cIdx}]: claim scope 须与所属 event scope 一致（单一真相为事件级，claim={claim.Scope}, event={eventScope}）");
+                claims.Add(claim);
+                cIdx++;
+            }
             return Signature.Of(claims.ToArray());
         }
         catch (ArgumentException ex)
@@ -179,7 +186,7 @@ public static class EffectScriptContract
             RejectUnknownKeys(c, layer, "kind", "resource", "mode", "scope", "size");
         // rich-hickey2 R1-F4：kind/mode 非字符串 ⇒ 带字段名的 FormatException（原 GetString() 漏 BCL 异常）。
         var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"));
-        var res = ParseResource(Require(c, "resource", layer));
+        var res = ParseResource(Require(c, "resource", layer), $"{layer}.resource");
         var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
         var scope = ParseScope(Require(c, "scope", layer), $"{layer}.scope");
         var size = c.TryGetProperty("size", out var sz) ? ParseInterval(sz, $"{layer}.size") : Interval.Default;
