@@ -42,8 +42,8 @@ public readonly record struct EffectEvent
         if (lifetime.Lo.IsTop)
             throw new ArgumentException("EffectEvent lifetime 下界不可为 ⊤（[⊤,⊤] 非法：事件永不存活会掩盖泄漏审计）");
         // rich-hickey2 R1-F3：封 default(LoopCount) 后门——struct default 绕过 LoopCount.Of 的 ≥1 校验，
-        // 会让 Audit 除法 DivideByZero / 闭包路径规模缩放为 [0,0] 致 Leak 误报。构造期拒绝，一处收口覆盖全部消费路径。
-        if (!loop.Count.IsTop && loop.Count.Value == 0)
+        // 会让 Audit 除法 DivideByZero / 闭包路径规模缩放为 [0,0] 致 Leak 误报。构造期拒绝，一处收口覆盖全部消费路径（R5 V5-002：以 IsValid 派生替散落判定）。
+        if (!loop.IsValid)
             throw new ArgumentException("EffectEvent loop 须 ≥1 或 ⊤（default(LoopCount) 非法；用 LoopCount.Of(n≥1) 或 LoopCount.Top）", nameof(loop));
         Lifetime = lifetime;
         Scope = scope;
@@ -97,7 +97,7 @@ public sealed partial class EffectScript
         return acc;
     }
 
-    /// <summary>
+    /// <summary>**采样点审计**（rich-hickey2 R5 V5-003）——端点 ∪ 尾段代表点采样≠全连续区间；采样点之间守恒由闭包路径补（lo≤closureT），已对齐 EFFECT_SCRIPT.md §「已知锐边」。与 At(t) 共享采样点。
     /// §3 / EFFECT_SCRIPT.md §3 — 扫换线审计（数学等价于端点采样审计，Jeff Dean 性能审计 iter-effect26.md）。
     /// At(t) 是分段常数函数，仅在各 Lifetime 的有限 Lo/Hi 端点跳变；故对全部有限端点采样 = 全量检查。
     /// 三道 gate（修 auditA OPEN-2/OPEN-3/OPEN-4/OPEN-5），与逐点全算版本逐条 Violation 集合一致：
@@ -108,8 +108,7 @@ public sealed partial class EffectScript
     ///   (3) 兼容（修 OPEN-3/OPEN-5）：同时存活、按（归一化 ResourceId, ScopeId）分组的 occupy Claims 两两 Compatible.IsCompatible；
     ///       单事件内 ω 份并发副本属同一逻辑元素自配对不报冲突（避免 false-positive）。
     /// 扫换线（§3 / EFFECT_SCRIPT.md §3）：沿时间轴增量维护①运行中累积 net（仅 enter 累加，release 自带负向 Lo）②每资源运行中峰值（含 ⊤ 计数）
-    /// ③每 (resource,scope,mode) 的活跃事件集合（O(1) 判冲突，等价于两两枚举）。每事件进入/退出各处理一次 ⇒ O(E·K·log E)。
-    /// </summary>
+    /// ③每 (resource,scope,mode) 的活跃事件集合（O(1) 判冲突，等价于两两枚举）。每事件进入/退出各处理一次 ⇒ O(E·K·log E)。</summary>
     public AuditResult Audit(Budget cap)
     {
         var violations = new List<Violation>();

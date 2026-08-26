@@ -123,7 +123,7 @@ public enum Mode { Use, Create, Release, Move, Unknown }
 ///   位置式 <c>new Claim(kind, res, mode, scope, size)</c> 与 <c>with</c> 均保留全字段。
 /// 不变量：集合运算（∪ / net 分组 / Deviation 对齐）须用 <see cref="Normalize"/> 后的键（§3.1.4a）。
 /// resource 必须归一、size 缺省 ⇒ Default，否则同资源多 Claim 不被合并（§3.1.4a 后果）。
-/// </summary>
+/// rich-hickey2 R5 V5-002锐边：record struct 的 default/├with┤ 可产出 null Resource/Scope 与 0 值——Signature.Of 在集合边界用 fail-fast（含 V3 加入的 null Resource/Scope 校验）守卫，类型边不能被梢掉。</summary>
 public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, ScopeId Scope, Interval? Size)
 {
     /// <summary>§3.1.4a 归一化：resource 走 ResourceId.Normalize；size 缺省（null）⇒ Default([1,1])，
@@ -204,9 +204,7 @@ public sealed class Signature
         return s;
     }
 
-    /// <summary>§3.2.4 ⊔：join-semilattice 合并（幂等/交换/结合，非半环）。
-    /// R4-F2：按 (Kind, 归一化 Resource, Mode, Scope) 配对同 Claim 键，size 取 Interval.Merge（merge_I）——
-    /// 条件分支 [10,10]⊔[50,50] ⇒ 单条 [10,50]（Peak=max 而非求和），与 PDR §3.2.4 规格一致。</summary>
+    /// <summary>§3.2.4 ⊔：条件分支合并（join-semilattice 幂等/交换/结合；**L1 警告** rich-hickey2 R5 V5-001：与 Union 等价于"同键 size 求并区间"(merge_I)——条件分支[10,10]⊔[50,50]⇒[10,50] Peak=max而非求和，不承载"合并时序"，与 Signature.Union 仅在同键合并上差异）。</summary>
     public static Signature Join(Signature a, Signature b)
     {
         var merged = new Dictionary<(Kind, ResourceId, Mode, ScopeId), Interval>();

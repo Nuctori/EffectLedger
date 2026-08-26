@@ -19,6 +19,19 @@ public readonly record struct LoopCount
 
     /// <summary>§3.2.5 — 静态未知循环次数 ω=⊤（上界开放，供 Peak/net 以 ⊤ 兜底）。</summary>
     public static readonly LoopCount Top = new(NatStar.Top);
+
+    /// <summary>rich-hickey2 R5 V5-002：派生合法性——ω 须 ≥1 或 ⊤。
+    /// 用途：消费侧守卫（EffectEvent/Combination.Loop）可统一 `if (!loop.IsValid) throw`，
+    /// 替代散落的 `!IsTop && Value==0` 判定；`default(LoopCount)` 即非法。</summary>
+    public bool IsValid => Count.IsTop || Count.Value >= 1;
+
+    /// <summary>rich-hickey2 R5 V5-002：n≥1 ⇒ 返回合法值；n==0 ⇒ 静默失败并返回 default（非法值，让 IsValid 显式化）。</summary>
+    public static bool TryOf(ulong n, out LoopCount result)
+    {
+        if (n >= 1) { result = Of(n); return true; }
+        result = default;
+        return false;
+    }
 }
 
 /// <summary>
@@ -50,12 +63,16 @@ public static class Combination
         return result;
     }
 
-    /// <summary>§3.2.1 — 序列组合 (S₁ ; S₂) := S₁ ∪ S₂（join-semilattice 并，幂等/交换/结合）。</summary>
+    /// <summary>§3.2.1 — 序列组合 (S₁ ; S₂) := S₁ ∪ S₂。
+    /// **L1 警告**（rich-hickey2 R5 V5-001）：本方法不承载时序区分，与 <see cref="Signature.Union"/> 完全等价。
+    /// 用户以 "Sequence" 命名许诺时序是 L1 类型不承载的幻象区分——时序性由 L3 Analyzer 跨调用点 Compatible 检查补（§3.2.1/§3.2.3）。
+    /// 新代码请直接用 <see cref="Signature.Union"/>；此名仅保留以避免破坏既有调用。</summary>
     public static Signature Sequence(Signature a, Signature b) => Signature.Union(a, b);
 
     /// <summary>§3.2.2 — 并行组合 (S₁ ∥ S₂) := S₁ ∪ S₂。
     /// R4-F4：跨分支同归一化资源做 Compatible 前置守卫——CONFLICT 对（如 create×create）抛 PARA_CONFLICT，
-    /// 不再静默 Union 吞掉冲突证据（L3 分析器看不到直接调用，前置条件必须在函数内执行）。</summary>
+    /// 不再静默 Union 吞掉冲突证据（L3 分析器看不到直接调用，前置条件必须在函数内执行）。
+    /// **L1 警告**（rich-hickey2 R5 V5-001）：本方法不承载并行区分，并行性由前置 Compatible 检查 + L3 跨调用点补；与 Union 等价（差异在守卫抛 PARA_CONFLICT）。</summary>
     public static Signature Parallel(Signature a, Signature b)
     {
         foreach (var ca in a.OccupyClaims)
