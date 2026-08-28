@@ -18,7 +18,9 @@ public sealed class PluginRuntime
     public bool TryGetFiber(FiberId id, out Fiber fiber) => _fibers.TryGetValue(id, out fiber!);
 
     /// <summary>§6 R5-7 — 关闭路径标志：关路径 RecomputeTopology 硬拒绝（非关路径延迟执行）。测试可置位以模拟关闭路径。</summary>
-    public bool IsShuttingDown { get; set; }
+    public enum RuntimePhase { Running, ShuttingDown }
+    public RuntimePhase Phase { get; private set; } = RuntimePhase.Running;
+    public bool IsShuttingDown { get => Phase == RuntimePhase.ShuttingDown; set => Phase = value ? RuntimePhase.ShuttingDown : RuntimePhase.Running; }
 
     /// <summary>§6（reviewer #189 F1 / #190 F1）— 崩溃级联报告累积表（ProviderCrashCascade.Handle 每次填充一条）。用 List 累积而非覆盖，使单批多 Fiber 失败均能观测（§6 记录累积、供宿主轮询，不自动上抛/日志，不丢早期失败）。</summary>
     public ImmutableArray<CrashReport> CrashReports { get; private set; } = ImmutableArray<CrashReport>.Empty;

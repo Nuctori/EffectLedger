@@ -223,6 +223,9 @@ public sealed class Signature
         return Of(claims.ToArray());
     }
 
+    /// <summary>§3.2.4 P2 — MergeBySize 别名：Join 的易读别名（同键 size 求并区间）。</summary>
+    public static Signature MergeBySize(Signature a, Signature b) => Join(a, b);
+
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
 

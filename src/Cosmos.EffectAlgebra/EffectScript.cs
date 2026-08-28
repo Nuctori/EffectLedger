@@ -97,8 +97,29 @@ public sealed partial class EffectScript
         }
         return acc;
     }
+    /// <summary>§3 / PR1 — 纯函数：从事件集计算采样点与闭包时刻（可独立测试）。与 Audit 内联逻辑等价（含 R2-003 幽灵点规则）。</summary>
+    public static (IReadOnlyList<NatStar> SamplePoints, NatStar ClosureT) ComputeSamplePoints(ImmutableArray<EffectEvent> events)
+    {
+        var endpoints = new SortedSet<ulong>();
+        ulong maxFinite = 0;
+        bool anyFinite = false;
+        bool anyOpenEnd = false;
+        for (int i = 0; i < events.Length; i++)
+        {
+            var lt = events[i].Lifetime;
+            if (!lt.Lo.IsTop) { endpoints.Add(lt.Lo.Value); maxFinite = Math.Max(maxFinite, lt.Lo.Value); anyFinite = true; }
+            if (!lt.Hi.IsTop) { endpoints.Add(lt.Hi.Value); maxFinite = Math.Max(maxFinite, lt.Hi.Value); anyFinite = true; }
+            else anyOpenEnd = true;
+        }
+        var samplePoints = new List<NatStar>();
+        foreach (var v in endpoints) samplePoints.Add(NatStar.Of(v));
+        if (anyOpenEnd && maxFinite != ulong.MaxValue) samplePoints.Add(NatStar.Of(maxFinite + 1));
+        if (samplePoints.Count == 0) samplePoints.Add(NatStar.Of(0));
+        var closureT = anyFinite ? NatStar.Of(maxFinite) : NatStar.Of(0);
+        return (samplePoints, closureT);
+    }
 
-    /// <summary>**采样点审计**（rich-hickey2 R5 V5-003）——端点 ∪ 尾段代表点采样≠全连续区间；采样点之间守恒由闭包路径补（lo≤closureT），已对齐 EFFECT_SCRIPT.md §「已知锐边」。与 At(t) 共享采样点。
+        /// <summary>**采样点审计**（rich-hickey2 R5 V5-003）——端点 ∪ 尾段代表点采样≠全连续区间；采样点之间守恒由闭包路径补（lo≤closureT），已对齐 EFFECT_SCRIPT.md §「已知锐边」。与 At(t) 共享采样点。
     /// §3 / EFFECT_SCRIPT.md §3 — 扫换线审计（数学等价于端点采样审计，Jeff Dean 性能审计 iter-effect26.md）。
     /// At(t) 是分段常数函数，仅在各 Lifetime 的有限 Lo/Hi 端点跳变；故对全部有限端点采样 = 全量检查。
     /// 三道 gate（修 auditA OPEN-2/OPEN-3/OPEN-4/OPEN-5），与逐点全算版本逐条 Violation 集合一致：
@@ -117,24 +138,8 @@ public sealed partial class EffectScript
         // R10-F1：default(Budget).Caps == null（struct 默认值绕过构造函数归一）⇒ 归一为无上限，不 NRE。
         if (cap.Caps is null) cap = Budget.None;
 
-        // 端点集合（有限 Lo/Hi）。hi=⊤ 视为开放尾段（采 maxFinite+1 代表点）。
-        var endpoints = new SortedSet<ulong>();
-        ulong maxFinite = 0;
-        bool anyFinite = false;
-        bool anyOpenEnd = false;
-        for (int i = 0; i < Events.Length; i++)
-        {
-            var lt = Events[i].Lifetime;
-            if (!lt.Lo.IsTop) { endpoints.Add(lt.Lo.Value); maxFinite = Math.Max(maxFinite, lt.Lo.Value); anyFinite = true; }
-            if (!lt.Hi.IsTop) { endpoints.Add(lt.Hi.Value); maxFinite = Math.Max(maxFinite, lt.Hi.Value); anyFinite = true; }
-            else anyOpenEnd = true;
-        }
-        var samplePoints = new List<NatStar>();
-        foreach (var v in endpoints) samplePoints.Add(NatStar.Of(v)); // SortedSet 已排序 ⇒ 输出确定性（§5）
-        // rich-hickey2 R2-003：maxFinite=ulong.MaxValue 时 +1 回绕为 0（幽灵 t=0 尾段点）——Max 处尾段已由 Max 点覆盖，不加点。
-        if (anyOpenEnd && maxFinite != ulong.MaxValue) samplePoints.Add(NatStar.Of(maxFinite + 1));
-        if (samplePoints.Count == 0) samplePoints.Add(NatStar.Of(0)); // 空脚本/全 ⊤：采 t=0
-        var closureT = anyFinite ? NatStar.Of(maxFinite) : NatStar.Of(0);
+        // PR1：采样点与闭包时刻由纯函数统一计算（可独立测试，含 R2-003 幽灵点规则）。
+        var (samplePoints, closureT) = ComputeSamplePoints(Events);
 
         // 扫换线事件：enter@Lo / exit@Hi。Lo=⊤ 的事件永不存活（Alive: ⊤>有限t 恒假）⇒ 跳过。
         var sweep = new List<(ulong time, int ei, bool enter)>();
@@ -360,6 +365,11 @@ public sealed partial class EffectScript
     private static ZStar ToZ(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(unchecked((long)n.Value));
     private static ZStar Negate(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(-unchecked((long)n.Value));
 }
+
+/// <summary>§3 / PR2 — 三门抽取：可独立开关与测试。Audit = concat(gates)。</summary>
+public interface INetGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<ResourceId, SignedInterval> net, System.Collections.Generic.IReadOnlyDictionary<ResourceId, (ScopeId scope, int ei)> scopes, NatStar t); }
+public interface IPeakGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<ResourceId, NatStar> peakSum, System.Collections.Generic.IReadOnlyDictionary<ResourceId, int> topCount, System.Collections.Generic.IReadOnlyDictionary<ResourceId, (ScopeId scope, int ei)> scopes, System.Collections.Generic.IReadOnlyDictionary<ResourceId, NatStar> caps, System.Collections.Generic.HashSet<ResourceId> reported, NatStar t); }
+public interface ICompatGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<(ResourceId, ScopeId, int), System.Collections.Generic.HashSet<int>> grp, NatStar t); }
 
 /// <summary>§2.3 — 峰值预算壳（软约束）。缺省 = 该资源无上限（⊤）。审计时 Peak ≤ Caps[r]，超限报 PeakExceeded。
 /// 未设 cap（默认 ⊤）= 通过；显式有限 cap = 拒绝常驻资源并发（用户主动限制，非 bug，修 OPEN-4）。

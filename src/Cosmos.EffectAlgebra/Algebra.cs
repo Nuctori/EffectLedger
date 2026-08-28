@@ -93,14 +93,20 @@ public sealed class NetTable
     /// <summary>§3.3.1 守恒判定：资源必须出现在净效应中且区间跨 0（下界 ≤ 0 ≤ 上界）⇒ 生命周期闭合（DO-9 不报警）。
     /// 未出现在 net 中的资源 ⇒ 无任何净效应记录 ⇒ 视为未闭合，fail-closed 返回 false（触发 DO-9 报警，不静默漏报）。
     /// 任一端 ⊤（未知上界）⇒ 视为「需人工界定」⇒ 不守恒（fail-closed，§3.3.1 DO-9）。</summary>
-    public bool IsConserved(ResourceId r)
+    public bool IsConserved(ResourceId r) => TryConserve(r, out var ok) ? ok : false;
+
+    public enum ConserveReason { Missing, Top, NotZero, Conserved }
+    public bool TryConserve(ResourceId r, out bool conserved, out ConserveReason reason)
     {
+        conserved = false;
         var key = ResourceId.Normalize(r);
-        if (!_net.ContainsKey(key)) return false; // 无净效应记录 ⇒ 未闭合（fail-closed）
+        if (!_net.ContainsKey(key)) { reason = ConserveReason.Missing; return true; }
         var v = _net[key];
-        if (v.Lo.IsTop || v.Hi.IsTop) return false; // ⊤ 不宣称守恒，交人工确认
-        return v.ContainsZero; // 区间含 0 ⇒ 可能闭合，不报警
+        if (v.Lo.IsTop || v.Hi.IsTop) { reason = ConserveReason.Top; return true; }
+        if (!v.ContainsZero) { reason = ConserveReason.NotZero; return true; }
+        reason = ConserveReason.Conserved; conserved = true; return true;
     }
+    public bool TryConserve(ResourceId r, out bool ok) { var ok2 = TryConserve(r, out ok, out _); return ok2; }
 }
 
 /// <summary>

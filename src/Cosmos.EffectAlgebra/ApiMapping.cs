@@ -55,11 +55,24 @@ public static class GodotApiWhitelist
 
     /// <summary>§7 / §14.3 — 白名单键归一化单一真源：去 '.' 与 '_'、小写（与 L2/L3 的 Canonical 一致）。
     /// 原 Analyzer/Generator 各自内联一份相同逻辑（R2 #3 词冲），集中于此避免漂移。</summary>
+    /// <summary>P2 — 白名名期碰撞校验（Canonical 去\u0027.\u0027/_\u0027后碰撞）。</summary>
+    public static void ValidateNoCollisions(ImmutableArray<ApiMapping> arr = default)
+    {
+        var seen = new System.Collections.Generic.Dictionary<string,string>();
+        foreach(var m in (arr.IsDefault ? All : arr)) {
+            var c = Canonical(m.GodotApi);
+            if(seen.TryGetValue(c, out var prev) && prev != m.GodotApi) throw new System.InvalidOperationException($"Canonical collision: '{prev}' vs '{m.GodotApi}' -> '{c}'");
+            seen[c]=m.GodotApi;
+        }
+    }
+
     public static string Canonical(string name) =>
         name.ToLowerInvariant().Replace(".", "").Replace("_", "");
 
+    static ImmutableArray<ApiMapping> BuildValidated() { var a = Build(); ValidateNoCollisions(a); return a; }
+
     /// <summary>§7.1–§7.10 白名单（逐条对应 PDR 映射表）。</summary>
-    public static ImmutableArray<ApiMapping> All { get; } = Build();
+    public static ImmutableArray<ApiMapping> All { get; } = BuildValidated();
 
     static ImmutableArray<ApiMapping> Build()
     {
