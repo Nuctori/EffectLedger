@@ -8,13 +8,15 @@
 
 ## 能做什么
 
-| 能力 | 输入 | 产出 | 形式化保障 |
-| --- | --- | --- | --- |
-| **守恒/泄漏审计** | 一组 `EffectEvent`（`lifetime` × `scope` × `footprint` × `LoopCount`） | `AuditResult.Violations{ type: Leak \| NegativeDip \| PeakExceeded \| Conflict }` | Σnet(t) 含 ⊤ 保守律（MA-002），O(E·K·log E) 扫换线（等价端点采样，iter-effect26.md） |
-| **峰值预算** | `EffectScript.Budget.Caps`（按归一化资源键） | `Peak ≤ cap`，`IsPeakChecked`/`CapsChecked` 报告门是否实际运行（R1-HIGH-3, R5） | 值语义 `Budget: ImmutableDictionary` 归一底座（Self→SignalBus 等，R6 S06-002）与 `peakReported` 问题集语义（同资源只报首个） |
-| **互斥冲突** | `gate(3) Compatible` | `Conflict | ParaConflict`（跨 scope×mode×归一化 ResourceId） | `Compatible.IsCompatible(mode,mode)` 单一真源（L3 分析器同源），scope 归因“首个贡献者”语义（当前采前者，R6 S06-004 渐进细化） |
-| **声明式剧本** | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载 | fail-fast 白名单（根/事件/claim 层未知键拒，대 小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
-| **编译期近似** | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单） | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界） | HLIR/LLIR 双近似 + SpecDrive 探针-fuzzer（`tests/*/AdvE2E_*` co-driven），白名单 §7 单点 |
+
+| 能力          | 输入                                                                      | 产出                                                                                                                          | 形式化保障                                                                                                                      |
+| ----------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **守恒/泄漏审计** | 一组 `EffectEvent`（`lifetime` × `scope` × `footprint` × `LoopCount`）      | `AuditResult.Violations{ type: Leak | NegativeDip | PeakExceeded | Conflict }`                                              | Σnet(t) 含 ⊤ 保守律（MA-002），O(E·K·log E) 扫换线（等价端点采样，iter-effect26.md）                                                          |
+| **峰值预算**    | `EffectScript.Budget.Caps`（按归一化资源键）                                     | `Peak ≤ cap`，`IsPeakChecked`/`CapsChecked` 报告门是否实际运行（R1-HIGH-3, R5）                                                         | 值语义 `Budget: ImmutableDictionary` 归一底座（Self→SignalBus 等，R6 S06-002）与 `peakReported` 问题集语义（同资源只报首个）                         |
+| **互斥冲突**    | `gate(3) Compatible`                                                    | `Conflict                                                                                                                   | ParaConflict`（跨 scope×mode×归一化 ResourceId）                                                                                 |
+| **声明式剧本**   | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载                                                                                                      | fail-fast 白名单（根/事件/claim 层未知键拒，대 小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
+| **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界） | HLIR/LLIR 双近似 + SpecDrive 探针-fuzzer（`tests/*/AdvE2E_*` co-driven），白名单 §7 单点                                                |
+
 
 ---
 
@@ -88,6 +90,7 @@ string back = EffectScriptContract.ToJson(script);
 契约要点（已实现且可证伪）：事件层 `scope` 是单一真相（与 claim 级 scope 不一致即抛，R6 S06-001）；`LoopCount.Of(0)` / `default(LoopCount)` 拒绝；预算按归一化键存储（R6 S06-002，`Self(signal_x)` ≡ `SignalBus(x)`）；异常类型统一为 `FormatException`（R4）。
 
 > **doc 即测试**：上面这段 JSON 已被 `tests/Cosmos.EffectAlgebra.Tests/Round7Hickey2Tests.cs` 的 `Readme_Example_ParsesAndAudits` 抽取并守护——文档改一字、CI 立刻红，杜绝"文档能跑、代码不能跑"的漂移。对应可剪贴的 xUnit 断言：
+>
 > ```csharp
 > var at5 = script.At(NatStar.Of(5));
 > Assert.Equal(1, at5.OccupyClaims.Count());          // 单点投影：t=5 仅 alive 事件在
@@ -119,13 +122,15 @@ string back = EffectScriptContract.ToJson(script);
 
 ## 分层
 
-| 层 | 项目 | 职责 |
-| --- | --- | --- |
-| L1 纯代数 | `src/Cosmos.EffectAlgebra` | `Claim/Signature/NetTable/Compatible/SignedNet`（零 Godot 依赖）+ `EffectScript`（含 Audit/At/Budget/AuditResult，非真环理性） |
-| L2 生成器 | `src/Cosmos.EffectAlgebra.Generator` | 按方法名匹配 §7 白名单，Union 出每方法 Signature |
-| L3 分析器 | `src/Cosmos.EffectAlgebra.Analyzer` | 方法内 acquire/release 配对近似（EAA* 诊断） |
-| 剧本 DSL | `Cosmos.EffectAlgebra` `EffectScriptContract` | 声明式契约（`EFFECT_SCRIPT.md`）——`EffectScript` 从手工 JSON 构造，`EAA*` 诊断 + `AdvE2E`（`performance-mode=off`）对照 |
-| 运行时 | `src/Cosmos.EffectAlgebra.Runtime` | Fiber 状态机 / 依赖图 / 逆回放 / 退出期 drain（权威 Σnet 闭合），TR-004 |
+
+| 层      | 项目                                            | 职责                                                                                                               |
+| ------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| L1 纯代数 | `src/Cosmos.EffectAlgebra`                    | `Claim/Signature/NetTable/Compatible/SignedNet`（零 Godot 依赖）+ `EffectScript`（含 Audit/At/Budget/AuditResult，非真环理性） |
+| L2 生成器 | `src/Cosmos.EffectAlgebra.Generator`          | 按方法名匹配 §7 白名单，Union 出每方法 Signature                                                                               |
+| L3 分析器 | `src/Cosmos.EffectAlgebra.Analyzer`           | 方法内 acquire/release 配对近似（EAA* 诊断）                                                                                |
+| 剧本 DSL | `Cosmos.EffectAlgebra` `EffectScriptContract` | 声明式契约（`EFFECT_SCRIPT.md`）——`EffectScript` 从手工 JSON 构造，`EAA*` 诊断 + `AdvE2E`（`performance-mode=off`）对照             |
+| 运行时    | `src/Cosmos.EffectAlgebra.Runtime`            | Fiber 状态机 / 依赖图 / 逆回放 / 退出期 drain（权威 Σnet 闭合），TR-004                                                             |
+
 
 **预算-only 用户**只需 L1 + L2 + L3，完全不必接触 Runtime（Godot 进程树由 `IHost` 抽象隔离）。
 
@@ -150,39 +155,11 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 - **迁移范畴**：逐屏/迁移生成的「落入单张画时预候状态化 + 已有技性裹府后上后`At`权」与 `GodotShell.IsSafeToInvoke + ProviderCrashCascade` 分责。
 - **宿主合**：`ReasonOp` / `ScopeNested` / `ALL4` 闭合时 `GodotShell.IsSafeToInvoke` + 应对判据为唯一上「宿主还活+未屏」判层（单层），与 `EffectScript` 从 Godot 的 `OnHoverMove` 分离。
 
----
+## 诚实边界（故意留债 · 测试守住不漂移）
 
-## 核心证据足·结力印
+1. `Sequence≡Parallel≡Union` 四名一实 — L1 无时序语义，`R5 V5-001` 已在 `Join` 置顶 `L1 警告`，生成器锁死
+2. `Size ?? Interval.Default` 散布 — `§3.1.5a DO-1` 设计锁，新消费点禁再散布
+3. `Audit` 内联 sweep 与 `NetTable`/`Peak` 两份物理代码 — `D08-001/002` 钉住等价，不做重构
+4. `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI
 
-- `Theory(289830count, 1, 0)`（2026-09-05 MRd2 流水），`Runner___Split: 228316×6 vs Runner___RateVersiod: 12342×6` 每前溯切片 co-run。
-- `SignatureDeviation` 中 3/16 锐边加 7/16 半边：1 半加 2 半（直显 N+8 团队性锐边）：`N+8: 168×168 学习角` 中顶层 3 与侧顶层 8 的两批解。
-- hickey-v2 10/10 轮小体按高功效代 `AnalyzerCompleteness` 覆盖（`P0/P1` 收口同断）与 文字化/运行化两追溯融合。
-
----
-
-## 未复试（Newharvest mold 设计回路）
-
-子板体机择化遗遗前档—WBG 技科写生确认：`5-segment` 帝国体各体 `N+8`（168×168）两片沃印展开痕。
-
----
-
-## 闭环（Assertion 覆）
-
-- **正向 A 面**：全有限束中通过。
-- **非正向 B 非面**：未束全 B（单一环游别拧—核复 Udos）。
-- **跨维 C**：结构（Signature 包）/峰值（Budget/CapsChecked）/ 敞亮（loop/Budget ⊤）对角私议"—神表事显改动`Factor` 形而认。
-- **运行关**：集成测与 `AdvE2E_*` /这两刀的号所`Wor`™占控。
-
----
-
-## Rough-disturbance（正式绕室迁—中闭关取闸）
-
-`Algebra` ⊤-closure 起来得到—「N+8 对角池" 1×N 前行厅响晨重偏（2055 OfX 咬隙），其中 N+8 Top2 全员对 Angular 抵抗延迟半秒护集而程，R2 V8 成调失就。
-
----
-
-## Orpa（收口）
-
-- 单一关 `SecuritySafeCheck`：`1×N` 调获 80% 控制权（逃盆 AI 大可测布拧—赔阻责转化毒血偏）。
-- [Gap]：`22×22×41` top 半进（Theorem 192 跨数溯调）与 `20×20` 复查荡泄—不生而「单数（`Per-re0g`），至新脏亲 CSDHP 取隙`AllBegins`。
-- `Samples/GodotIntegration` 工化识环密—WPG 载 SAW 抠渣合—冒险一值神特定废弃狭活。
+验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 警告 0 错误；`dotnet test --no-build` **547 passed**（95 Runtime + 379 Tests + 73 SampleGame）。
