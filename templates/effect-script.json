@@ -1,0 +1,21 @@
+{
+  "$schema": "https://cosmos.effect/effect-script.schema.json",
+  "events": [
+    {
+      "lifetime": [0, 6],
+      "scope": { "scene": "Battle" },
+      "footprint": [
+        { "kind": "occupy", "resource": { "gpu": "tmpMip0" }, "mode": "create", "size": [256, 256] },
+        { "kind": "occupy", "resource": { "commandBuffer": "gpu" }, "mode": "create", "size": [256, 256] }
+      ]
+    },
+    {
+      "lifetime": [6, 12],
+      "scope": { "scene": "Battle" },
+      "footprint": [
+        { "kind": "occupy", "resource": { "gpu": "tmpMip0" }, "mode": "release", "size": [256, 256] }
+      ]
+    }
+  ],
+  "budget": { "gpu:tmpMip0": 600, "commandBuffer:gpu": 600 }
+}

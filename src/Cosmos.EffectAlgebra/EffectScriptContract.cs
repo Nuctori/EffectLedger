@@ -161,12 +161,13 @@ public static class EffectScriptContract
         // rich-hickey2 R4-001：把内部集合的 ArgumentException（重复 Claim/lo>hi）翻译为契约 FormatException——
         // 外部 JSON 路径异常方言单一，调用方 `catch(FormatException)` 不漏接。
         // rich-hickey2 R6 S06-001：双真相校验——claim scope 必须与所属 event scope 一致（单一真相为事件级）。
+        // R10 Top1（消 Claim Scope 重复）：claim 缺 scope 则继承 eventScope（向后兼容：显式不同仍招）。
         try
         {
             int cIdx = 0;
             foreach (var c in el.EnumerateArray())
             {
-                var claim = ParseClaim(c, $"{layer}[{cIdx}]");
+                var claim = ParseClaim(c, $"{layer}[{cIdx}]", eventScope);
                 if (eventScope is not null && !claim.Scope.Equals(eventScope))
                     throw new FormatException($"{layer}[{cIdx}]: claim scope 须与所属 event scope 一致（单一真相为事件级，claim={claim.Scope}, event={eventScope}）");
                 claims.Add(claim);
@@ -180,7 +181,7 @@ public static class EffectScriptContract
         }
     }
 
-    static Claim ParseClaim(JsonElement c, string layer = "claim")
+    static Claim ParseClaim(JsonElement c, string layer = "claim", ScopeId? eventScope = null)
     {
         if (c.ValueKind == JsonValueKind.Object)
             RejectUnknownKeys(c, layer, "kind", "resource", "mode", "scope", "size");
@@ -188,7 +189,7 @@ public static class EffectScriptContract
         var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"));
         var res = ParseResource(Require(c, "resource", layer), $"{layer}.resource");
         var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
-        var scope = ParseScope(Require(c, "scope", layer), $"{layer}.scope");
+        var scope = c.TryGetProperty("scope", out var scEl) ? ParseScope(scEl, $"{layer}.scope") : (eventScope ?? throw new FormatException($"{layer}: 缺少 scope （且无 event scope 可继承）"));
         var size = c.TryGetProperty("size", out var sz) ? ParseInterval(sz, $"{layer}.size") : Interval.Default;
         return new Claim(kind, res, mode, scope, size).Normalize();
     }
@@ -211,14 +212,15 @@ public static class EffectScriptContract
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: resource 须为对象");
         if (!el.TryGetProperty("gpu", out var g) && !el.TryGetProperty("commandBuffer", out g) &&
             !el.TryGetProperty("memory", out g) && !el.TryGetProperty("occupancy", out g) &&
-            !el.TryGetProperty("signalBus", out g))
-            throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus 之一");
+            !el.TryGetProperty("signalBus", out g) && !el.TryGetProperty("custom", out g))
+            throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus/custom 之一");
         // 修 auditR2/R4 C2：resource 值缺失/类型错 ⇒ fail-fast（原静默兜底 "gpu"/""/0 会静默改写数据，比报错更危险）。
         if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
         if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, $"{layer}.commandBuffer"));
         if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number && mem.TryGetUInt64(out var uid) ? uid : throw new FormatException($"resource.memory 须为非负整数（rich-hickey2 R3 V3-006），实际 {mem.ValueKind}"));
         if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, "occupancy"));
         if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, "signalBus")));
+        if (el.TryGetProperty("custom", out var cu)) return new ResourceId.Custom(ReqStr(cu, "custom"));
         throw new FormatException("resource 形状非法");
     }
 
@@ -251,6 +253,7 @@ public static class EffectScriptContract
         var k when k.StartsWith("memory:", StringComparison.Ordinal) => new ResourceId.Memory(k["memory:".Length..].Length > 0 ? ulong.Parse(k["memory:".Length..], CultureInfo.InvariantCulture) : 0),
         var k when k.StartsWith("occupancy:", StringComparison.Ordinal) => new ResourceId.Occupancy(k["occupancy:".Length..]),
         var k when k.StartsWith("signalBus:", StringComparison.Ordinal) => new ResourceId.SignalBus(new StringName(k["signalBus:".Length..])),
+        var k when k.StartsWith("custom:", StringComparison.Ordinal) => new ResourceId.Custom(k["custom:".Length..]),
         _ => throw new FormatException($"未知 budget 键: {key}")
     };
 
@@ -291,6 +294,7 @@ public static class EffectScriptContract
         ResourceId.Memory m => new Dictionary<string, object?> { ["memory"] = m.Uid },
         ResourceId.Occupancy o => new Dictionary<string, object?> { ["occupancy"] = o.Channel },
         ResourceId.SignalBus sb => new Dictionary<string, object?> { ["signalBus"] = sb.Name.Value },
+        ResourceId.Custom c => new Dictionary<string, object?> { ["custom"] = c.Name },
         _ => throw new FormatException($"不可序列化的 resource: {r}")
     };
 
@@ -310,6 +314,7 @@ public static class EffectScriptContract
         ResourceId.Memory m => "memory:" + m.Uid,
         ResourceId.Occupancy o => "occupancy:" + o.Channel,
         ResourceId.SignalBus sb => "signalBus:" + sb.Name.Value,
+        ResourceId.Custom c => "custom:" + c.Name,
         _ => throw new FormatException($"不可序列化的 budget 键资源: {r}")
     };
 

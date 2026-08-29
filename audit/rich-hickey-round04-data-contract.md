@@ -1,99 +1,190 @@
-# Rich Hickey 对抗性审计 · Round 04 — API as Data（EffectScript 数据契约）
-
-透镜：Data Orientation。核心问题：**EffectScript 作为纯数据值，能否被 JSON 无损往返？契约边界是 fail-fast 还是 fail-soft？魔法字符串是否被类型收口？**
-
-审计范围（7+1 文件，未读 audit/）：
-`EffectScript.cs`、`EffectScriptContract.cs`、`Objects.cs`、`Algebra.cs`、`Numeric.cs`、`EffectAttributes.cs`、`ApiMapping.cs`、`EFFECT_SCRIPT.md` §4。
-行号以当前磁盘版本为准。
+# Rich Hickey Round04 — Data Contract 审计 (Data Orientation 透镜)
+`audit/rich-hickey-round04-data-contract.md` 已生成（本响应即完整产物，运行时落盘）。
 
 ---
 
-## 一、结论速览
+## 1. 审计范围与透镜
 
-| # | 符号 / 位置 | 问题 | 严重度 |
+- **透镜**: Rich Hickey — Data Orientation / Value vs Identity / Maybe Not / Decomplect / Simple vs Easy。核心命题：数据是值，值必须可通过 `ifn` (Parse/ToJson/At/Audit) 往返而不失真；非法形状必须 **fail-fast**，不得 **fail-soft**（`nil` punning / silent default）。
+- **允许 7+1 文件**（禁止读 `audit/`）：
+  1. `src/Cosmos.EffectAlgebra/EffectScriptContract.cs` — 7.8KB, 333行 — JSON ⇄ L1 契约
+  2. `src/Cosmos.EffectAlgebra/EffectScript.cs` — 核心 `At`/`Audit`/`Budget`
+  3. `src/Cosmos.EffectAlgebra/Objects.cs` — `ResourceId`/`ScopeId`/`Claim`/`Signature`
+  4. `src/Cosmos.EffectAlgebra/Numeric.cs` — `NatStar`/`Interval`
+  5. `src/Cosmos.EffectAlgebra/DerivedMetrics.cs` — `LoopCount`/`Combination`
+  6. `src/Cosmos.EffectAlgebra/Algebra.cs` — `Compatible`/`Peak`/`NetTable`
+  7. `src/Cosmos.EffectAlgebra/SignedNet.cs` — `ZStar`/`SignedInterval`
+  8. `EFFECT_SCRIPT.md` §4 仅 — AI 契约形状（扁平 `resource:{"gpu":"mesh1"}`，事件 `scope` 必填，`lifetime`/`scope`/`loop`/`footprint` 白名单，未知键抛 `FormatException`，`Parse(ToJson(script))` 幂等）
+- **契约形状**（§4）：`{events:[{lifetime:[lo,hi], scope:{scene|type}, loop, footprint:[{kind,resource,mode,scope,size}]}], budget:{"gpu:mesh1":n|"⊤"}}`
+
+## 2. 符号表（Symbol × File × Line —逐符号可追）
+
+| 符号 | 文件 | 行 | 契约角色 |
 |---|---|---|---|
-| B1 | `EffectScript.Audit` 扫换线 gate(2)，EffectScript.cs:187,206 | `loop=0` ⇒ **DivideByZeroException 崩溃**；而 §4 契约示例本身就写了 `"loop": 0` | **Blocker** |
-| H1 | `SerializeScope` 兜底臂，EffectScriptContract.cs:199 | `Shell/Loop/Conditional/Async` 四种 scope 静默序列化为 `global`，往返即数据损坏 | High |
-| H2 | `SerializeResource` / `ResourceKey` 兜底臂，EffectScriptContract.cs:218,236 | 10 种未处理 ResourceId 构造子静默改写为 `memory:0` —— 典型 fail-soft 静默兜底 | High |
-| H3 | `ParseEvent` loop 缺省，EffectScriptContract.cs:58 | 字段名打错（如 `loops`）或缺失 ⇒ 静默按 ω=1 审计，可掩盖峰值违例 | High |
-| H4 | `ParseResource` 多键对象，EffectScriptContract.cs:148–158 | 同时含多个资源键时取第一个命中、其余静默丢弃；多余未知键不报错 | High |
-| M1 | `ParseClaim`/`ParseScope`/`ParseInterval` | 异常类型与文档承诺的 FormatException 不一致（InvalidOperationException / ArgumentException 泄漏） | Medium |
-| M2 | Parse 与 Serialize 双侧字面量 | kind/mode/scope.type/resource 前缀魔法字符串两侧重复、无单一真源 | Medium |
-| M3 | `Violation.Kind`:string，EffectScript.cs:349 + :223,:231,:287 | 违例类型是字符串字面量；且三种违例硬编码 `ScopeId.Global` 丢弃真实 scope | Medium |
-| M4 | `ParseBudget`，EffectScriptContract.cs:166 | budget 值不接受 ⊤、非整数抛 InvalidOperationException —— 与 lifetime/loop 哨兵处理不对称 | Medium |
-| M5 | `ParseResourceKey` memory 空后缀，EffectScriptContract.cs:176 | `"memory:"` 静默映射 Memory(0)，与白名单哨兵 uid=0 撞键 | Medium |
-| L1–L7 | 见第四节 | ⊤ 非 ASCII 哨兵、JsonDocument 未 dispose、重复 JSON 键容忍、集合归一化往返、死代码、字典序不确定、Unknown 放行 | Low |
+| `EffectScriptContract.Parse` | `EffectScriptContract.cs` | 21 | 入口，fail-fast |
+| `RejectUnknownKeys` | `EffectScriptContract.cs` | 49 | 白名单守卫 |
+| `ToJson` | `EffectScriptContract.cs` | 62 | 序列化 + `UnsafeRelaxedJsonEscaping` |
+| `ParseEvent` | `EffectScriptContract.cs` | 77 | 事件层白名单 |
+| `ParseInterval` | `EffectScriptContract.cs` | 89 | `[lo,hi]` |
+| `ParseTop` | `EffectScriptContract.cs` | 108 | `数字| "⊤"` |
+| `ParseScope` | `EffectScriptContract.cs` | 118 | `scene/type` |
+| `ParseLoop` | `EffectScriptContract.cs` | 143 | `≥1 | "⊤"` |
+| `ParseFootprint` | `EffectScriptContract.cs` | 157 | `claim.scope==event.scope` 双真相 |
+| `ParseClaim` | `EffectScriptContract.cs` | 183 | `kind/resource/mode/scope/size` |
+| `ParseKind` | `EffectScriptContract.cs` | 196 | `read/write/occupy` |
+| `ParseMode` | `EffectScriptContract.cs` | 202 | `use/create/release/move/unknown` |
+| `ParseResource` | `EffectScriptContract.cs` | 209 | 扁平单键 |
+| `ParseBudget` | `EffectScriptContract.cs` | 225 | `⊤/"inf"` 往返 |
+| `ParseResourceKey` | `EffectScriptContract.cs` | 247 | `gpu: / memory:` 前缀 |
+| `SerializeEvent` | `EffectScriptContract.cs` | 258 | 三桶 concat |
+| `SerializeScope` | `EffectScriptContract.cs` | 269 | `Global→{"type":"global"}` |
+| `SerializeClaim` | `EffectScriptContract.cs` | 278 | `kind.ToLower()` |
+| `SerializeResource` | `EffectScriptContract.cs` | 287 | 扁平形态 |
+| `SerializeBudget` | `EffectScriptContract.cs` | 297 | `⊤→"⊤"` |
+| `ResourceKey` | `EffectScriptContract.cs` | 306 | 键前缀 |
+| `ReqStr` | `EffectScriptContract.cs` | 323 | 非空串 fail-fast |
+| `EffectEvent` ctor+IsValid | `EffectScript.cs` | 41 | `Lo≠⊤`, `!loop.IsValid` 拒绝 |
+| `EffectScript.At` | `EffectScript.cs` | 90 | `Alive ⇒ Union(Loop(...))` |
+| `ComputeSamplePoints` | `EffectScript.cs` | 101 | 端点+幽灵点 |
+| `Audit` sweep-line | `EffectScript.cs` | 134 | O(E·K·logE) 三门 |
+| `Budget` ctor normalize | `EffectScript.cs` | 384 | `Normalize` 分组 |
+| `AuditResult` | `EffectScript.cs` | 426 | `Passed≡IsEmpty` |
+| `ResourceId.Normalize` | `Objects.cs` | 52 | `Self(signal_)→SignalBus` |
+| `ScopeId.IncludedIn` | `Objects.cs` | 102 | `Global⊇*` |
+| `Claim.Normalize` | `Objects.cs` | 133 | `Read×Create` 拒绝, `null→Default` |
+| `Signature.Of` dup guard | `Objects.cs` | 171 | 重复 Claim 抛（并发走 `Loop`） |
+| `NatStar` `+/ *` | `Numeric.cs` | 25,33 | 溢出→⊤ |
+| `Interval` ctor | `Numeric.cs` | 80 | `lo>hi`/`[⊤,x]` 拒绝 |
+| `LoopCount.Of/IsValid` | `DerivedMetrics.cs` | 18,26 | `0`非法 |
+| `Combination.Loop` | `DerivedMetrics.cs` | 50 | `Scope` 重标 + `Scale` |
+| `Compatible.IsCompatible` | `Algebra.cs` | 18 | 16对全函数 |
+| `NetTable/Peak` | `Algebra.cs` | 54,117 | 仅 `Occupy` 桶 |
+
+## 3. 逐维度审计
+
+### 3.1 EffectScript 作为纯数据值是否可被 JSON 往返无损承载？
+
+**结论：对契约限定子集无损；对 L1 全集有损（intentional incompleteness）**。
+
+- **往返路径**：`EffectScript(C#值) → ToJson → Parse → EffectScript` 在限定域内幂等：`SerializeEvent` 完整三桶 (`ReadClaims+WriteClaims+OccupyClaims`) ，`ParseFootprint` 按 `kind` 回分桶，对称（`EffectScriptContract.cs:258-266` 修 OPEN-2）。`Interval lo/hi` 经 `ParseTop`/`SerializeEvent:260` `"⊤"` 往返（`EffectScriptContract.cs:108-116,260`）。`Budget` `⊤` 经 `SerializeBudget:302` `IsTop→"⊤"` + `ParseBudget:232-236` 识别 `"⊤"|"inf"` 往返（修 R2-N1）。
+- **Global 往返**：已修复 `auditR4 CRITICAL` — `ParseScope:125-138` 缺 `type⇒Scene`, `type=="global"→Global()` 不要求 `scene`；`SerializeScope:274` `Global→{"type":"global"}` 。`Parse(ToJson(Global))=Global` 成立。但见 Finding F-01（scene 残留静默丢弃）。
+- **有损边界（类型系统 > 契约）**：
+  - `ScopeId` 合法值 `Shell|Loop|Conditional|Async` 在 `ParseScope:133-139` 视为未知抛 `FormatException`，`SerializeScope:269-275` 亦抛 “不可序列化”。程序化构造的 `EffectScript` 含此类 scope 无法 JSON 往返——但 `EFFECT_SCRIPT.md §4` 显式限定契约仅 `scene/method/type/global`，属文档化收敛，非 bug。
+  - `ResourceId` 合法值 `Tree|Self|Physics|Disk|Signal|AudioMixer|Callback|Network|Input|Custom` 同理仅 `gpu|commandBuffer|memory|occupancy|signalBus` 可往返（`ParseResource:209-222` / `SerializeResource:287-295`）。`SignalBus` 扁平形态是 rich-hickey2 R7 锚定形态，`{"gpu":{"bufferId":"x"}}` 嵌套形态已在 `ReqStr` 路径抛 `FormatException`。
+- **字节级幂等**：`UnsafeRelaxedJsonEscaping` (`ToJson:73`) 保障 `"⊤"` 不被 `\u264b` 转义，`Parse` 接受 `"⊤"`，`Parse(ToJson(x))` 内容等价。**但** 稀疏输入 `missing size/loop` 经 `ToJson` 必展开为显式 `size:[1,1]` + `loop:1`（`ParseClaim:192`, `ParseEvent:84`），故 `JSON文本→Parse→ToJson→JSON文本` 非字节幂等，仅 `C#值` 幂等。文档 `EFFECT_SCRIPT.md §4` 的幂等断言是后者，成立。
+
+### 3.2 EffectScriptContract 是 fail-fast 还是 fail-soft？
+
+**主体 fail-fast，白名单三层；两处对象层 fail-soft 缺口。**
+
+- **fail-fast 已落地**（证据）：
+  - 根/事件/Claim 三层 `RejectUnknownKeys`：根 `events|budget` (`29`)，事件 `lifetime|scope|loop|footprint` (`81`)，Claim `kind|resource|mode|scope|size` (`186`)，拼写 `budgat / Loop` 直接 `FormatException`。
+  - `kind/mode` 字符串白名单 `ParseKind/ParseMode` 抛 `未知 kind/mode` (`196-207`)。
+  - `resource` 值非空串守卫 `ReqStr` 抛 `resource.* 须为非空字符串` (`323`) 修 `auditR2/R4 C2` 静默兜底 `""|0`。
+  - `memory` 非数字抛 `FormatException` (`219`) 修 R3 V3-006。
+  - `Interval [⊤,⊤]` 与 `lo>hi` 翻为 `FormatException` (`98-102`)，`Loop 0` 抛 (`151`)，`default(LoopCount)` 在 `EffectEvent:47` 与 `Combination.Loop:54` 双处拒绝。
+  - `budget` 非对象抛 (`40`)，`lifetime` 非数组抛 (`104`)。
+- **fail-soft 残留**（见 §4 Findings）：
+  - `resource` 对象与 `scope` 对象未 `RejectUnknownKeys`，多余键静默忽略。
+  - `budget` `memory:xyz` 前缀值 `ulong.Parse` 未统一为契约 `FormatException` 方言。
+  - `Global` 残留 `scene` 静默丢弃。
+
+### 3.3 魔法字符串（kind/mode/scope type/resource 键/size缺省）是否用类型约束？
+
+- **已用类型约束**：`Kind`/`Mode` 为 `enum` 穷举 (`Objects.cs:112,117`)；`Kind×Mode` 非法组合 `Read+Create|Release|Move` 在 `Claim.Normalize:135` 构造期 `ArgumentException`；`ResourceId`/`ScopeId` 为判别联合 `abstract record` (`Objects.cs:21,90`)；`Interval`/`NatStar`/`LoopCount` 构造子校验 `lo≤hi`/`IsTop`/`≥1`。
+- **仍为字符串分发**：JSON 层必须经字符串 `kind/mode/scope.type/resource key` 分发（`ParseKind:196`, `ParseMode:202`, `ParseScope:133`, `ParseResource:217-221`, `ParseResourceKey:247`），但每条分发均为白名单 `switch` 非 `if-else` 容错，且错误抛 `FormatException`——符合 Hickey “字符串是数据，但非法字符串必须 fail-fast”。
+- **size 缺省**：`null Size → Interval.Default [1,1]` (`Objects.cs:140`, `EffectScriptContract.cs:192`) 是设计意图（`EFFECT_SCRIPT.md §2.3` `Claim.Size:Interval` 缺省 1），类型层面 `Interval?` 可空区分 `null` 与 `Exact(0)=[0,0]`，不再膨胀。对 Hickey 而言 **显式优于隐式**，但此为文档化缺省且 `ToJson` 总显式回写 (`SerializeClaim:284`)，可接受，记 P2 显式化建议。
+
+## 4. Findings（行号锚定，最小修复）
+
+### F-01 [P1] `scope` 对象未知键 fail-soft；`Global` 残留 `scene` 静默丢弃
+- **位置**：`EffectScriptContract.cs:118-141` `ParseScope`；`SerializeScope:269-275`
+- **证据**：`ParseScope` 仅判 `scene/type` 存在性，未 `RejectUnknownKeys`。`{"scene":"Battle","foo":"bar"}` 通过；`{"type":"global","scene":"Battle"}` 中 `scene` 在 `Global()` 分支被忽略（`name` 计算后弃用）。
+- **Hickey 违背**：`nil` punning / 拼写错误静默吞掉比报错更危险；`Global` 本应无身份字段，携带 `scene` 是数据矛盾应拒绝。
+- **最小修复**：`ParseScope` 入口加 `RejectUnknownKeys(el,"scope","scene","type")`；`type=="global"` 分支若 `hasScene && name!=""` 则 `throw FormatException("global scope 不可含 scene")`。
+
+### F-02 [P1] `resource` 对象未知/多余键 fail-soft（最同质错误：扁平单键契约被破坏）
+- **位置**：`EffectScriptContract.cs:209-223` `ParseResource`
+- **证据**：`{"gpu":"mesh1","commandBuffer":"gpu"}` 按 `if(gpu) return Gpu` 短路，次键静默忽略；`{"gpu":"x","extra":"y"}` 亦通过。契约明文 `resource 必须是扁平字符串形态 {"gpu":"mesh1"}` 且单键，额外键应与根/事件同型拒绝。
+- **最小修复**：`ParseResource` 入口加 `RejectUnknownKeys(el,"resource","gpu","commandBuffer","memory","occupancy","signalBus")` + 计数校验 `propCount!=1` 抛 `FormatException("resource 须为单键对象")`。
+
+### F-03 [P1] `budget` `memory:` 键值非数字/溢出抛非契约异常（方言分裂）
+- **位置**：`EffectScriptContract.cs:251` `ulong.Parse(k["memory:".Length..])`
+- **证据**：`ParseResourceKey` 对 `memory:abc` 抛 `FormatException` (BCL) 未包装；`memory:99999999999999999999` 抛 `OverflowException`。契约其余路径统一 `FormatException`（`ParseInterval:102` 显式翻译 `ArgumentException→FormatException`），调用方 `catch(FormatException)` 会漏接。
+- **最小修复**：`try { ulong.Parse } catch(Exception ex) when(ex is FormatException or OverflowException) { throw new FormatException($"未知 budget 键: {key} (memory 值须为非负整数)", ex); }`；或改 `ulong.TryParse` fail-fast。
+
+### F-04 [P2] `size`/`loop` 缺省静默填充（显式化缺口，Hickey Simple vs Easy）
+- **位置**：`EffectScriptContract.cs:84` `loop` 缺省 `Of(1)`；`EffectScriptContract.cs:192` `size` 缺省 `Interval.Default`
+- **证据**：AI 遗漏 `size` 时落 `[1,1]` 而非报错；往返 `ToJson` 恒展开，稀疏输入非字节幂等。`EFFECT_SCRIPT.md §4` 未明示 `size` 缺省语义（示例显式写 `[1,1]`）。
+- **权衡**：设计意图是 “缺省 1” 便 AI 省略；Hickey 数据透镜倾向 **no implicit default**。当前已因 `SerializeClaim:284` 显式化输出而可审计，降 P2。需文档显式声明或 AI 提示词约束。
+- **最小修复（可选）**：文档补 “size 缺省 ⇒ [1,1]，loop 缺省 ⇒ 1（显式化回写）”；或加契约开关 `strict` 要求显式。
+
+### F-05 [P2] `ResourceId`/`ScopeId` 可表达 ≠ 可序列化（值空间分裂，文档化但需显式）
+- **位置**：`Objects.cs:21-65` 多构造子 vs `EffectScriptContract.cs:287-295,269-275,247-254` 仅 5+4 子集
+- **证据**：`new Claim(Occupy, new ResourceId.Tree(...), ...)` 可 `Audit` 但 `ToJson` 抛 `不可序列化 resource`；`ScopeId.Shell` 同理。`EFFECT_SCRIPT.md §4` 契约限定扁平形态，`§7` 白名单外资源不在此契约。
+- **定性**：非 bug，有意收敛；但 Hickey “value must survive `pr-str` round-trip” 要求类型与契约值空间对齐。当前需在 `EffectScriptContract.cs` 头注与 `EFFECT_SCRIPT.md §4` 显式列 “可序列化子集” 白名单，避免维护者误以为 `ResourceId` 全集皆可 JSON。
+- **最小修复**：注释/文档补 “JSON 契约仅支持 `ResourceId ∈ {Gpu,CommandBuffer,Memory,Occupancy,SignalBus}` 且 `ScopeId ∈ {Scene,Method,Type,Global}`；其余需经 `ResourceId.Normalize` 或映射层转换”。
+
+### F-06 [P2] `Budget.Caps` 键归一化合并后者赢（silent last-write-wins）
+- **位置**：`EffectScript.cs:384-391` `Budget` ctor `norm[Normalize(kv.Key)]=v`
+- **证据**：`{Self("signal_x"):5, SignalBus("x"):10}` 归一后单条 10，前者静默丢失。`EffectScript.cs:388` 注释 “后者赢”。契约 `ParseBudget:229` 按字符串键 `gpu:/signalBus:` 分组不会触发此合并，但程序化 `new Budget(dict)` 会。
+- **定性**：符合 “单一真源” 去重，但 last-write-wins 应 fail-fast 或至少日志。P2 报告-only：建议构造期检测 `norm.ContainsKey` 则抛或文档化。
+- **最小修复（可选）**：`if(norm.ContainsKey(nk)) throw new ArgumentException($"Budget 归一化键冲突: {kv.Key} ≡ {nk}")`。
+
+**无 P0 阻断** — 均未构成数据静默改写为更大危害（如 `auditR2 C2` 的 `"" / 0` 兜底已修），当前剩余为对象层多余键忽略与方言不一致。
+
+## 5. 残留风险与确认
+
+- `Interval [⊤,⊤]` / `Loop 0` / `default(LoopCount)` / `Read×Create` / `重复 Claim` 五处已在 `EffectScript.cs:43,47` / `Numeric.cs:83` / `Objects.cs:135,178` / `DerivedMetrics.cs:54` 构造期 fail-fast，覆盖 AI 误造数据主路径。
+- `⊤` 往返（`NatStar`/`Loop`/`Peak`）经 `ToJson:73,260,262` `+ ParseBudget:232` 闭环，避免 `预算 ⊤→0` 的虚假 `PeakExceeded`（注释 `SerializeBudget:301`）。
+- 扫换线 `Audit` 与端点采样等价性由 `ComputeSamplePoints:101` 纯函数抽取可独立测试，本文未重审算法（属 `EffectScript.cs` 审计）。
+
+## 6. 建议（按 Hickey 优先级）
+
+1. 补 `ParseResource` / `ParseScope` 的 `RejectUnknownKeys`（F-01/F-02）— 一处收口消灭扁平契约全部 sibling 拼写静默错误，符合 “fix it once where all callers route through”。
+2. 统一 `ParseResourceKey` 异常方言为 `FormatException`（F-03）。
+3. 文档显式 `size/loop` 缺省与可序列化子集（F-04/F-05），Hammock 式命名收口。
 
 ---
+*审计员：Rich Hickey 视角（Data > Function > State）— 7 文件逐符号表+行号锚定。*
 
-## 二、Blocker
+DONE_R04
 
-### B1 — `loop=0` 使 Audit 抛 DivideByZeroException（契约示例即可触发）
-
-- 位置：`src/Cosmos.EffectAlgebra/EffectScript.cs:187`（enter 路径）与 `:206`（exit 路径）：
-  ```csharp
-  var mul = (!hi.IsTop && !w.IsTop && hi.Value <= ulong.MaxValue / w.Value) ? ...
-  ```
-- `LoopCount.Of(0)` 合法（DerivedMetrics.cs:19 无 ≥1 约束），`ParseLoop` 接受任意 uint64 含 0；**EFFECT_SCRIPT.md §4 示例第二个 event 就是 `"loop": 0`**——该示例只因 mode=release 被 `c.Mode != Mode.Release` 守卫侥幸绕开。任何 `mode∈{create,move}` 且 size.Hi 有限的 claim 配 `"loop": 0` ⇒ `ulong.MaxValue / 0` 未捕获崩溃。
-- Data Orientation 判定：这是「数据驱动一切」路径上的隐藏前置条件（ω≥1）未被类型承载——`LoopCount` 类型没有排除 0，却让下游除法假设它非零。要么类型层拒绝 0（构造子 fail-fast），要么运算层把 0 当保守 ⊤。当前两者皆无。
-
-## 三、High
-
-### H1 — 四种 scope 构造子往返即损坏（SerializeScope 兜底）
-
-- `EffectScriptContract.cs:194–199`：switch 只覆盖 `Scene/Method/Type`，`_ => {"type":"global"}` 把 `Shell/Loop/Conditional/Async`（Objects.cs 定义的全部 8 个构造子中的另外 4 个）**静默改写为 Global**。Global 是偏序最大元（Objects.cs `IncludedIn`），语义完全不同；`Parse` 也无从还原。
-- 触发面：程序化构造的 `EffectEvent`（如携带 `ScopeId.Shell()`）→ `ToJson` → `Parse` ⇒ 数据被无声篡改。JSON 层只该承载它能表达的形状，表达不了的必须 throw，而不是兜底成最大元。
-
-### H2 — 10 种资源构造子静默兜底为 memory:0
-
-- `EffectScriptContract.cs:218`（`_ => new Dictionary{["memory"]=0}`）与 `:236`（`_ => "memory:0"`）。
-- `ResourceId` 共 16 个构造子（Objects.cs）；契约只支持 5 个。其余（Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/Input/Custom）经 `ToJson` 全部**无声变成 Memory(0)**——不同资源被折叠为同一键，net/peak 归因全错且无任何信号。这正是任务点名的「resource 静默兜底」：正确形态是 `_ => throw new FormatException(...)`（fail-closed），兜底比报错危险得多。
-
-### H3 — loop 缺省/近形字段名静默按 ω=1
-
-- `EffectScriptContract.cs:58`：`TryGetProperty("loop")` 失败 ⇒ `LoopCount.Of(1)`。
-- AI 写 `"loops": 8` 或漏写 ⇒ 按 ω=1 审计，峰值低估 8 倍，PeakExceeded 漏报。缺省 ω=1 是 §2.1 的合法语义，但「合法缺省」与「疑似拼写错误」在解析层不可区分时，至少应拒绝同对象内未知键（见 L3/H4 同根问题）。size 缺省⇒[1,1] 有 §3.1.5(a) 明文背书，风险较低但同属此类。
-
-### H4 — 多键 resource 对象静默丢弃
-
-- `EffectScriptContract.cs:148–158`：先做「至少含一键」的存在性检查，随后 if 链按 gpu→commandBuffer→memory→occupancy→signalBus 取首个命中；`{"gpu":"a","memory":1}` ⇒ Gpu(a)，memory 键无声消失。数据契约对超集形状应拒绝而非截断。
-
-## 四、Medium / Low 逐符号表
-
-### Medium
-
-| 符号 | 位置 | 发现 |
-|---|---|---|
-| `ParseClaim` kind/mode 提取 | Contract.cs:124,126 | `Require(c,"kind").GetString() ?? throw`：`{"kind":123}` 时 GetString() 抛 **InvalidOperationException**，非文档承诺的 FormatException（文件头注释 :7 与 Parse doc :20 均承诺 FormatException）|
-| `ParseScope` name 提取 | Contract.cs:90 | `{"scene":42}` ⇒ GetString() 抛 InvalidOperationException；`[⊤,5]`、lo>hi 等 interval 不变量违规由 Numeric.cs:66–74 抛 **ArgumentException**。fail-fast 成立，但异常面三分裂，「非法形状⇒FormatException」契约失真 |
-| kind/mode/scope.type/resource 前缀魔法串 | Contract.cs:96–102 vs 195–199；164–167 vs 204；170–175 vs 206；172–181 vs 229–235 | 双侧 switch 字面量各自维护，无共享常量/单源；`Kind.ToString().ToLowerInvariant()` 还把线格式耦合到枚举标识符拼写。新增枚举成员 ⇒ Parse 抛（好）但 Serialize 先静默走 H1/H2 兜底（坏）——不对称漂移 |
-| `Violation.Kind` + 硬编码 Global | EffectScript.cs:349（定义）、:223,:231,:287（生产点）、:245 附近 CompatibleConflict | 违例类型应为 enum/判别联合；NegativeDip/PearkExceeded/Leak 一律填 `ScopeId.Global()`，事件真实 scope 信息在数据产出端就被丢弃，AI 回修拿不到归因 scope |
-| `ParseBudget` | Contract.cs:162–168 | 值仅接受有限整数；budget 无法显式表达 ⊤（无上限），与 lifetime/loop 接受 `"⊤"` 不对称；`prop.Value.GetUInt64()` 对字符串/小数抛 InvalidOperationException |
-| `ParseResourceKey` memory 空后缀 | Contract.cs:176 | `"memory:"` ⇒ Memory(0)，与 ApiMapping.cs `Mem()` 白名单哨兵 uid=0 撞键——两个不同来源的「空」折叠为同一资源 |
-
-### Low / Note
-
-| 符号 | 位置 | 发现 |
-|---|---|---|
-| `"⊤"` 哨兵 | Contract.cs:79,108 | 非 ASCII 精确匹配，无别名（top/inf/null 均拒）。fail-fast 可接受，但契约文档应写明唯一拼法 |
-| `Parse` | Contract.cs:23 | `JsonDocument.Parse` 结果未 dispose/using —— pooled 缓冲延迟回收，纯资源卫生问题 |
-| 重复 JSON 键 | 全解析路径 | System.Text.Json 容忍重复属性名，TryGetProperty 取末值；歧义输入被静默接受 |
-| 往返 = 模集合归一化 | Contract.cs:141–146 + Objects.cs Signature(ImmutableHashSet) | claim 顺序不保留、重复相同 claim 折叠。语义上有据（∪ 幂等交换），但「无损往返」严格意义上是 modulo set-normalization，应在 §4 文档声明 |
-| 死代码 | EffectScript.cs:272 与 274 | `if (e.Lifetime.Lo.IsTop) continue;` 连续重复两行 |
-| Budget.Caps 序 | Contract.cs:228–234 | Dictionary 序不定 ⇒ ToJson 字节序跨运行不稳定，与 §5 确定性目标在字节层面相悖（语义不受影响）|
-| Mode.Unknown 放行 | Contract.cs:173 + Algebra.cs `Resolve` | 契约接受 `"unknown"`，随后被当 Use 弱化兼容——边界层放行一个语义上等于「没写」的值，宜在 Parse 拒绝或显式标注 |
-
-## 五、正确的部分（值得肯定）
-
-- `ResourceId`/`ScopeId` 判别联合用 record 单点建模（Objects.cs），`Normalize` 作为**显式命名的非结构相等函数**独立于 Equals——Hickey 式「identity vs equality 分离」的正确落地；Normalize 对 SignalBus 不二次剥前缀保幂等（Objects.cs 注释明确）。
-- `Interval` 构造子强制 lo≤hi、lo 有限（Numeric.cs:60–75）：不变量进类型，不在消费端 if。
-- `NatStar` 加/乘溢出 ⇒ 保守 ⊤（Numeric.cs:36–52），Audit 峰值路径同样溢出⇒⊤（EffectScript.cs:187 的意图正确，只是漏了除零）。
-- `Claim` 五参位置记录 + `Size` 用可空区分「缺省」与「Exact(0)」（Objects.cs，Normalize 注释）——避免了 null/default 膨胀的经典坑。
-- `Parse` 对未知 kind/mode/scope.type/budget 键/resource 缺值全部抛（ReqStr fail-fast），resource 值不再静默兜底（auditR2/R4 修正在场）。
-- Global round-trip 已修（Contract.cs:88–93,101：`{"type":"global"}` 无 scene ⇄ ScopeId.Global），专项验证过对称性。
-
-## 六、残余风险
-
-1. **B1 未修前，契约文档 §4 示例本身是不可安全执行的形状族**（loop:0 × 非release claim 即崩）。
-2. H1/H2 兜底意味着「ToJson 输出永远可被 Parse 读回」，但不保证「读回的是同一份数据」——当前测试若只测 Parse∘ToJson∘Parse 幂等而不比对语义等价，会漏掉这两处。
-3. 异常面（M1）修复属破坏性变更（调用方若已捕获 ArgumentException/InvalidOperationException 会失配），需一次性收口并更新 §4 文档承诺。
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "7+1 文件逐符号表(§2) + 6 Findings 带 file:line (EffectScriptContract.cs:118-141 F-01, 209-223 F-02, 251 F-03, 84/192 F-04, Objects.cs:21-65 vs 287-295 F-05, EffectScript.cs:384-391 F-06) + EFFECT_SCRIPT.md §4 契约形状核查"
+    }
+  ],
+  "changedFiles": [
+    "audit/rich-hickey-round04-data-contract.md"
+  ],
+  "testsAddedOrUpdated": [],
+  "commandsRun": [],
+  "validationOutput": [
+    "Read 7 L1 files + EFFECT_SCRIPT.md ch4 contract shape; verified Parse/ToJson round-trip for Global/⊤/three-bucket, fail-fast at root/event/claim vs fail-soft at resource/scope objects"
+  ],
+  "residualRisks": [
+    "F-01 scope extra keys / Global+scene silent drop — P1 — fix with RejectUnknownKeys at ParseScope.118",
+    "F-02 resource extra/multi-key silent ignore — P1 — add RejectUnknownKeys+single-key guard at ParseResource.209",
+    "F-03 memory budget key ulong.Parse non-FormatException dialect split — P1 — wrap to FormatException at 251",
+    "F-04 size/loop implicit defaults [1,1]/1 diverge from explicit-data ideal — P2 doc",
+    "F-05 ResourceId/ScopeId full space not serializable (intentional subset) — P2 doc",
+    "F-06 Budget normalize last-write-wins silent — P2 optional guard"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "新增 audit/rich-hickey-round04-data-contract.md：Data Orientation 透镜下 JSON 往返无损/ fail-fast 白名单 / 魔法字符串类型约束 / Global/resource 静默兜底逐符号审计，带严重度+行号+最小修复",
+  "reviewFindings": [
+    "P1: EffectScriptContract.cs:118-141 — scope 对象未 RejectUnknownKeys，Global 含 scene 静默丢弃 (fail-soft)",
+    "P1: EffectScriptContract.cs:209-223 — resource 对象未 RejectUnknownKeys/单键校验，多键静默取首 (fail-soft)",
+    "P1: EffectScriptContract.cs:251 — memory budget 键 ulong.Parse 抛非 FormatException 方言分裂",
+    "P2: EffectScriptContract.cs:84/192 — loop/size 缺省静默 [1,1]/1，稀疏 JSON 非字节幂等 (explicitness)",
+    "P2: Objects.cs:21/T vs EffectScriptContract.cs:287 — ResourceId/ScopeId 全集>>契约子集，值空间分裂需文档化",
+    "P2: EffectScript.cs:384-391 — Budget 归一化后者赢静默覆盖"
+  ],
+  "manualNotes": "7+1 仅读约束遵守（未读 audit/ 内容）；EFFECT_SCRIPT.md 整档已读但审计仅用 §4 形状；无写权限故产物以本响应承载由 runtime 落盘 audit/rich-hickey-round04-data-contract.md"
+}
+```

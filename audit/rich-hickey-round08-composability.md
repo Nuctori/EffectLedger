@@ -1,91 +1,152 @@
-# Round08 — Rich Hickey 视角组合性对抗审计（代数律透镜）
+# Rich Hickey Round08 — 组合性（Composability）对抗审计
 
-- 审计范围：`src/Cosmos.EffectAlgebra/` 下 7 个源文件（Objects.cs / DerivedMetrics.cs / EffectScript.cs / Algebra.cs / Numeric.cs / SignedNet.cs / EffectScriptContract.cs 契约层经 grep 交叉验证）。未读 `audit/`。
-- 视角：组合性 = 「大程序的属性能否由小组件的属性推出」。逐符号检验：半格律、分配律、置换不变、gate 独立性、毒值（NaN）。
-- 方法：只读源码 + grep 全 src 验证调用点，不做臆测。
-
----
-
-## 0. 符号总表
-
-| 符号 | 文件:行 | 代数声明 | 实际性质 | 判定 |
-|---|---|---|---|---|
-| `Signature.Union` | Objects.cs:182 | §3.2.1 半格并 | 按 Normalize 键的集合并：幂等✓ 交换✓ 结合✓ 单位元 Empty✓ | **成立** |
-| `Signature.Join` | Objects.cs:192 | §3.2.4 join + "同 Claim 取 size merge_I" | `=> Union(a,b)`；size 是 Claim 身份一部分，**同键不同 size 不做 merge_I** | **注释与实现背离**（M1） |
-| `Signature.Equals/GetHashCode` | Objects.cs:198-212 | 结构相等"值语义" | Equals 用 SetEquals ✓；GetHashCode 按桶内**迭代序**累加 `h*31^c` → 同一值不同构造序可产生不同哈希 | **违反 Eq/Hash 契约**（M2，潜伏） |
-| `Combination.Sequence` | DerivedMetrics.cs:50 | (S₁;S₂) := S₁∪S₂ | 与 Union 全同；交换 ⇒ 时序/因果信息在 L1 被抹除 | 设计取舍（N1） |
-| `Combination.Parallel` | DerivedMetrics.cs:53 | (S₁∥S₂) := S₁∪S₂ | 同上；跨调用点 Compatible 只能靠 L3 Analyzer 带外补 | **L1 内不安全可组合**（N1/M3） |
-| `Combination.Loop` | DerivedMetrics.cs:37-48 | Σ_{i=1..ω} copy_i(S) | 对 ∪ 分配律成立✓；×ω 缩放结合（含 ⊤ 保守律）成立✓；但把 body 全部 claim 重 scope 到 loopScope ⇒ 嵌套 Loop 内层 scope 信息被压平丢失 | 律成立，信息丢失（N2） |
-| `EffectScript.At(t)` | EffectScript.cs:81-91 | 存活事件 Loop 后 Union | 集合语义，与 Events 枚举序无关 ⇒ **置换不变成立** | 成立 |
-| `EffectScript.Audit` 三 gate | EffectScript.cs:105-292 | gate(1)守恒/gate(2)峰值/gate(3)兼容 | 三 gate 各持独立运行态（net / peakSum+topCount / grp），互不读写对方状态 ⇒ 可独立增删 | **独立可组合成立**（一处耦合见 N3） |
-| `Audit` 违例输出序 | EffectScript.cs:145, 218-247 | "§5 输出确定性" | 违例集合置换不变，但 foreach Dictionary 插入序 + `List.Sort` 不稳定 ⇒ Violation **列表顺序**随事件排列变化 | 低危（L1） |
-| `Weight.Of` | Algebra.cs:32-38 | Kind×Kind→ℝ∪{⊥}，NaN 编码 ⊥ | NaN≠NaN 自反性破坏、double 运算静默传播；全 src **零调用点**（grep 验证）→ 潜伏 API 债 | 中危（M4） |
-| `NatStar/ZStar/SignedInterval` | Numeric.cs / SignedNet.cs | ⊤ 闭环，永不 NaN | 加乘溢出保守 ⊤、min/max ⊤ 律、ContainsZero fail-closed — 一致且无 NaN | **成立**（正面样板） |
+> 视角：组合性 / 代数律透镜。7 源文件只读：`Objects.cs` `Numeric.cs` `SignedNet.cs` `Algebra.cs` `DerivedMetrics.cs` `EffectScript.cs` `EffectScriptContract.cs`。`audit/` 禁读。
+> 判定标准：半格律（幂等/交换/结合/单位元/吸收）、同构分布式、置换不变、gate 正交可组合、NaN 毒化。
 
 ---
 
-## 1. Signature.Union / Join 是否满足半格律？
+## 1. 符号表（逐符号·行号·代数性质）
 
-**载体辨析（Hickey 第一步：你的值到底是什么？）**：Signature 实为「Normalize 后 Claim 的有限集」，不是「(key → interval) 的 map」。这决定了两条结论：
-
-1. **Union 是真正的 join-semilattice 并**（Objects.cs:182-190）：Add 路径先 Normalize 再入 ImmutableHashSet，幂等/交换/结合均由集合论承担；Empty 是单位元；Equals 用 SetEquals 使 `Union(a,b) ≡ Union(b,a)` 在值上成立。**律本身无可击破。**
-
-2. **Join 是假 join（M1，Medium）**。Objects.cs:190 注释宣称 "§3.2.4 ⊔：join-semilattice 合并…同 Claim 取 size merge_I"，但 Objects.cs:192 实现为裸 `=> Union(a,b)`。由于 `Claim.Size` 参与 record 结构相等，`Of(write,mem,create,S,Exact(2))` 与 `Of(write,mem,create,S,Exact(3))` 在 Join 下**保留两条**而非合并为 `Merge` 结果 `[2,3]`。grep 全 src 证实 `Interval.Merge`（Numeric.cs:101）与 `SignedInterval.Merge`（SignedNet.cs:79）**零调用点** —— 承诺的 value-lattice 逐点 join 根本不存在。后果：同一逻辑占用写两笔不同 size 区间，Peak.Compute（Algebra.cs:143-157）会**求和双计**而非取包络。这是典型的 doc-driven 而非 proof-driven 接口：名字许诺了律，实现交付了另一个 monoid。
-
-3. **Eq/Hash 契约破裂（M2，Medium-High，潜伏）**。Objects.cs:204-212 的 GetHashCode 按 `_read/_write/_occupy` 桶内迭代顺序做 `h=(h*31)^c`。ImmutableHashSet 迭代序依赖构造历史，故 `Union(a,b)` 与 `Union(b,a)` Equals 为真但哈希可不同。当前 src 无任何 `Dictionary<_,Signature>`/`HashSet<Signature>` 用法（grep 验证），故是潜伏雷——一旦有人把 Signature 放进哈希容器，「相等的东西查不到」即违反最小惊讶原则。修法一行：对三桶各取与序无关的聚合（如 `Aggregate(0, (h,c)=>h ^ c.GetHashCode()*31)` 的纯 XOR 形式需先混入常量避免全撞），或直接 XOR 各桶元素哈希。
-
-## 2. Combination.Loop / Sequence / Parallel 是否尊重组合？
-
-- **分配律 ✓**：Loop 逐 claim 独立映射（DerivedMetrics.cs:39-47），故 `Loop(a∪b, ω, s) = Loop(a,ω,s) ∪ Loop(b,ω,s)` 成立；这是「局部推理全局」的关键律，守住了。
-- **缩放结合 ✓ 含 ⊤**：`Scale(Scale(size,ω₁),ω₂)=size·(ω₁ω₂)`（有限）；ω=⊤ 走 `[lo,⊤]` 保守通道（DerivedMetrics.cs:58-62），与 NatStar 乘法 ⊤ 律一致，无发散路径。
-- **Sequence ≡ Parallel ≡ Union（N1）**：DerivedMetrics.cs:50-53。交换并抹掉时序：`(create ; release)` 与 `release ; create` 在 L1 同一签名，靠 net 的符号求和兜底；`(create ; create)` 也无法在 L1 与并行区分——Compatible 冲突检测完全外包给 L3 Analyzer（注释自认）。Hickey 判语：**两个名字一个实现 = 说谎的 API**。若 Sequence/Parallel 就是 Union，就不要起两个名字暗示不同语义；要么引入非交换的时序载体，要么承认这是「效应集合」而非「程序组合」。
-- **Loop 的 scope 压平（N2）**：所有 claim 被 `Scope = loopScope` 重写（DerivedMetrics.cs:41/43/45），嵌套循环 `Loop(Loop(S,ω₁,s₁),ω₂,s₂)` 中 s₁ 彻底丢失，Global-scoped 的 body claim 也被拽进 loop scope。数值上无害（缩放仍正确），但 scope 维度不可组合——嵌套结构的信息在单次映射中被销毁，违背「组合保信息」。
-- 细节：`c.Size ?? Interval.Default`（41/43/45 行）是死防御——入桶时已 Normalize 补 Default；三段 foreach 复制粘贴可直接用 `AllClaims()`（Algebra.cs:166-176）。低危噪音。
-
-## 3. At(t) 是否置换不变？
-
-**成立**（EffectScript.cs:81-91）：acc 以 Union 累积，Union 交换/结合 + Equals 结构化 ⇒ 任意重排 Events 得到值相等的签名；Alive 过滤是逐事件谓词，与序无关。注释中"确定性"声明（auditA 焦点6）在**内容层面**属实。
-
-**但 Audit 不是完全置换不变（L1，Low）**：
-- Violation **集合**与 `Passed` 不变：gate(3) 按组计数（≥2 判冲突，EffectScript.cs:238-247）、gate(1)/(2) 数值求和有交换保守律（peakSum 的环绕检测等价于判总量是否超界，与加法次序无关）。
-- Violation **列表顺序**变：`foreach Dictionary` 按插入序枚举（net/grp/closureNet 的键序由首次 enter 的事件序决定），加上 sweep.Sort（EffectScript.cs:145）是不稳定排序。同一剧本换序喂入 ⇒ Passed 相同、诊断文本顺序不同。对「AI 读 Violation 回修」的消费方，这是非确定输出。修法：返回前按 `(AtT, Kind, Resource, Scope)` 排序一次。
-- 边缘确认：Lo=⊤ 事件被正确排除（132 行，永不存活）；零时长 [t,t] 事件因相位2先采样后退出而被计入 ✓。
-
-## 4. Audit 三道 gate 是否可独立组合？
-
-**结构性独立成立**：Step（EffectScript.cs:150-216）同时维护三份互不相交的运行态——`net`（gate1，仅 enter 累加、exit 不减 = 累积净额语义正确）、`peakSum/topCount`（gate2）、`grp`（gate3）；AuditAtSample（218-247）各 gate 只读自己的状态。删掉任一 gate 的检查块不影响其余 gate 的违例产出 ⇒ 可独立启停/组合 ✓。
-
-三点保留：
-- **N3（Low-Medium）**：gate 之间共享 ω=⊤ 的「居民豁免」策略但方向相反——gate1 豁免守恒（154 行）、gate2 照常计峰值（179 行 top 判定）。这不是 bug（OPEN-4 有意为之），但意味着 gate1 的结果**依赖全局 ω 分布假设**：若某资源正向贡献只来自居民层，Leak 检查整体失效。gate1 并非纯局部的独立谓词，是带全局豁免条款的谓词——文档已声明，列为残留风险。
-- **闭包块死代码**：EffectScript.cs:272 与 274 是逐字重复的 `if (e.Lifetime.Lo.IsTop) continue;`；且 273 行的 `Lo > closureT` 过滤恒假（closureT=maxFinite ≥ 所有有限 Lo）⇒ 该"修 auditR"过滤是空操作。无害但说明此处靠补丁堆叠而非不变量推理。
-- **At 与 Audit 双轨**：Audit 不调用 At(t)，而是扫换线重建活动态。等价性靠注释断言（"数学上与端点采样定理等价"），src 中无共享代码保证二者不漂移——At 正确 ≠ Audit 正确，反之亦然。测试层应锁住 `Audit 违例 ⇔ 逐点 At+gate 全算` 这一交叉验证律。
-
-## 5. Weight.NaN 是否破坏组合？
-
-**当前未破坏，但埋着毒值（M4，Medium）**：
-- Algebra.cs:38 `a == b ? 1.0 : double.NaN`。NaN 作为 ⊥ 编码违反自反（NaN≠NaN）、污染后续 double 运算且比较恒 false —— 它是"静默失败"的具体化，与本仓库其余部分（Numeric.cs:5 "永不 NaN"、Deviation.cs:18 "不 NaN 不 ∞"、CompareToFinite 先判 IsTop）的 ⊤-闭环哲学直接矛盾。
-- 缓解事实：grep 全 src，`Weight.Of` **零调用点**，KIND_MIX 目前只有 Analyzer 层静态检查（EffectAlgebraAnalyzer.cs:189,238）。故今日无数值可被污染。
-- 风险：它是公开 API 面。第一个跨 kind 聚合的调用者拿到的不是异常而是 NaN，错误延迟到下游某个 `> threshold` 恒 false 处才显形。DeviationVal.Top（Numeric.cs:113-140 已示范正确形态：显式 IsTop 包装、ExceedsThreshold fail-closed）就在同一个 codebase 里——没有理由 Weight 不照做（返回 `WeightVal` 或抛 InvalidOperationException 让 KIND_MIX 硬失败）。
-
-## 6. 其他观察
-
-- `default(NatStar)/default(LoopCount)/default(Interval)` 因私有构造器挡不住 struct default，得到 IsTop=false、Value=0 的合法外观实例（ω=0）。当前构造路径均显式赋值，未触发；记录为类型系统边界备注。
-- ScopeId.IncludedIn（Objects.cs:99-108）实为「扁平偏序 + Global 最大元」，自反/反对称/传递均可验证 ✓。
-- NetTable.IsConserved 对"资源不在 net 中"fail-closed 返回 false（Algebra.cs:126-135）：与 SignedInterval.ContainsZero 的 ⊤-fail-closed 方向一致 ✓。
+| # | 符号 | 位置 | 声称性质 | 实测性质 | 反例 / 证据 | 严重度 |
+|---|------|------|----------|----------|-------------|--------|
+| S1 | `Signature.Union` (∪) | `Objects.cs:205-212` + `Add:186-202` | §3.2.1 半格并：幂等/交换/结合，`Empty:166` 为单位元 | **幂等/交换/结合成立（集合并）**，但**多重集语义丢失**：同 `Claim` 结构相等则 `ImmutableHashSet.Add` 静默去重，多并发副本算 1 份 | `Union(Of(c[1,1]), Of(c[1,1]))` → 1 claim，`Peak=1` 而非 2；`Net` 单份抵消；`Of` 重复抛 `ArgumentException:180` 但 `Union` 静默坍缩——同一不变量两条路径 | **P1** |
+| S2 | `Signature.Join` (⊔) | `Objects.cs:215-231` (`Of:171-184`) | §3.2.4 条件分支合并 join-semilattice，幂等/交换/结合/吸收，同键 `size=merge_I` | **交换/结合在 Merge 层成立**；**幂等对 Union 产物失效** | `a=Union(Of(c[10,10]),Of(c[50,50]))` 同键两 claim，`Join(a,a)` → 1 claim `[10,50]` ≠ `a`（2 claims）。`Join` 幂等仅当输入满足“每键至多一 claim”不变量，而 `Union` 不保证该不变量 | **P1** |
+| S3 | `Union` vs `Join` 分叉 | `Objects.cs:205` vs `215` | 两算子同域 `Signature→Signature`，文档注释 214 行警告“与 Union 仅同键合并差异” | **非同构**：同输入 `Of(c[10,10]) , Of(c[50,50])` 下 `Union`→2 claims, `Peak` 60；`Join`→1 claim `[10,50]`, `Peak` 50；`Loop(·,3)` 后 180 vs 150。选词决定度量，值类型无法区分 | `DerivedMetrics.cs:66-70` 注释已承认差异但未类型化 | **P1** |
+| S4 | `Interval.Merge` | `Numeric.cs:101` | §3.1.5b join-semilattice 幂等/交换/结合 | **成立**：`new(Lo.Min, Hi.Max)`，`Min/Max` 均内嵌 ⊤ 律 `Numeric.cs:42-49` | `Merge([⊤,⊤],[1,5])=[1,⊤]` 符合 `Min` 律，有意设计 | P2 |
+| S5 | `NatStar` + / * | `Numeric.cs:25-39` | §3.1.5a 闭包：x+⊤=⊤, 溢出→⊤ | **成立**：环绕检测 `sum<a.Value` / `prod/a != b` 保守 ⊤ | 溢出不回卷，代数闭合 | OK |
+| S6 | `Combination.Loop` | `DerivedMetrics.cs:50-64` + `Scale:88-92` | §3.2.5 `(S×ω)=Σ copy_i(S)`，ω 有限按 ω 缩放，ω=⊤ 上界开放 | **Loop 内部分配律成立**：`Loop(Union(a,b),ω) == Union(Loop(a,ω),Loop(b,ω))`（逐 claim Scale 线性+Union 分配）。但 **Loop vs 手工复制不等**：`Loop(body,2)`→`[2,2]` 单 claim；`Union(copy,copy)`→去重为 `[1,1]` 单 claim | 缩放把多重性编码进 `size` 区间，掩盖集合坍缩，仅当副本结构全等时等价 | **P1** |
+| S7 | `Combination.Sequence` | `DerivedMetrics.cs:66-70` | §3.2.1 序列组合 `; := ∪` | **恒等于 Union**，`[Obsolete]` | 无时序语义，名异实同，`Sequence(a,b)==Union(a,b)` 恒成立 | P2 |
+| S8 | `Combination.Parallel` | `DerivedMetrics.cs:76-85` | §3.2.2 并行组合 `∥ := ∪` + `Compatible` 前置 | **非纯 Union**：同资源归一 `Normalize:80` + `IsCompatible:81` 冲突则抛 `PARA_CONFLICT`，否则 Union。**非全函数**，破坏结合/交换的 totality | `Parallel(create,create)` 抛，`Union(create,create)` 静默通过且峰值减半，`Sequence(create,create)` 去重 1 份——三拼法三命运 | **P1** |
+| S9 | `EffectScript.At(t)` | `EffectScript.cs:90-99` (`Alive:354-355`) | 瞬时快照 `Σ Loop(Footprint,Loop,Scope)` 经 Union，纯函数，置换不变 | **置换不变成立**（Union 交换/结合 ⇒ 折叠序无关）；**但多重性语义与 Audit 分裂** | 两事件同 `lifetime∋t` 同 footprint `c[1,1]`：`At`→1 claim `[1,1]`，`Audit` sweep `grp[(r,S,Create)]={0,1}` 报 `CompatibleConflict` 且 `peakSum` 累加 2。`At` 去重 vs `Audit` 计数 | **P1** |
+| S10 | `Budget` / `CapsChecked` | `EffectScript.cs:378-421` `Audit:138-139,350` | 峰值预算壳，缺省无上限 | **Budget 值语义已修复**：防御拷贝 `ImmutableDictionary:389-391`，归一键 `Normalize:387-390`，`Equals/GetHashCode:399-420` 内容相等。但 **`CapsChecked` 暴露 gate 未运行**：`Caps.Count==0` 时 `Passed=true` 冒充全绿，需 `IsPeakChecked` 区分 | `AuditResult:440-455` 强制 `Passed==Violations.IsEmpty`，`CapsChecked` 单独记录 | P2 |
+| S11 | `Weight.Of` | `Algebra.cs:31-39` | §3.3.2b `weight: Kind×Kind→ℝ∪{⊥}`，跨 kind `⊥` | **NaN 已根除**：`a==b?1.0:throw KIND_MIX`，无 `double.NaN` 毒化。**代价：偏函数抛异常，组合时非全** | `NaN` 会污染 `Peak`/`Deviation`，当前抛是正确 fail-fast | P2 (正向) |
+| S12 | `ResourceId.Normalize` | `Objects.cs:52-65` | §3.1.4a 归一：`Self(signal_x)→SignalBus(x)`, 幂等 | **幂等成立**：`SignalBus` 分支短路 `62` 避免二次剥前缀 | `NetTable:61` `Peak:128` `Audit:182,197` 均经 `Normalize` 分组，一致 | OK |
+| S13 | `NetTable.Compute` / `Peak.Compute` | `Algebra.cs:54-68` / `118-134` | net 有符号求和 vs 峰值求和 | **量纲隔离已对齐**：`Peak:127` `if(c.Kind!=Occupy) continue` 与 `Net:59` 同源；`release` 不入峰值 `129` | 历史跨桶污染已修 | OK |
+| S14 | `Audit` 三 gate 正交 | `EffectScript.cs:134-351` + 接口 `370-372` | 声称 `Audit = concat(gates)` 可独立开关测试 | **接口死亡**：`INetGate/IPeakGate/ICompatGate` 已定义未实现、未注入、未被 `Audit` 调用；三 gate 在 `Audit` 内联扫换线共享 `sweep` 遍历但状态字典分离 (`net:161`,`peakSum:162`,`grp:164`)。**耦合点**：`ω=⊤` 豁免守恒 `178` 但仍入峰值 `205-206`；`peakScope` 清理 `236-244` 误用 `grp.Values.Any` 粗粒度 | 独立可组合性不成立：两通过脚本拼接可能因跨脚本 `create/release` 互补而整体通过/失败；居民层豁免使 gate1 依赖 gate2 的 ⊤ 判定 | **P1** |
+| S15 | `EffectScriptContract` JSON 往返 | `EffectScriptContract.cs:20-326` | AI JSON→L1 搬运，零新增代数 | **往返已加固**：根未知键白名单 `29,81`，`loop`/`scope`/`resource` 非法形状转 `FormatException` 单一方言 `101-102,176-180`；`claim scope` 必须等于 `event scope` 双真相校验 `170-171`；`budget` ⊤ 序列化为 `"⊤"` `302` 避免 `0` 误判 | 仍有 `ScopeId.Loop/Conditional/Async/Shell` 不可往返 `269-275` 抛，但属有意未暴露 | P2 |
 
 ---
 
-## 结论
+## 2. 半格律逐项验算
 
-| # | 发现 | 位置 | 严重度 |
-|---|---|---|---|
-| M1 | Join 注释承诺 size merge_I，实现为裸 Union；Interval/SignedInterval.Merge 零调用点，value-lattice join 不存在 | Objects.cs:190-192; Numeric.cs:101; SignedNet.cs:79 | Medium |
-| M2 | Signature.GetHashCode 依赖桶内迭代序，结构相等可哈希不等，违反 Eq/Hash 契约（当前无哈希容器使用，潜伏） | Objects.cs:204-212 | Medium-High（潜伏） |
-| M4 | Weight.Of 以 NaN 编码 ⊥，违反仓库 ⊤-闭环铁律；现零调用点，属公开 API 毒值债 | Algebra.cs:32-38 | Medium |
-| N1 | Sequence≡Parallel≡Union：交换并抹除时序/因果，Parallel 的安全完全外包给带外 L3 Analyzer；两名一实是说谎的 API | DerivedMetrics.cs:50-53 | Note（设计取舍，需明示） |
-| N2 | Loop 重 scope 压平嵌套作用域信息，scope 维度不可组合 | DerivedMetrics.cs:41-45 | Note |
-| N3 | gate1 的居民豁免依赖全局 ω 分布，非纯局部谓词；At 与 Audit 双轨无共享代码锁定等价律 | EffectScript.cs:154 vs 179; 105-292 | Low-Medium |
-| L1 | Violation 列表顺序随事件置换变化（Dictionary 插入序 + List.Sort 不稳定），诊断输出非规范序 | EffectScript.cs:145, 218-247 | Low |
-| L2 | 闭包块重复死行（272=274）与恒假的 closureT 过滤（273） | EffectScript.cs:272-274 | Low |
+### 2.1 `Union` (集合并)
+- **幂等** `Union(s,s)==s`：`Add` 经 `ImmutableHashSet.Add` 幂等，`Equals` 用 `SetEquals:238`，成立。反例仅在 `Of` 抛 vs `Union` 静默的不一致。
+- **交换** `Union(a,b)==Union(b,a)`：`Equals`/`GetHashCode` 均顺序无关（XOR 折叠 `248-251`），成立。
+- **结合** `Union(Union(a,b),c)==Union(a,Union(b,c))`：集合并结合，成立。`Empty` 为单位元 `166`。
+- **结论**：`Union` 是干净的集合半格，但**建模对象错**：并发资源占用是多重集（multiset）加法幺半群，幂等是 bug 而非 feature。`Of` 的去重抛补丁只堵住 `Of` 入口，`Union`/`At` 仍静默坍缩。
 
-**总评**：核心半格律（Union 幂等/交换/结合/单位元）、Loop 分配律、At(t) 置换不变、三 gate 状态独立——这些**真正承重的组合性律全部成立**，且 ℕ*/ℤ* 的 ⊤ 闭环是教科书级的正面样本。失分点集中在「接口许诺与实现交付不符」（Join 的 merge_I、Sequence/Parallel 的命名）和两处潜伏毒点（哈希序、NaN）。均为可定点修复项，无需重构。
+### 2.2 `Join` (条件分支合并)
+- **幂等**：仅当输入满足“每键至多一 claim”时成立；`Union` 可产出同键多 claim，`Join` 对其幂等失效（S2 反例）。
+- **交换/结合**：成立（`Merge` 的 `Min/Max` 交换结合）。
+- **吸收**：`Join` 与 `Union` 无吸收律，`Union(a,Join(a,b)) != Join(a,b)` 一般不成立（size 语义不同）。
+- **结论**：`Join` 自身是半格，但与 `Union` 共处同一值类型 `Signature` 且无类型区分，**半格律不可组合**。
+
+---
+
+## 3. `Combination` 是否尊重组合
+
+- `Sequence`：`∥ Union` 别名，`[Obsolete:69]`，尊重组合但零信息（应删除，保留仅为兼容）。
+- `Parallel`：`Union` + `Compatible` 守卫。守卫使 `Parallel` 成为偏函数，**不尊重组合**：`Parallel(a,b)` 可能抛而 `Union(a,b)` 不抛；`Parallel(Parallel(a,b),c)` 的抛点依赖分组，`Union` 的结合律不能平移。文档“并行性由 L3 跨调用点补”与此处前置守卫双重口径。
+- `Loop`：在集合语义下用 `Scale` 把加法幺半群编码进区间端点，`Loop(Union(a,b),ω)` 分配律成立；但**复制律** `Loop(body,ω) == Σ_{i=1..ω} Union(copy)` 不成立（去重导致后者坍缩）。`LoopCount.IsValid:26` / `Of≥1:18` / `default` 拒绝 `48,54` 已封 `ω=0 → [0,0]` 岔路。
+
+---
+
+## 4. `At(t)` 是否置换不变
+
+- **置换不变**：是。`At` 为 `Union` 折叠，`Union` 交换结合 ⇒ 事件重排不影响 `Signature` 内容相等（`ImmutableHashSet` 无序，`Equals` 结构相等）。
+- **但置换不变≠语义保持**：
+  1. `At` 静默去重 vs `Audit` 计数：同一 `t` 下两相同足迹事件 `At` 得 1 份，`Audit` `grp` 得 2 份并报 `CompatibleConflict`（`EffectScript.cs:276-285` vs `90-98`）。
+  2. 编码非唯一：`[Event(ω=2, footprint c[1,1])]` 经 `Loop→[2,2]` 与 `[Event×2 (ω=1,c[1,1])]` 经 `Union→[1,1]` 观测不等，`Peak` 2 vs 1，`Net` 2 vs 1。同一并发现实三种编码（重复事件/ω/Union）三种判决，正交分解失败。
+
+---
+
+## 5. `Audit` 三道 gate 是否可独立组合
+
+- **声称**：`Audit = concat(gates)` 可独立开关测试（`370-372` 接口）。
+- **实际**：
+  - 接口未接线：`INetGate/IPeakGate/ICompatGate` 无实现类，`Audit:134` 未委托，测试无法单独实例化 gate。
+  - 语义耦合：gate1 对 `ω=⊤` 资源豁免 `178,311`（居民层），gate2 仍将其 `topCount>0` 记为 `⊤` 峰值 `205-206,265`；gate1 的 `NegativeDip:253-259` 与 gate2 的 `PeakExceeded:262-271` 共享 `Budget.Caps` 归一键但归因 `netScope/peakScope` 分离，`peakScope` 的清理逻辑 `236-244` 粗粒度且 `hasActiveGrp` 未按资源过滤。
+  - 可组合性反例：`scriptA=[create r]` `scriptB=[release r]` 各自 `Audit` 均 `Leak`，`Union` 后整体守恒；反之两通过脚本拼接可能因跨脚本 `create×create` 同 `t` 触发 `CompatibleConflict`。**Audit 不满足同态**：`Audit(a⊔b) ≠ Audit(a) ∧ Audit(b)`。
+  - 正向：`CapsChecked:350` 使“未检查”与“检查通过”可区分，`Budget.None` 防御拷贝已正交。
+
+---
+
+## 6. `Weight.NaN` 是否破坏组合
+
+- **现状**：`Weight.Of:38` 跨 kind 抛 `InvalidOperationException("KIND_MIX")`，**无 `NaN` 返回**，`deviation` 路径 `Numeric.cs:106-132` 用 `DeviationVal.Top` 而非 `double.NaN`。`NaN` 毒化（`x+NaN=NaN` 污染 `Peak`/`Net`/`ContainsZero`）已根除。
+- **剩余组合代价**：抛异常使 `Weight` 成为偏函数，非全；跨桶聚合必须在 L3 `Analyzer` 前置拦截，否则运行时抛。优于 `NaN` 静默污染，符合 fail-fast。
+
+---
+
+## 7. 严重度汇总与最小修复
+
+| 级别 | 发现 | 最小修复 |
+|------|------|----------|
+| **P1** | S1/S9 `Union`/`At` 静默去重导致并发计数减半 | 将并发多重性移出 `size` 区间，改为 `Signature` 多重集或 `LoopCount` 为一等公民；或使 `Union` 对同键同 size 去重时累加计数（`Peak`/`Net` 求和语义），`Of` 与 `Union` 同抛/同计数 |
+| **P1** | S2/S3 `Union` vs `Join` 同类型异语义，`Join` 幂等对 `Union` 产物失效 | 类型化区分：`BranchSignature` vs `ConcurrentSignature`，或 `Join` 入口校验“每键至多一 claim”并抛，或统一为单一算子 |
+| **P1** | S8 `Parallel` 偏函数 vs `Sequence`/`Union` 全函数 | 明确 `Parallel` 为校验式构造器非代数算子，或使其返回 `Result<Signature,Conflict>` 而非抛，保持 totality |
+| **P1** | S6 `Loop` 缩放掩盖集合坍缩，复制律不成立 | 文档化 `Loop` 为唯一并发复制原语，禁用手工 `Union` 复制；测试固化 `Loop(body,2) != Union(copy,copy)` |
+| **P1** | S14 Gate 接口死亡 + 跨脚本非同态 | 接线 `INet/IPeak/ICompatGate` 到 `Audit`，或删除接口；文档化 `Audit` 非同态，新增 `Script.Concat` 显式算子 |
+| P2 | S4/S5/S10/S11/S12 已闭合或正向 | 保留；`Sequence` 删除或彻底 `Obsolete`；`Weight` 抛保持 |
+
+---
+
+## 8. 残余风险
+
+- `Interval` 下界恒有限 `80-84`，`[⊤,⊤]` 合法但 `EffectEvent` 寿命 `43-44` 拒 `Lo=⊤`，`Scale` 中 `Lo×ω` 无 `⊤` 分支——闭合。
+- `ZStar` 溢出保守 `Top:37,51`，`Negate/ToSigned:74-83` 对 `>long.MaxValue` 转 `Top`，`ContainsZero:98` 对 `Top` 假阴——fail-closed 正确。
+- `Budget` 归一 `389-390` 后 `ResourceKey` 序列化往返 `306-314` 一致，但 `ScopeId.Loop/Conditional/Async/Shell` 往返抛 `275`——有意未暴露，若 AI 产出则 fail-fast。
+- `Peak` 仍取 `Hi` 上界 `131`，`Net` 取区间求和 `102`，二者对 `⊤` 的 fail-closed 策略一致，但 `Peak` 的 `topCount` 与 `peakSum` 分离记账在 `Audit` 中需保持同步。
+
+---
+
+## 9. 判定
+
+`Signature.Union` 自身是半格，但**建模对象错配**（集合幂等 vs 并发加法）；`Join` 与 `Union` 同值异律、`Parallel` 偏函数、`At`/`Audit` 双重计数、`Loop` 缩放代偿共同导致**组合性在最窄意义成立、在使用者意义失败**。代数内核（`⊤` 闭包、区间算术、量纲隔离）扎实，修复需统一冲突谓词与多重集语义，无需重写内核。
+
+```
+
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "符号表 15 行逐符号验半格律/分配律/置换不变，行号到 Objects.cs:205/215/186 Numeric.cs:101/25 Algebra.cs:38 DerivedMetrics.cs:50/76 EffectScript.cs:90/134，P1×6/P2×3，残余风险与最小修复已列"
+    }
+  ],
+  "changedFiles": [
+    "audit/rich-hickey-round08-composability.md"
+  ],
+  "testsAddedOrUpdated": [],
+  "commandsRun": [
+    {
+      "command": "ls / find / grep (read-only discovery)",
+      "result": "passed",
+      "summary": "enumerated src files and verified Union/Join/Loop/At/Audit/Weight sites, no shell write"
+    }
+  ],
+  "validationOutput": [
+    "7-source read-only audit: Union set-semilattice holds but multiset mismatch, Join idempotent fails on Union products, Parallel partial vs Union total, At permutation-invariant but At/Audit double standard, Audit gates interfaces dead and non-homomorphic, Weight NaN eradicated via KIND_MIX throw"
+  ],
+  "residualRisks": [
+    "Union/At set deduplication still halves concurrent identical claims; Loop scaling only papers over when copies structurally equal",
+    "Join vs Union same type Signature non-isomorphic; user choice silently flips Peak/net by merged interval vs duplicate preservation",
+    "Parallel is partial (throws PARA_CONFLICT) while Sequence/Union are total — associativity/totality not composable",
+    "Audit INetGate/IPeakGate/ICompatGate defined but not wired; Audit(a⊔b) != Audit(a)∧Audit(b) (leak complementarity, cross-script CompatibleConflict)"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "新增 audit/rich-hickey-round08-composability.md：Rich Hickey 视角组合性审计，15 符号半格律/分配律/置换不变/门正交/NaN 毒化逐项验证，含行号反例与 P1/P2 最小修复",
+  "reviewFindings": [
+    "P1: Objects.cs:205-212 Union/At set deduplication collapses concurrent copies — Peak/net halved vs Audit grp counting (EffectScript.cs:90-99 vs 276-285)",
+    "P1: Objects.cs:215-231 Join idempotent fails on Union products with same key different sizes (Union→2 claims, Join→1 merged [10,50])",
+    "P1: Objects.cs:205 vs 215 Union vs Join same Signature type but divergent Peak (60 vs 50) and Loop(·,3) 180 vs 150 — non-composable semilattice fork",
+    "P1: DerivedMetrics.cs:76-85 Parallel partial (PARA_CONFLICT throw) vs Sequence/Union total — three compositions three fates, breaks associativity/totality",
+    "P1: DerivedMetrics.cs:50-64 Loop scaling vs Union replication inequivalence — Loop(body,2)=[2,2] vs Union(copy,copy)=[1,1] dedup",
+    "P1: EffectScript.cs:90-99 At permutation-invariant but semantically lossy vs Audit sweep multiplicity; split-vs-Loop encoding non-unique",
+    "P1: EffectScript.cs:370-372 Audit gate interfaces dead (not wired), Audit non-homomorphic and gate1/gate2 coupled via LoopCount.Top exemption",
+    "P2: Algebra.cs:38 Weight.Of correctly eradicated NaN via KIND_MIX throw — preserves algebra at cost of partiality (preferable to NaN poisoning)",
+    "P2: DerivedMetrics.cs:66-70 Sequence is pure Union alias [Obsolete] — should be removed"
+  ],
+  "manualNotes": "Reviewer 角色无写工具，未落盘；上游需将正文中 markdown 写入 D:/Godot/Cosmos/audit/rich-hickey-round08-composability.md 并校验。"
+}

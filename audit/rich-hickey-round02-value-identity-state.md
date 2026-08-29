@@ -1,100 +1,192 @@
-# Rich Hickey Round 02 — Value / Identity / State 审计（Cosmos.EffectAlgebra）
+# Rich Hickey Round02 — Value / Identity / State 审计
+> 透镜：Hickey 价值语义 — 值是不可变且以内容相等比较；身份是随时间变化的实体；状态是身份在时间轴上的快照。Place (位置) 可变，Value (值) 不可变。
+> 范围：仅 `src/Cosmos.EffectAlgebra` 7 源文件，禁止读 `audit/`。逐符号判定 + 行号 + 严重度。
 
-审计视角：Value vs Identity vs State（"值不做伪装，可变状态不藏起来"）。
-范围：仅 7 个源文件，未读 `audit/`。行号以当前工作区文件为准。
+## 0. 执行摘要
 
-## 总判定
-
-代数载体层（Numeric/SignedNet/Objects 的 record 部分）是**真值**：readonly record struct、get-only 属性、构造即全必填、⊤ 闭环——这是本代码库最健康的地带。
-但存在 **3 个高严重度问题**：`Budget.Caps` 可变字典泄漏进「不可变」EffectScript、`Budget.None` 全局单例指向可变字典、`Signature.GetHashCode` 违反 Equals/GetHashCode 契约。另有若干中低severity 的伪装值与引用身份陷阱。
+| 维度 | 结论 |
+|---|---|
+| 真值载体 | `Rid`, `StringName`, `NodePathOrUnknown`, `NatStar`, `ZStar`, `Interval`, `SignedInterval`, `DeviationVal`, `LoopCount`, `Violation`, `AuditResult`, `ResourceId`族, `ScopeId`族 — 均为 `readonly record struct` / `abstract record` 且重写结构相等 |
+| 伪装值 (Disguised Value) | `Claim` (readonly record struct 但 `default` 产非法 null), `Budget` (readonly record struct 但 `default.Caps==null`), `Interval`/`NatStar` default 与命名 sentinel 混淆 |
+| 伪值/身份冒充值 | `Signature` (sealed class + 后补 Equals), `NetTable` (sealed class 无 Equals), `EffectScript` (sealed class 无 Equals) — 三者是代数核心却用引用身份承载值语义 |
+| 隐藏可变状态 | `NetTable._net: Dictionary`, `Signature._read/_write/_occupy` 非 readonly 字段 + 局部 `Dictionary/HashSet/List` 在 Audit/Join 中可变别名，`EffectScript.Events` 的 `ImmutableArray` default 陷阱 |
+| 总体 | L1 已有意識朝值语义修复（R3/R5 引入 Budget 防御拷贝、Signature Equals、EffectEvent Loop 守卫），但三大聚合根仍是 class 身份，与 Hickey "值不可变、身份显式" 相悖 |
 
 ---
 
-## 一、真值清单（Correct：确认为真值的符号）
+## 1. 逐符号判定总表
 
-| 符号 | 位置 | 判定 |
+### 1.1 Algebra.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/Algebra.cs`
+
+| 符号 | 类型形态 | 行 | 判定 | 证据 | 严重度 |
+|---|---|---|---|---|---|
+| `Compatible` | `static class` 无状态 | 12-29 | **真值工具** | 无字段；`Resolve` + `IsCompatible` 纯函数对称；无可变 | — |
+| `Weight` | `static class` | 35-39 | **真值工具** | 纯函数 `Of` 抛 `InvalidOperationException` 表 partial，非 NaN 毒值 | — |
+| `NetTable` | `sealed class` | 46-110 | **伪装值 / 身份** | `private readonly Dictionary<ResourceId,SignedInterval> _net` 可变字典 (L49)；class 无 `Equals/GetHashCode/==`；`Resources => _net.Keys` 暴露 live `KeyCollection` (L88)；`Compute` 返回新 heap 身份，内容相等但 `==` 为引用相等 | **P0** |
+| `Peak` | `static class` | 117-135 | **真值工具** | 纯 `Compute`；量纲隔离已修 `if(c.Kind != Occupy) continue` L127 | — |
+| `SignatureExtensions.AllClaims` | 扩展 | 138-147 | **真值工具** | `yield return` 三桶枚举，纯、无状态 | — |
+
+### 1.2 Objects.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/Objects.cs`
+
+| 符号 | 类型形态 | 行 | 判定 | 证据 | 严重度 |
+|---|---|---|---|---|---|
+| `Rid` | `readonly record struct(string)` | 11 | **真值** | 结构相等，`string Value` 不可变 | — |
+| `StringName` | `readonly record struct(string)` | 14 | **真值** | 同上 | — |
+| `ResourceId` | `abstract record` + 15 sealed record | 21-66 | **真值** | `record` 结构相等标签+字段；`Normalize` 单一真相 L52 幂等；`SignalBus` 分支防二次剥离 L62 | — |
+| `NodePathOrUnknown` | `readonly record struct` | 69-84 | **真值** | `IsUnknown+Path` 值字段；`Unknown` 单例 `new(true,"")` L80；私有构造收口 | — |
+| `ScopeId` | `abstract record` + 8 sealed | 90-109 | **真值** | 偏序 `IncludedIn` 用 `Equals` 自反 + Global 最大元；跨标签 false | — |
+| `Kind` | `enum` | 112 | **真值** | 穷举 | — |
+| `Mode` | `enum` | 117 | **真值** | 穷举 | — |
+| `Claim` | `readonly record struct(Kind,ResourceId,Mode,ScopeId,Interval?)` | 127-146 | **伪装值** | `with`/`default` 可产 `null Resource/Scope` 与 `0` 值；`Normalize` 抛 `ArgumentException` 守卫 Read 非 Use；但类型自身未封 `default`，依赖 `Signature.Of/Add` 边界 fail-fast (L190-191) | **P1** |
+| `Signature` | `sealed class` | 153-261 | **伪装值 / 身份** | 三桶 `ImmutableHashSet<Claim>` 字段 **非 readonly** L155-157；`Empty` 单例 class；虽补 `Equals/SetEquals` + `GetHashCode` XOR + `==/!=` L237-260，但仍为 heap 身份；`Add` 用对象初始化器 `new Signature{_read=...}` 拷贝；`Join` 内 `Dictionary<(Kind,ResourceId,Mode,ScopeId),Interval>` 局部可变 L217 | **P0**  |
+
+### 1.3 Numeric.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/Numeric.cs`
+
+| 符号 | 类型形态 | 行 | 判定 | 证据 | 严重度 |
+|---|---|---|---|---|---|
+| `NatStar` | `readonly record struct` | 8-63 | **真值** | `IsTop+Value`；`default` = `Of(0)` 合法；`+/*` 无 `checked` 环绕→Top 保守 L29/L38；`Max/Min/CompareToFinite` 内嵌 ⊤ 律 | — (P2 备注见 §3) |
+| `Interval` | `readonly record struct(NatStar, NatStar)` | 70-105 | **真值（带 default 陷阱）** | 构造子校验 `lo.IsTop && !hi.IsTop` 抛 + `lo>hi` 抛 L83-85；但 `default(Interval)` 绕过构造 = `[0,0]` != `Default[1,1]`；`Default`/`Dynamic`/`Exact` 命名 sentinel 与 default 混淆 | **P2** |
+| `DeviationVal` | `readonly record struct` | 111-132 | **真值** | `IsTop+double Value`；`default`=0 合法；`ExceedsThreshold` 先判 `IsTop` L128 | — |
+
+### 1.4 EffectScript.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/EffectScript.cs`
+
+| 符号 | 类型形态 | 行 | 判定 | 证据 | 严重度 |
+|---|---|---|---|---|---|
+| `EffectEvent` | `readonly record struct` | 23-58 | **伪装值（值内含身份）** | 字段 `Lifetime Interval`+`Scope ScopeId`+`Loop LoopCount` 均为真值，但 `Footprint Signature` 为 class 身份；record struct 相等会委托 `EqualityComparer<Signature>.Default` → 击中 `Signature.Equals` 值相等，表面值相等但内部共享引用；构造子守卫 `lifetime.Lo.IsTop` 抛 L43 + `!loop.IsValid` 抛 L47 | **P1** |
+| `EffectScript` | `sealed partial class` | 64-367 | **伪装值 / 身份** | `ImmutableArray<EffectEvent> Events` + `Budget Budget` 本应为值；但 class **无 Equals/GetHashCode/==**；全等剧本 `==` 为 false；`Budget` 构造 `budget.Caps!=null ? budget : Budget.None` L76 处理 default null；可变性已修 `Budget {get;}` 非 `{get;init;}` L70 | **P0** |
+| `Budget` | `readonly record struct : IEquatable<Budget>` | 378-421 | **真值（带 default 陷阱）** | 字段 `IReadOnlyDictionary<ResourceId,NatStar> Caps` 实际 `ImmutableDictionary` 防御拷贝 L389；`Normalize` 按归一键分组 L390；`Equals` 内容比较含 `null=>Empty` L403；`GetHashCode` 内容哈希 L411；但 `default(Budget).Caps==null` 绕过构造 L138 需归一 `Budget.None` | **P1** |
+| `AuditResult` | `readonly record struct` | 426-456 | **真值** | `Passed`+`ImmutableArray<Violation>`+`CapsChecked`；构造子强制 `passed==IsDefaultOrEmpty` L446 fail-fast；派生 `IsPeakChecked` L455 | — |
+| `Violation` | `readonly record struct` | 459-489 | **真值** | 6 字段纯数据；无可变 | — |
+| `EffectScript.Audit` 局部可变 | 方法内 Place | 161-302 | **隐藏可变状态（局部）** | `net Dictionary`, `peakSum Dictionary`, `topCount Dictionary`, `grp Dictionary<...,HashSet<int>>` 内含可变 `HashSet<int>` 别名 L164；`sweep List<(ulong,int,bool)>` L145 排序；均为方法局部，不外泄，但 `grp` 的 HashSet 共享可变违反 Place 隔离理想 | **P1** |
+
+### 1.5 EffectScriptContract.cs
+
+| 符号 | 行 | 判定 | 证据 |
+|---|---|---|---|
+| `EffectScriptContract` (static class) | 18-326 | **真值工具** | 无字段；`Parse`/`ToJson` 纯搬运；`RejectUnknownKeys` 白名单 L49；`ParseBudget` 接受 `"⊤"/"inf"` L232；`Budget` 防御拷贝后交 `new Budget(caps)` |
+
+局部可变 `List<EffectEvent>` L31, `Dictionary<ResourceId,NatStar>` L227 等均为方法内临时 place，不构成跨调用状态，符合 Hickey 局部 place 可变。
+
+### 1.6 DerivedMetrics.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/DerivedMetrics.cs`
+
+| 符号 | 行 | 判定 |
 |---|---|---|
-| `Rid`, `StringName` | Objects.cs:10,13 | readonly record struct，真值 ✓ |
-| `NodeIdPathOrUnknown` (`NodePathOrUnknown`) | Objects.cs:68-84 | get-only 属性 + 私有 ctor + 工厂；`Unknown` 为 readonly struct 单例，内容不可变 ✓ |
-| `ResourceId` 及全部嵌套 sealed record | Objects.cs:20-66 | abstract record + sealed 构造子，结构相等 = 标签+字段，真值 ✓ |
-| `ScopeId` 及全部嵌套 sealed record | Objects.cs:89-110 | 同上 ✓ |
-| `Kind`, `Mode` enum | Objects.cs:114,121 | ✓ |
-| `Claim` | Objects.cs:126-142 | readonly record struct 五元组；含引用类型字段（ResourceId/ScopeId）但均为 record ⇒ 结构相等传导正确 ✓ |
-| `NatStar`, `Interval`, `DeviationVal` | Numeric.cs:8,70,111 | readonly record struct，ctor 校验 lo≤hi 不变量，静态单例（Default/Dynamic/Top）内容不可变 ✓ |
-| `ZStar`, `SignedInterval` | SignedNet.cs:10,50 | 同上，ctor 校验 lo≤hi ✓ |
-| `LoopCount` | DerivedMetrics.cs:10 | 私有 ctor + Of/Top 工厂，真值 ✓ |
-| `EffectEvent` | EffectScript.cs:22 | readonly record struct 四字段；Footprint 是 class 但 Signature 已补结构相等 ⇒ 相等语义正确 ✓ |
-| `AuditResult`, `Violation` | EffectScript.cs:324,337 | readonly record struct ✓ |
-| `Compatible`, `Weight`, `Peak`, `Combination`, `Derived`, `EffectScriptContract`, `SignatureExtensions` | Algebra.cs:11-43/107-128, DerivedMetrics.cs:26-90, EffectScriptContract.cs:17, Algebra.cs:129 | 纯静态函数，无状态 ✓ |
-| `ImmutableHashSet<Claim>` 三桶本体 | Objects.cs:147-149 内容 | 载体不可变 ✓（容器字段声明方式见 Note N1） |
+| `LoopCount` | 10-35 | **真值典范** `readonly record struct` 包 `NatStar`；`Of(n)` 拒 0 L18；`IsValid` 派生 `IsTop\|\|Value>=1` L26 统一守卫；`TryOf` 返回 `default` 非法值让 `IsValid` 显式化 |
+| `Combination` | 42-93 | **真值工具** `Loop/Parallel/Sequence` 纯；`Loop` 守卫 `default(LoopCount)` 抛 L54；`Scale` 纯 |
+| `Derived` | 99-109 | **真值工具** 纯转发 `Peak.Compute/NetTable.Compute` |
+
+### 1.7 SignedNet.cs — `D:/Godot/Cosmos/src/Cosmos.EffectAlgebra/SignedNet.cs`
+
+| 符号 | 行 | 判定 |
+|---|---|---|
+| `ZStar` | 10-69 | **真值** `readonly record struct IsTop+long`；`+`/`-` Top 传播 + 同号/异号溢出→Top L37/L50；`Min` 已修 R2-002 L59 |
+| `SignedInterval` | 76-121 | **真值** `readonly record struct ZStar×ZStar`；构造子 `lo>hi` 抛 L87；`ContainsZero` fail-closed on Top L98；`Add` 逐端相加 L102 vs `Merge` min/max L105；`default` = `[0,0]` 合法但绕过校验 |
 
 ---
 
-## 二、逐符号问题判定
+## 2. 隐藏可变状态清单
 
-### HIGH
+| 位置 | 文件:行 | 形态 | 是否外泄 | Hickey 评价 |
+|---|---|---|---|---|
+| `NetTable._net` | Algebra.cs:49 | `Dictionary<ResourceId,SignedInterval>` 可变 | 否（private），但 `Resources=>_net.Keys` 暴露 live view L88 | Place 误放入 Value 对象；应 `ImmutableDictionary` |
+| `Signature._read/_write/_occupy` | Objects.cs:155-157 | 字段非 `readonly`，类型 `ImmutableHashSet` 不可变但引用可重绑 | 否（private） | 身份对象的可重绑字段破坏“值无身份” |
+| `Signature.Join.merged` | Objects.cs:217 | `Dictionary<...,Interval>` | 局部 | 允许（ephemeral place）但与 `ImmutableDictionary` 混用风格不一致 |
+| `EffectScript.Audit` locals | EffectScript.cs:161-167 | 6 个 `Dictionary` + `HashSet<int>` 别名 + `List` | 局部 | 局部 place 可变符合 Hickey，但 `HashSet<int>` 共享别名是引用陷阩的微型复刻 |
+| `EffectScript.Events` default | EffectScript.cs:67 | `ImmutableArray` default = `IsDefault` | 构造后不可变 | 值类型的非法 default 未在构造期拒绝 |
+| `Budget.Caps` default null | EffectScript.cs:381 | `IReadOnlyDictionary` null | 通过 `Budget.None` 归一 | 经典 struct default 后门，需 `IsValid` 类似 `LoopCount` |
 
-**H1 — Budget 是「readonly record struct 包着可变字典」的伪装值**
-- 位置：EffectScript.cs:311-320
-- `Budget` 声明为 `readonly record struct`，但唯一字段 `Caps` 是 `IReadOnlyDictionary<ResourceId,NatStar>`。三重问题：
-  1. **自动生成的相等是引用相等**：record struct 对 `IReadOnlyDictionary` 字段用默认 EqualityComparer → Dictionary 的 object.Equals → 引用比较。两个 caps 内容完全相同的 Budget 不相等也不同哈希。struct 外观、identity 语义——正是 Hickey 所说 "it looks like a value but isn't"。
-  2. **接口只是门面**：调用方持有原始 Dictionary 引用即可在传入后继续改写（Parse 路径 EffectScriptContract.cs:32-38 构造后立即交给 Budget，本地构造尚安全；但任何 API 边界上外部持有的字典都可事后变异）。
-  3. **可向下转型破坏**：`(Dictionary<ResourceId,NatStar>)budget.Caps` 合法且无人拦截。
-
-**H2 — `Budget.None` 全局单例指向可变字典（隐藏共享可变状态）**
-- 位置：EffectScript.cs:320 `public static readonly Budget None = new(new Dictionary<ResourceId, NatStar>());`
-- 该字典被所有默认预算共享。一次恶意/意外的 cast 后 `Clear()` 或 `[r]=cap` 即改变**全程序**的「无上限」语义——后续所有 Audit 结果依赖这个被污染的全局状态。Hickey 判据：你无法从类型签名看出 `None` 是否安全共享；这里答案是"不安全"。修复成本极低：用 `ImmutableDictionary.Empty` 或冻结子类抛异常。
-
-**H3 — auditR5 F1 的修复不彻底：EffectScript 自称「构造即固定」，但 Budget.Caps 仍是逃逸的可变引用**
-- 位置：EffectScript.cs:58-68（注释宣称 "构造即固定，使 EffectScript 为不可变值对象（修 auditR5 F1）"）
-- `Budget = budget.Caps != null ? budget : Budget.None` 只是替换了 null 壳，**没有防御性拷贝**。调用方保留传入字典的引用，在 Audit() 之后继续写入新 cap ⇒ 同一 EffectScript 实例前后两次 `Audit()` 结果不同 ⇒ 注释里的承诺（"原 { get; init; } 可被改写 ⇒ 同实例 Audit 结果依赖可变状态"）只堵了一条路，状态依赖从属性移到了字典里。这正是把可变状态"藏"进抽象的另一层的反模式。
-
-**H4 — `Signature.GetHashCode` 违反 Equals/GetHashCode 契约（等值对象可能不同哈希）**
-- 位置：Objects.cs:204-213
-- `Equals` 用 `SetEquals`（顺序无关），但哈希按 `ImmutableHashSet` 枚举序做 `(h*31)^c` 折叠——该折叠对顺序敏感（乘加 XOR 链非交换）。两个 SetEquals 相等的 Signature 因插入历史不同而枚举序不同时，哈希不等。一旦有人把 Signature 放进 Dictionary/HashSet 键（代码注释自己都拿它当值用），会出现查不到/重复条目这类最难排查的 identity 幽灵 bug。修法：对每桶先算各元素哈希的顺序无关折叠（如 XOR 或排序后折叠），再三桶组合。
-
-### MEDIUM
-
-**M1 — Signature 字段非 readonly：持久化风格靠纪律而非类型维持**
-- 位置：Objects.cs:147-149, 171, 184
-- Add/Union 用 `new Signature { _read = _read, ... }` 复制构造（persistent style，正确），但 `_read/_write/_occupy` 未标 `readonly`，且类内任意方法都能就地改写而不留痕迹。当前无就地变异，但类型没拦住未来的自己。标 readonly 成本为零。
-
-**M2 — NetTable 无相等语义：同一签名的两张 net 表是不同身份**
-- 位置：Algebra.cs:46-100
-- `sealed class` + 私有可变 Dictionary，无 Equals/GetHashCode。作为 Compute 的返回读模型可接受，但它被 `Derived.Net` 公开暴露并跨方法传递（DerivedMetrics.cs:78）——调用方无法判断两表是否代表同一净效应，只能逐资源手比。伪装值。另注：`Resources => _net.Keys`（Algebra.cs:88）暴露的是活视图，当前构造后无再变异故安全，但契约靠约定不靠类型。
-
-**M3 — SerializeResource / ResourceKey 的静默兜底 `_ => memory:0` 会销毁数据（表示层无验证）**
-- 位置：EffectScriptContract.cs:216-218, 234-236
-- `ResourceId` 有 15 个构造子，契约层 ParseResource 只认 5 种，序列化侧遇到其余（Tree/Self/Physics/Disk/Signal/Gpu/AudioMixer/Callback/Network/Input/Custom…）**静默改写成 `{memory:0}`**。round-trip 后资源身份被偷换，net/Peak 全部对错资源计算——比抛 FormatException 危险得多。与文件头自述 "fail-fast，非静默漏报" 直接矛盾（Parse 侧已修 C2 fail-fast，Serialize 侧漏了同样的原则）。同理 `ResourceKey` 兜底 `"memory:0"`。
-
-**M4 — ZStar 加法无溢出守卫，违反自身「永不崩溃、保守 ⊤」纪律**
-- 位置：SignedNet.cs:30-31 vs Numeric.cs:44-48
-- NatStar 的 +/- 显式检测 ulong 回卷转 ⊤；ZStar 的 `+`/`-` 裸 long 运算，回绕成负值/正值会**伪造出错误的有符号 net 区间**（如 long.MaxValue 级 size 求和翻负 ⇒ ContainsZero 误判守恒）。同一代码库两套 ⊤ 纪律不一致；SignedInterval.Add（SignedNet.cs:76）直接继承此缺陷。
-
-### LOW / NOTE
-
-**N1 — Signature 桶属性返回 ImmutableHashSet 本身 ✓，但字段声明为 mutable-typed `private ImmutableHashSet<Claim> _read = ...` 且通过对象初始化器赋值**（Objects.cs:147-149,171,184）。与 M1 同根：建议 `readonly` + 构造函数注入。
-
-**N2 — EffectScript 是 class、无 Equals：作为「纯数据契约」却是身份语义**
-- 位置：EffectScript.cs:55
-- 文档自称纯数据/值对象，但两个事件+预算完全相同的脚本不相等。若它只作一次性管道输入可接受（Note 级）；若未来进入集合或缓存即成陷阱。Signature 已吃过一次这亏（Objects.cs:196-198 注释自认 "Hickey 式 footgun"），同类风险别再犯第二次。
-
-**N3 — Audit 扫换线局部可变状态（net/peakSum/topCount/grp 四个 Dictionary + HashSet + 闭包 Step）**
-- 位置：EffectScript.cs:150-156, 159-216
-- 这是**良性的局部可变状态**：作用域封闭于方法内、不逃逸、方法对外纯函数（输入不可变→输出 AuditResult）。Hickey 并不反对局部 mutation，反对的是隐藏的、共享的、逃逸的可变状态。此处无此问题。仅注意 `grp` 以 `(ResourceId, ScopeId, int)` 为键——ScopeId record 作字典键正确依赖其结构 GetHashCode ✓。
-
-**N4 — `default(Budget).Caps == null` 是潜伏的 NRE**
-- 位置：EffectScript.cs:67 有守卫，但 `Audit(Budget cap)`（EffectScript.cs:96）直接遍历 `cap.Caps`——传 `default(Budget)` 即 NRE。struct 的 default 实例绕过一切 ctor 不变量，这是用 struct 承载引用字段的固有代价；要么在 Audit 入口判空，要么让 Caps 恒非 null（如 lazy 初始化到 None）。
-
-**N5 — NodePathOrUnknown.Unknown 与 Interval.Default 等静态 struct 单例**（Objects.cs:79, Numeric.cs:95-99）：readonly struct 值拷贝语义，安全 ✓。对照之下 Budget.None（H2）是唯一的危险单例。
+> 规则：**Place**（局部变量、临时字典）可变无罪；**Value**（`NetTable`/`Signature`/`EffectScript` 实例字段）可变有罪。本轮有罪项为前三者。
 
 ---
 
-## 三、结论摘要
+## 3. 引用相等陷阱
 
-- 真值比例极高：15+ 个 readonly record struct / record 类型构成不可变代数核心，⊤ 闭环设计（NatStar/ZStar/DeviationVal）是教科书级的「用类型承载边界」。
-- 状态泄漏集中在一处：**Budget 及其字典**（H1/H2/H3/N4 全部围绕它）。一个 `IReadOnlyDictionary` 门面 + 共享可变单例污染了整条 EffectScript 不可变性叙事。换成 ImmutableDictionary + 结构相等即可一并解决四项。
-- 身份陷阱集中在 Signature 家族：GetHashCode 契约违规（H4）是当下真实 bug，非风格问题。
-- 契约层 Serialize 的静默 memory:0 兜底（M3）违背本库自己的 fail-fast 原则。
+| 陷阱 | 文件:行 | 场景 | 后果 |
+|---|---|---|---|
+| `NetTable` 引用相等 | Algebra.cs:46 | `var a=NetTable.Compute(sig,scope); var b=NetTable.Compute(sig,scope); a==b => false` | 缓存、去重、测试 `Assert.Equal` 失效；需 `IsConserved` 间接比较 |
+| `Signature` 引用 vs 值相等 | Objects.cs:236-260 | 已补 `Equals/SetEquals` 但仍是 class；`ReferenceEquals(a,b)` 与 `a==b` 分裂；`==` 重载静态 `Equals(a,b)` 会处理 null 但 `a.Equals(b)` 与 `a==b` 语义仍依赖虚派发 | 调用方若用 `Dictionary<Signature, ...>` 依赖 `GetHashCode` XOR 虽可用但不同引用同内容可命中，行为分裂 |
+| `EffectScript` 无值相等 | EffectScript.cs:64 | `new EffectScript(events)==new EffectScript(events) => false` | AI 产出 JSON round-trip 后 `Parse(ToJson(x)) != x` 按引用判不等；去重/缓存失效 |
+| `EffectEvent` 值内含身份 | EffectScript.cs:32 | `EffectEvent.Footprint` 为 class；`event1==event2` 因 `Signature.Equals` 值比较而为 true，但 `event1.Footprint` 与 `event2.Footprint` 是不同 heap 引用，`ReferenceEquals` 仍 false | 混淆值与身份的边界；`with` 拷贝共享同一 `Signature` 引用 |
+| `Budget.Caps` 接口别名 | EffectScriptContract.cs:251 | `ulong.Parse` 未用 `TryParse` 直接抛；`ImmutableDictionary` 经 `IReadOnlyDictionary` 暴露，可被 `as IDictionary` 强转？已修为 `ImmutableDictionary` 单例 `None` 但接口仍允许 `as` 尝试 | 已通过不可变单例缓解 |
+| `ImmutableArray` default | EffectScript.cs:67 | `default(EffectScript).Events.IsDefault==true` 与 `Empty` 语义不同 | 未校验时 `At` 遍历空但 `ComputeSamplePoints` 加 `NatStar.Of(0)` 兜底 |
 
-优先级建议：H2/H3/H1（同一处修复）> H4 > M3 > M4 > 其余。
+---
+
+## 4. 严重度汇总与最小修复
+
+### P0 — 阻断合并
+
+1. **NetTable 伪值** `Algebra.cs:46` — 转 `sealed class` → `readonly record` 或 `sealed class : IEquatable<NetTable>` + `ImmutableDictionary<ResourceId,SignedInterval>` + `Equals/GetHashCode` + `sealed` 且 `Resources` 返回 `IReadOnlyCollection` 拷贝。
+2. **Signature 身份** `Objects.cs:153` — 字段加 `readonly`，考虑 `sealed record` 或显式 `IReadOnlySet<Claim>` 暴露；`GetHashCode` XOR 已够但建议 `HashCode.Combine` 顺序无关折叠已满足。
+3. **EffectScript 身份** `EffectScript.cs:64` — 补 `Equals/GetHashCode/==` (按 `Events` 序列相等 + `Budget` 值相等) 或改为 `record`；校验 `Events.IsDefault` → `ImmutableArray.Empty`。
+
+### P1 — 发布前应修
+
+4. **Claim/Budget default 后门** `Objects.cs:127`/`EffectScript.cs:381` — 为 `Budget` 加 `IsValid` 类似 `LoopCount`，`EffectScript` 构造拒 `Events.IsDefault`。
+5. **NetTable.Resources live view** `Algebra.cs:88` — 改 `=> _net.Keys.ToImmutableArray()` 或 `IReadOnlyCollection`。
+6. **Audit grp HashSet 共享可变** `EffectScript.cs:164` — 注释 `// place: grp value is set, mutated only via Step` 或改为 `ImmutableHashSet<int>` 每次 `Add/Remove` 产生新集（性能权衡，当前局部可接受但需显式 place 标注）。
+7. **LoopCount/SignedInterval/Interval default 混淆** `Numeric.cs:70`/`SignedNet.cs:76` — 文档化 `default` 合法性或加 `IsValid` 派生。
+
+### P2 — 报告留存
+
+- `Budget.GetHashCode` 遍历 `Caps` 顺序依赖 `ImmutableDictionary` 迭代序但 XOR 交换律已缓解。
+- `Signature.Join` 与 `EffectScript.Audit` 的局部 `Dictionary` ephemeral place 可变符合 Hickey，不阻塞。
+- `Peak`/`Weight`/`Compatible` 已是纯函数典范，无需改动。
+
+---
+
+## 5. 残余风险 (Hickey 视角)
+
+- 即使修 P0，`Claim` 的 `with` 仍可产非法 `null`，需 Roslyn Analyzer 禁 `with` 产非法或运行时 `where` 约束；当前靠 `Signature.Of/Add` 边界守卫是最小可用。
+- `ImmutableArray<EffectEvent>` 的 `default` 与 `Empty` 分裂未完全收口，若 AI 侧反序列化绕过 `EffectScript` 构造直接 `default`，`Audit` 仍按 `Endpoints` 空集处理为 `[0]` 采样点，非崩溃但语义偏移。
+- `ZStar`/`NatStar` 的 `Top` 传播已保守，但 `Budget` 的 `Top` budget 键在 `ParseBudget`/`SerializeBudget` 往返为 `"⊤"` 字符串，需确保 AI 提示词不产 `"inf"` 以外别名（已接受 `inf`）。
+
+## 6. 判定方法
+
+- 每文件 `Read` 全量源码 + 行号锚定
+- 符号级 `IsTop/IsValid/default` 探针
+- `Dictionary`/`HashSet` 可变别名 grep（本轮为人工逐行，未用 shell）
+- 未读 `audit/` 目录
+
+---
+
+*审计员：Rich Hickey 透镜 — 值不可变、身份显式、状态受控。P0 三项不改，值语义即谎言。*
+```
+
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "7/7 源文件逐符号判定，产出 audit/rich-hickey-round02-value-identity-state.md，含 3×P0 (NetTable:46, Signature:153, EffectScript:64) + 4×P1 + P2 行号锚定，附隐藏可变状态与引用相等陷阱清单"
+    }
+  ],
+  "changedFiles": [
+    "audit/rich-hickey-round02-value-identity-state.md"
+  ],
+  "testsAddedOrUpdated": [],
+  "commandsRun": [],
+  "validationOutput": [
+    "Read 7 source files via default.read; no audit/ reads; markdown artifact returned for runtime persistence"
+  ],
+  "residualRisks": [
+    "Claim with/default 仍可在类型层面产 null Resource/Scope，依赖 Signature.Of/Add 边界守卫，需 Analyzer 补强",
+    "EffectScript/NetTable/Signature 三大聚合根仍为 class 身份，P0 未改前缓存与去重将误判引用不等",
+    "Budget/Interval default 与命名 sentinel 分裂，需 IsValid 或构造期拒绝 default(ImmutableArray) 才能彻底封闭"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "新增 Rich Hickey value/identity/state 轮次审计报告，覆盖 7 文件 30+ 符号的真值/伪装值/身份判定与可变状态清单",
+  "reviewFindings": [
+    "P0: Algebra.cs:46 - NetTable sealed class 无 Equals，_net 为可变 Dictionary，Resources 暴露 live Keys",
+    "P0: Objects.cs:153 - Signature sealed class 伪装值，_read/_write/_occupy 非 readonly，虽补 Equals 仍 heap 身份",
+    "P0: EffectScript.cs:64 - EffectScript sealed class 无 Equals/ GetHashCode，值语义剧本用引用相等",
+    "P1: Objects.cs:127 - Claim readonly record struct default/with 可产 null Resource/Scope",
+    "P1: EffectScript.cs:381 - Budget readonly record struct default.Caps==null 需归一 None",
+    "P1: Algebra.cs:88 - NetTable.Resources 返回 Dictionary.Keys live view",
+    "P1: EffectScript.cs:164 - Audit grp Dictionary<...,HashSet<int>> 共享可变 HashSet 别名",
+    "P2: Numeric.cs:70 - Interval default [0,0] 绕过构造校验与 Default[1,1] 混淆",
+    "P2: SignedNet.cs:76 - SignedInterval default [0,0] 同型混淆，Budget GetHashCode 顺序依赖"
+  ],
+  "manualNotes": "无写入工具，markdown 内容已在回复中内联，运行时需持久化到 D:/Godot/Cosmos/audit/rich-hickey-round02-value-identity-state.md"
+}

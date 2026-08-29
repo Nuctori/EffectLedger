@@ -64,14 +64,14 @@ void SpawnEnemy()
 AI/脚本可直接产出视觉/音频/网络效果的“视觉剧本”JSON，并用 `EffectScriptContract` 不跑游戏即验证——这正是不能把 L1 审计藏在 Godot 回调里、而要把它做成“纯数据类型”的原因。
 
 ```csharp
-// §4 数据契约：AI/动画工具产出的可审计数据
+// §4 数据契约：AI/动画工具产出的可审计数据 — claim 省 scope 继承 event scope（R10 Top1）
 string json = $$"""
 {
   "events": [
     { "lifetime":[0,6],  "scope":{"scene":"Battle"},
-      "footprint":[{"kind":"occupy","resource":{"gpu":"tmpMip0"},"mode":"create","scope":{"scene":"Battle"},"size":[256,256]}] },
+      "footprint":[{"kind":"occupy","resource":{"gpu":"tmpMip0"},"mode":"create","size":[256,256]}] },
     { "lifetime":[6,12], "scope":{"scene":"Battle"},
-      "footprint":[{"kind":"occupy","resource":{"gpu":"tmpMip0"},"mode":"release","scope":{"scene":"Battle"},"size":[256,256]}] }
+      "footprint":[{"kind":"occupy","resource":{"gpu":"tmpMip0"},"mode":"release","size":[256,256]}] }
   ],
   "budget": { "gpu:tmpMip0": 600, "commandBuffer:gpu": 600 }
 }
@@ -81,14 +81,16 @@ var script = EffectScriptContract.Parse(json);
 // 成功后
 var at5   = script.At(NatStar.Of(5));         // 单点投影：t=5 的总签名
 var audit = script.Audit(script.Budget);      // 三道 gate：守恒/峰值/冲突（含居民层豁免 OPEN-4, IsPeakChecked 报告）
+// 峰值门是否真实运行（别把“没查”当“全绿”，R10 Top2）：无 budget ⇒ IsPeakChecked==false，Passed 真但未查峰值
+System.Diagnostics.Debug.Assert(audit.IsPeakChecked, "峰值门未运行：缺 budget 或空 Caps（CapsChecked==0）");
 if (!audit.Passed)
     foreach (var v in audit.Violations)  Console.WriteLine($"{v.Kind} t={v.AtT} {v.Resource} scope={v.Scope}  {v.Detail}");
 // round-trip：Parse(ToJson(script)).At(t) 与 script.At(t) 语义等价（资源归一 Brave/归一化键一致）
 string back = EffectScriptContract.ToJson(script);
 ```
+```
 
-契约要点（已实现且可证伪）：事件层 `scope` 是单一真相（与 claim 级 scope 不一致即抛，R6 S06-001）；`LoopCount.Of(0)` / `default(LoopCount)` 拒绝；预算按归一化键存储（R6 S06-002，`Self(signal_x)` ≡ `SignalBus(x)`）；异常类型统一为 `FormatException`（R4）。
-
+契约要点（已实现且可证伪）：claim 缺 scope 继承 event scope（R10 Top1），不一致仍抛（R6 S06-001）；`LoopCount.Of(0)` / `default(LoopCount)` 拒绝；预算按归一化键存储（R6 S06-002，`Self(signal_x)` ≡ `SignalBus(x)`）；异常类型统一为 `FormatException`（R4）。预算准绳：`Passed==true && IsPeakChecked==false` 表示“峰值门未运行”（假绿），模板 `templates/effect-script.json` 含 `$schema` + `budget` 样板可防。
 > **doc 即测试**：上面这段 JSON 已被 `tests/Cosmos.EffectAlgebra.Tests/Round7Hickey2Tests.cs` 的 `Readme_Example_ParsesAndAudits` 抽取并守护——文档改一字、CI 立刻红，杜绝"文档能跑、代码不能跑"的漂移。对应可剪贴的 xUnit 断言：
 >
 > ```csharp

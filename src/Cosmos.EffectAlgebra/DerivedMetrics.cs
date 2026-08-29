@@ -83,6 +83,9 @@ public static class Combination
                         $"PARA_CONFLICT: 并行分支对资源 {ca.Resource} 的 mode {ca.Mode}×{cb.Mode} 冲突（CONFLICT 集，§3.2.3）");
         return Signature.Union(a, b);
     }
+
+    /// <summary>R10 Top3 #3：与 Parallel 等价的显式命名（揭示守卫差异）。与 Parallel 完全等价，仅名揭示语义。</summary>
+    public static Signature UnionChecked(Signature a, Signature b) => Parallel(a, b);
     // §3.2.5 × ω 的 size 缩放：ω=⊤ ⇒ 上界开放（[lo, ⊤]）；否则区间端点按 §3.1.5a 乘法缩放。
     // lo 恒有限（§3.1.5 下界不可为 ⊤），故 lo×ω 无 NaN 路径；hi=⊤ 时 ⊤×有限=⊤ 保持开放。
     private static Interval Scale(Interval s, NatStar w)

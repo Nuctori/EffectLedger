@@ -1,141 +1,108 @@
-# Round 06 — Rich Hickey 视角命名审计（Hammock 即设计透镜）
+# Rich Hickey Round 06 — Naming Hammock Audit
 
-- 审计视角：Hammock-driven development——名字是承诺。名字必须揭示本质（what it is），而非暴露实现或许诺不存在的区分。"Simple is not easy"：一个需要读注释才能用对的名字，就是没做设计的名字。
-- 范围：只读 7 个核心文件 + README；**未读取 audit/ 目录**（避免锚定前轮结论）。
-  - `src/Cosmos.EffectAlgebra/Objects.cs`、`Numeric.cs`、`Algebra.cs`、`DerivedMetrics.cs`、`SignedNet.cs`、`EffectScript.cs`、`EffectScriptContract.cs`、`README.md`
-- 判据：用户能否**仅凭名字**推断正确用法与语义边界？
-- 严重度：🔴 Blocker / 🟠 Major / 🟡 Minor / ⚪ Info
+> **Lens:** Hammock 命名即设计 — 名字是否揭示本质（what it is）而非用法/实现/隐喻？用户能否仅凭名字推断正确用法与失败模式？
+> **Scope:** 7+1 文件 = `Algebra.cs` / `Objects.cs` / `Numeric.cs` / `SignedNet.cs` / `DerivedMetrics.cs` / `EffectScript.cs` / `EffectScriptContract.cs` + `README.md`。禁读 `audit/`。
+> **Date:** 2026-08-29
 
----
+## 图例
+- **P0** 阻塞合并：名字直接导致错误用法且编译期不拦截或静默错误语义
+- **P1** 发布前必改：高频误用，推理成本高，需重命名或别名废弃
+- **P2** 记录债：可通过文档/注释缓解，但违背“值语义”原则
 
-## 符号级发现总表
+## 总表 — 逐符号 Hammock 判定
 
-| # | 符号 / 词簇 | 位置 | 严重度 | 一句话诊断 |
-|---|---|---|---|---|
-| F1 | `ScopeId.Loop` vs `LoopCount` vs `EffectEvent.Loop` vs `Combination.Loop` | Objects.cs:96; DerivedMetrics.cs:10,37; EffectScript.cs:35 | 🟠 Major | "Loop" 一词四义：作用域标签、迭代计数、并发实例数、组合算子 |
-| F2 | `Kind.Occupy` vs `ResourceId.Occupancy` | Objects.cs:111,31 | 🟠 Major | 动词桶名与名词资源构造子仅差 4 个字母，正交轴被词形相似掩盖 |
-| F3 | `Union` / `Join` / `Sequence` / `Parallel` | Objects.cs:182,192; DerivedMetrics.cs:50,53 | 🟠 Major | 四个公开名字，一个行为；名字许诺了本层不存在的区分 |
-| F4 | `Net` vs `Peak`（含 `NetTable`/`Peak`/`Derived.Net`/`Derived.Peak`） | Algebra.cs:46,111; DerivedMetrics.cs:68–74 | 🟡 Minor | 姊妹度量同名风格却返回不同形状；同一计算有两个入口 |
-| F5 | `Budget` vs `Caps` vs 参数 `cap` | EffectScript.cs:61,105,311–320 | 🟡 Minor | budget/cap/Caps 三个同义词在 10 行内轮换；"Budget" 名字超载其语义 |
-| F6 | `Violation.Kind : string` 遮蔽 `enum Kind` | EffectScript.cs:349; Objects.cs:111 | 🟡 Minor | 同名异型：核心 API 里两个 `Kind` 一个是枚举一个是魔法字符串 |
-| F7 | `Violation.AtT` | EffectScript.cs:340 | ⚪ Info | 神秘 T 后缀泄露实现顾虑，不传达本质 |
-| F8 | `Interval.Default` = [1,1] | Numeric.cs:92 | 🟡 Minor | "Default" 掩盖「缺省≠未知」这一 README 明示的语义锐边 |
-| F9 | `NatStar/ZStar/DeviationVal` 的 `Top`/`IsTop` | Numeric.cs:11; SignedNet.cs:13 | ⚪ Info | 认识论（未知）与序论（最大元）两种语义压在同一个 ⊤ 上 |
-| F10 | 注释词 "fail-closed 最弱兼容" vs README "fail-open" | Algebra.cs:10; Objects.cs:114; README.md:56 | 🟡 Minor | 同一规则两处贴了相反的行话标签，读者无法从名字推断安全姿态 |
-| F11 | `Weight.Of(Kind,Kind)` 以 NaN 编码 ⊥ | Algebra.cs:38 | 🟡 Minor | 隐藏编码 + 工厂式命名，部分函数看起来像全函数 |
-| F12 | 文件自述 "fail-fast" vs `_ => {"memory":0}` 兜底 | EffectScriptContract.cs:218（对照头部注释） | 🟠 Major | 自我描述撒谎：序列化兜底静默改写数据，直接摧毁名字/注释的可信度 |
+| # | 符号 | 位置 | 本质 | 名字揭示？ | 用户推断失败 | 严重度 | 最小修复 |
+|---|------|------|------|-----------|-------------|--------|----------|
+| N-01 | `ScopeId.Loop` vs `LoopCount` | `Objects.cs:97` vs `DerivedMetrics.cs:10`, `EffectScript.cs:36` | 前者是**地点**（scope tag, 值 `string Id`），后者是**数量**（ω∈ℕ∪{⊤}, 标量） | 否 — 同词干 `Loop` 复用 | `new ScopeId.Loop("battle")` vs `LoopCount.Of(3)` vs JSON `"loop":3` 三者在代码/JSON 中同拼 `loop`，心智模型坍缩为“循环”一词，误以为 `ScopeId.Loop` 携带计数或 `LoopCount` 携带作用域 | **P1** | `ScopeId.Loop` → `ScopeId.LoopScope` / `IterationScope`；保留 `ScopeId.Loop` 为 `[Obsolete]` 别名 1 版本 |
+| N-02 | `Kind.Occupy` vs `ResourceId.Occupancy` | `Objects.cs:112` vs `Objects.cs:32` | 前者是**量纲桶标签**（三桶之一），后者是**资源身份**（`audio_channel`/`animation_state` 归一后的 channel 名） | 否 — 动词 `occupy` vs 名词 `Occupancy` 仅差后缀 | 用户推断 `Occupancy("audio")` 必然进入 `Kind.Occupy` 桶，或反之 `Kind.Occupy` 的资源必为 `Occupancy` 类型；实则正交：`Occupancy` 资源也可被 `Kind.Read/Write` 声明（类型不拦），而 `Kind.Occupy` 桶承载 `Gpu/Memory/...` 等任意资源；`Algebra.cs:59,127` 的 `c.Kind != Kind.Occupy` 过滤与资源类型无关的事实被名字掩盖 | **P1** | `ResourceId.Occupancy` → `ResourceId.Channel` / `ResourceId.OccupancyChannel`；或 `Kind.Occupy` → `Kind.Residency` 以拉开动词/名词距离 |
+| N-03 | `Signature.Union` / `Signature.Join` / `Combination.Sequence` / `Combination.Parallel` | `Objects.cs:205` / `Objects.cs:215` / `DerivedMetrics.cs:69-70` / `DerivedMetrics.cs:76` | 四者签名同为 `(Signature,Signature)->Signature`，值域均为集合；仅 `Join` 在同键上 `Merge` 区间，`Parallel` 前置 `Compatible` 抛 `PARA_CONFLICT` | 否 — 时序隐喻 (`Sequence`/`Parallel`) 与格论术语 (`Union`/`Join`) 混用，且 L1 无时序语义（`README:163 诚实边界#1` 自承） | 用户无法从名字推断：`Sequence`==`Union`（已 `Obsolete` 但仍可调）、`Parallel` 会抛而 `Union` 不抛、`Join` 不是集合并而是 `merge_I`（`[10,10]⊔[50,50]⇒[10,50]` Peak=max 非 sum）；并行性误以为由 `Parallel` 承载，实为 `Compatible` 守卫 + L3 | **P0** | 删除 `Sequence`（已 Obsolete，下一大版本移除）；`Parallel` 更名为 `UnionChecked` / `UnionWithConflictCheck` 并文档置顶；`Join` 更名为 `MergeByInterval` / `UnionWidening`（揭示 widen 非叠加） |
+| N-04 | `Net` / `NetTable` / `Peak` | `Algebra.cs:46,117` / `DerivedMetrics.cs:102,105` / `Objects.cs:234` / `EffectScript.cs:254-265` | `Net` 是**有符号求和** `Σ±size`（`SignedInterval`, 可负，`ContainsZero` 判守恒）；`Peak` 是**无符号上界求和** `Σ hi`（`NatStar`, 忽略 `Release`, 任一 ⊤⇒⊤） | 部分 — `Net` 过短（口语“净” vs “网络”），且 `Peak` 未显资源维度 | 用户误将 `Net` 当 `Peak`（或反之）用于预算门；`Signature.Net(scope)` / `Derived.Net(s,scope)` / `NetTable.Compute` 三名一实，`Derived.Peak` vs `Peak.Compute` 二名一实，增加检索成本；`Peak` 未揭示“每资源每 scope 求和、release 不计”的关键不变量（`Algebra.cs:129`） | **P1** | 统一入口：`Signature.Net` 保留，`Derived.Net` 标 `Obsolete` 转发；`Peak` → `PeakOccupancy` / `ConcurrentPeak`；`NetTable` → `NetLedger` / `ConservationTable`（揭示守恒账本） |
+| N-05 | `Budget` vs `Caps` vs `CapsChecked` / `IsPeakChecked` | `EffectScript.cs:378,381,395,397,435,455` / `EffectScriptContract.cs:36,69,225` | `Budget` 是**壳**（`IReadOnlyDictionary<ResourceId,NatStar>`），`Caps` 是壳内表，`CapsChecked` 是**门是否运行计数** | 否 — `Budget`（预算，隐含“钱”）与 `Caps`（上限，隐含“帽”）混喻；`Budget.None` 语义为“无上限”（Unbounded）而非“零预算” | 用户将 `Budget.None` 误读为“零容忍”，将 `Passed==true && CapsChecked==0` 误读为“全绿”（`README:99` 已警告但名字未揭示）；`Audit(Budget cap)` 单数 vs `Budget.Caps` 复数、`SerializeBudget` 键为 `gpu:tmpMip0` 而 `ResourceId.Gpu` 构造子为 `Gpu(Rid)` 的映射不透明 | **P1** | `Budget` → `PeakLimits` / `ResourceCaps`（与 `Caps` 同词），`Budget.None` 保留别名但主名 `Unbounded` / `NoLimits`，`CapsChecked` → `LimitsCheckedCount`，`IsPeakChecked` 保留但文档强调“0 ⇒ 门未运行” |
+| N-06 | `At` vs `Audit` | `EffectScript.cs:90` vs `EffectScript.cs:134,332` / `Violation.AtT:462` | `At(t)` 是**点投影**（`Signature` 快照，`Alive` 判定 `Lo≤t≤Hi`），`Audit` 是**扫换线验证**（三门 + 闭包，`O(E·K·logE)`） | 否 — 同前缀 `At`/`Audit`，2 字符差，且 `At` 为介词非动词 | 用户误将 `At` 当轻量 `Audit`，或在循环中逐点 `At` 代替 `Audit`（性能/语义错：`At` 无 `NegativeDip`/`Leak` 闭包）；`Violation.AtT` 进一步复用 `At` 词干表示“发生时刻” | **P2** | `At` → `SnapshotAt` / `ProjectAt`；`Audit` → `Verify` / `CheckAllGates`；`Violation.AtT` → `Violation.When` / `Violation.SampleTime` |
+| N-07 | `Footprint` | `EffectScript.cs:32` / `EffectScriptContract.cs:85,265` | 值是 `Signature`（三桶集合），非几何面积 | 否 — 隐喻（脚印） | 用户推断 `Footprint` 为 `Interval Size` 而非 `Signature`；与 `Claim.Size` / `Interval` 混淆 | **P2** | `Footprint` → `Effects` / `Signature` / `Claims`（与 `Signature` 同词） |
+| N-08 | `NatStar` / `ZStar` / `Top` / `Star` | `Numeric.cs:8,70` / `SignedNet.cs:10,76` | `NatStar`=`ℕ∪{⊤}` 非负上界，`ZStar`=`ℤ∪{⊤}` 有符号上界，`Top`=`⊤` 未知，`Star` 本意 Kleene 星 | 否 — `Star` 常规意为 Kleene 闭包，非 ⊤ | 用户误将 `IsTop` 当“栈顶”，`Star` 当“星号通配”；`NatStar.Top` vs `Interval.Dynamic=[1,⊤]` vs `LoopCount.Top` 三 `Top` 同名不同载体 | **P2** | `NatStar` → `NatTop` / `BoundedNat`，`ZStar` → `IntTop` / `BoundedInt`，`Top` 保留但类型前缀区分已足够；文档统一“`*` = ⊤-closed” |
+| N-09 | `Interval.Default` / `Interval.Dynamic` / `Claim.Size ?? Interval.Default` | `Numeric.cs:92,95` / `Objects.cs:129-141` / `Algebra.cs:63,131` | `Default=[1,1]`（缺省精确 1），`Dynamic=[1,⊤]`（实例化不确定），`null⇒Default` 为归一 | 否 — `Default` 未揭示“1” | 用户将缺省当“未知”或“0”，`README:118` 已设锐边但名字未揭示；`Size ?? Interval.Default` 散布 4 处（`Algebra.cs:63,64,130,131` 等） | **P2** | `Default` → `One` / `SingleUnit`，`Dynamic` → `OneToTop`，或保留但追加注释 `// = [1,1]` 已有 |
+| N-10 | `ResourceId.Normalize` vs `Claim.Normalize` | `Objects.cs:52,133` | 前者纯归一（`Self("signal_x")→SignalBus`），后者归一+缺省+校验（`Kind×Mode` 非法抛） | 否 — 同名不同契约 | 用户对 `Claim.Normalize()` 期望幂等纯函数，实则含校验抛 `ArgumentException`（`Objects.cs:135`）；`Signature.Of` 内双重 `Normalize` 易重复 | **P2** | `Claim.Normalize` → `Claim.Normalized` / `Claim.EnsureValid`，或拆为 `Normalize`（纯）+ `Validate` |
+| N-11 | `Compatible` / `IsCompatible` / `CompatibleWith` | `Algebra.cs:12,18` / `Objects.cs:145` | 16 对全函数对称，`Unknown→Use` fail-open | 部分 — 双重命名 | 用户在 `Claim.CompatibleWith` 与 `Compatible.IsCompatible` 间犹豫；`Unknown` 静默放行（`Algebra.cs:15,22`）与名字“Compatible”隐含的“兼容”一致但与安全直觉相反（fail-open 非 fail-closed） | **P2** | 统一为 `Compatibility.IsCompatible` 单入口，`Claim.CompatibleWith` 标 `Obsolete` 转发 |
+| N-12 | `LoopCount.Count` / `LoopCount.IsValid` / `LoopCount.Top` | `DerivedMetrics.cs:13,21,26` | `Count` 是 `NatStar` 载体，`IsValid` 派生合法性（≥1或⊤） | 否 — `Count` 未揭示 `NatStar` | 用户 `loop.Count.Value` 二跳取值，或 `default(LoopCount)` 误为合法（`EffectScript.cs:47,54` 已封堵但名字未揭示） | **P2** | `Count` → `Value` / `Nat`，保留 `Count` 别名；`IsValid` 已为最小修复（`R5 V5-002`） |
+| N-13 | `Weight.Of` / `DeviationVal` | `Algebra.cs:35` / `Numeric.cs:111` / `Deviation.cs` 未审 | `Weight` 跨 kind 抛 `KIND_MIX`，`DeviationVal` 偏差阈值 | 否 — `Of` 工厂名与 `NatStar.Of` 复用但语义为偏函数 | 用户推断 `Weight.Of(a,b)` 总成功，实则跨 kind 抛 | **P2** | `Weight.Of` → `Weight.For` / `Weight.RequireSameKind` |
 
----
+## 碰撞深钻（按任务清单）
 
-## 逐符号详析
+### ScopeId.Loop vs LoopCount
+- **证据** `Objects.cs:97` `ScopeId.Loop(string Id)` 注释“循环作用域”；`DerivedMetrics.cs:10-13` `LoopCount { NatStar Count }`；`EffectScript.cs:36` `LoopCount Loop`；JSON 层 `EffectScriptContract.cs:84` `"loop"` 键。
+- **Hammock 违背** 地点（where）与数量（how many）同词，complect。
+- **推断失败** 编译期类型可拦，但 JSON 心智与代码心智分裂：AI 产 `"loop": "⊤"` 时不知对应 `LoopCount.Top` 还是 `ScopeId.Loop`。
+- **最小修复** 重命名 scope 侧为 `LoopScope`，保留兼容别名。
 
-### F1 🔴🟠 "Loop" 一词四义 — 🟠 Major
+### occupy vs Occupancy
+- **证据** `Objects.cs:112` `Kind.Occupy`；`Objects.cs:32` `ResourceId.Occupancy(string Channel)`；`Algebra.cs:59,127` 量纲隔离仅按 `Kind`。
+- **违背** 动词/名词同根，暗示绑定实则正交。
+- **失败** 误以为 `Occupancy` 资源自动落 `Occupy` 桶，错配 `Read/Write` 桶的 `Occupancy` 声明。
+- **修复** 资源侧更名 `Channel`。
 
-四个公开符号共享词根，含义各不相同：
+### Union/Join/Sequence/Parallel
+- **证据** 4 方法签名一致，`Objects.cs:205` 正文“并集按Normalize去重”、`215` “条件分支合并...与Union等价...仅同键merge_I”、`DerivedMetrics.cs:70` `Obsolete("仅为别名")`、`76` `PARA_CONFLICT` 守卫。
+- **违背** 用时序词命名值运算，违背“数据即值”原则；`README:163` 自承 `Sequence≡Parallel≡Union 四名一实`。
+- **失败** `Parallel` 静默等价 `Union` 的假阳性/假阴性；`Join` 被当 `Union` 用导致 `Peak` 高估/低估。
+- **修复** 见上表 P0。
 
-| 符号 | 位置 | 实际本质 |
-|---|---|---|
-| `ScopeId.Loop(string Id)` | Objects.cs:96 | 循环体的**作用域标签**（偏序域中一个元素） |
-| `LoopCount`（类型，ω∈ℕ∪{⊤}） | DerivedMetrics.cs:10 | 循环/副本的**数量** ω |
-| `EffectEvent.Loop`（属性，类型 `LoopCount`） | EffectScript.cs:35 | 该事件的**并发实例数** |
-| `Combination.Loop(body, ω, loopScope)`（方法） | DerivedMetrics.cs:37 | **循环组合算子** |
+### Net vs Peak
+- **证据** `Algebra.cs:46-68` 有符号和、`117-134` 无符号和；`EffectScript.cs:132-133` 注释三门定义。
+- **违背** `Net` 未揭示有符号账本本质。
+- **失败** 预算门错用 `Net`。
+- **修复** 更名 `ConservationLedger` / `ConcurrentPeak`。
 
-调用点 `Combination.Loop(e.Footprint, e.Loop, e.Scope)`（EffectScript.cs:87）里 Loop 出现两次、语义不同，只能靠位置区分。
+### Budget vs Caps
+- **证据** `EffectScript.cs:378-421` `Budget` 壳含 `Caps`，`395` `None=Empty`，`440` `Passed≡Violations.IsEmpty`，`455` `IsPeakChecked=>CapsChecked>0`；`README:99` `CapsChecked` 报告。
+- **违背** 壳与内容异名，空预算语义反直觉。
+- **失败** `Passed==true` 被当“峰值全绿”。
+- **修复** 壳更名 `ResourceCaps`，空值更名 `NoLimits`。
 
-更糟的是本质错位：`LoopCount` 在剧本语境下文档自己承认它**不是时间重复**而是**并发实例数**——"ω 表示『同一时刻有多少个该元素并发存在』（并发副本，非时间重复）"（EffectScript.cs:33–34）。名字说 count-of-loops（时间迭代次数），语义是 resident-count（瞬时并发数）；`LoopCount.Top` 实际含义是"常驻层"（README MA-002）。读者凭名字会做出错误推断——这正是 Hickey 所说的"名字撒谎比没有名字更糟"。建议：剧本侧改名 `Concurrency`/`Instances`（保留 `LoopCount` 于纯代数侧亦可，但至少属性名应揭示本质）。
+### At vs Audit
+- **证据** `EffectScript.cs:90` `At(NatStar t)` 点投影、`134` `Audit(Budget)` 扫换线、`462` `Violation.AtT`。
+- **违背** 介词作动词，审计动词与投影介词同茎。
+- **失败** 逐点 `At` 代替 `Audit` 漏 `Leak`/`NegativeDip`。
+- **修复** `SnapshotAt` / `Verify`。
 
-### F2 occupy vs Occupancy — 🟠 Major
-
-- `enum Kind { Read, Write, Occupy }`（Objects.cs:111）：claim 的**种类桶**（动词，占用行为）。
-- `ResourceId.Occupancy(string Channel)`（Objects.cs:31）：**资源身份**构造子（名词，audio_channel / animation_state 归一目标，Objects.cs Normalize 表）。
-
-两条完全正交的轴（"什么类型的 claim" × "哪种资源"）共用近同词形。用户写出 `Claim(Kind.Occupy, new ResourceId.Occupancy("audio"), …)` 时，两个词几乎同义反复，无法从名字看出它们分属不同维度。JSON 契约进一步放大：kind 序列化为 `"occupy"`，resource 键为 `"occupancy"`（EffectScriptContract.cs ParseKind/ParseResourceKey）。加上 ApiMapping 层的 `Oc`/`Occ` 缩写（ApiMapping.cs:45,52，grep 证据），碰撞面持续扩大。建议：资源构造子改为领域真名 `AudioChannel`/`AnimationState` 或统一为 `Channel`，把 "occupancy" 这个词还给 Kind 桶。
-
-### F3 Union / Join / Sequence / Parallel：四个名字一个行为 — 🟠 Major
-
-- `Signature.Join(a,b) => Union(a,b)`（Objects.cs:192）——字面别名，零增量。
-- `Combination.Sequence(a,b) => Signature.Union(a,b)`（DerivedMetrics.cs:50）。
-- `Combination.Parallel(a,b) => Signature.Union(a,b)`（DerivedMetrics.cs:53）。
-
-Sequence 与 Parallel 的差异（跨调用点 Compatible 冲突检查）被委托给 L3 Analyzer，在本层**不存在**——但公开 API 的名字许诺了区别存在。用户在 L1 看到 `Parallel` 会预期某种并发语义（如 size 相加而非去重合并），实际是幂等并集：两个 `Parallel(S,S)` 返回一份 S。Join 别名则纯粹增加词汇负担：半格术语（join-semilattice）与集合术语（union）同时挂在同一函数上，读者必须猜是否有细微差别——没有。
-
-Hickey 判语：名字是承诺。要么让 Parallel 在本层就做对并发该做的事（size×2？），要么承认这是同一个 join 并砍掉冗余入口/在名字上标注层界（如 `UnionOnly_ParallelChecksDeferred` 不可取，但至少 XML doc 必须置顶于签名而非埋注释）。现状是注释承载了名字该承载的全部信息——每个使用点都要付一次阅读税。
-
-### F4 Net vs Peak — 🟡 Minor
-
-姊妹度量，形状不对称：
-- `Derived.Net(S,scope) → NetTable`（按资源的**区间表**，Algebra.cs:46；DerivedMetrics.cs:74）
-- `Derived.Peak(S,scope) → NatStar`（**标量**上界，Algebra.cs:111；DerivedMetrics.cs:71）
-
-名字风格一致（都是单数物理量词），返回类型却一个是可查表一个是有穷标量——用户无法从名字预判 API 形状，只能试编译。另外同一计算有两个入口（`Peak.Compute` 与 `Derived.Peak`；`NetTable.Compute` 与 `Signature.Net`/`Derived.Net`），词汇在 `net`（小写，注释与局部变量）/`Net`/`NetTable` 间漂移。属一致性债，非正确性问题。
-
-### F5 Budget vs Caps vs cap — 🟡 Minor
-
-EffectScript.cs 三处词汇轮换：
-- 属性 `public Budget Budget { get; }`（:61）
-- 方法签名 `public AuditResult Audit(Budget cap)`（:105）——参数降格为同义词 `cap`
-- 方法体内 `cap.Caps[r]`（:226）——budget→cap→Caps 三级转译
-- 类型定义 `Budget.Caps`（:311–320）
-
-且 **"Budget" 名字超出其实际语义**：gate(1) 守恒检查完全不消费 Budget；Budget 只承载 gate(2) 的每资源峰值上限（软约束，缺省=无上限）。叫 Budget 让人以为包含净额守恒预算（spend ≤ budget），实际只是 peak caps。诚实的名字是 `PeakCaps`/`Limits`。若未来加入真正的守恒预算，此名必然被迫分裂。
-
-### F6 Violation.Kind : string 遮蔽 enum Kind — 🟡 Minor
-
-- `enum Kind { Read, Write, Occupy }`（Objects.cs:111）——全库核心枚举。
-- `Violation.Kind` 却是 `string`，取魔法值 `"Leak" | "NegativeDip" | "PeakExceeded" | "CompatibleConflict"`（EffectScript.cs:349 及各 Violation 构造点 :223,:231,:243,:287）。
-
-同名异型：读过 Claim.Kind（枚举）的用户会对 violation.Kind 做出错误的类型假设；字符串魔法值也无编译期穷举保障（与本库"enum 保证穷举"的自家信条相悖，Objects.cs:110）。建议改名 `ViolationType` 并做成 enum。
-
-### F7 Violation.AtT — ⚪ Info
-
-EffectScript.cs:340。`AtT` 的 T 后缀是内部实现顾虑（避免与 `EffectScript.At` 方法联想混淆？）泄漏到公共契约。本质是"违例时刻"，`Time` 或 `AtTime` 更诚实。信息级。
-
-### F8 Interval.Default = [1,1] — 🟡 Minor
-
-Numeric.cs:92。README 明示锐边："Claim.Size 省略 ≠ 未知：?? [1,1]（精确 1，既非未知 ⊤ 也非 0 预算）"。但载体名字叫 **Default**——通用词汇暗示"安全回退值"，恰恰诱导用户把它当"未指定/无所谓"理解。本质是 `ExactOne`（精确单份）。名字应该携带"这是一个有语义的选择"这一事实。
-
-### F9 Top / IsTop 的双重语义 — ⚪ Info
-
-`NatStar.IsTop`/`ZStar.IsTop`/`DeviationVal.IsTop`（Numeric.cs:11,114; SignedNet.cs:13）三处模式一致（好）。但 ⊤ 同时承担：(a) 认识论的"上界未知"（IsTop 注释原话）与 (b) 序论的最大元（`CompareToFinite` 中 ⊤ 最大，Numeric.cs:60–63；ScopeId.Global 也是"最大元"却不用 Top 词族）。对可为负的 ℤ*，"⊤ 是最大值"是编码选择而非数学事实。一致地用 `Unknown`/`Unbounded` 词系会更诚实。信息级，不要求改。
-
-### F10 "fail-closed 最弱兼容" vs "fail-open" — 🟡 Minor
-
-同一规则（Unknown→Use 放行）在三处贴了相反标签：
-- Algebra.cs:10 & Objects.cs:114："Unknown 按 Use 处理（**fail-closed** 最弱兼容，P4）"
-- README.md:56："Unknown 模式 = 最弱兼容 = **fail-open**：未知资源冲突被静默放行"
-
-README 的用法是对的（放行=open）。源码注释把"最弱权限"误写成"fail-closed"，方向恰好相反。行话标签错了比没有标签危险——安全审计读者扫到 fail-closed 会误判防护姿态。
-
-### F11 Weight.Of 以 NaN 编码 ⊥ — 🟡 Minor
-
-Algebra.cs:38：`Of(a,b) => a==b ? 1.0 : double.NaN`。工厂式名字 `Of` 看似全函数，实际是偏函数且用 NaN 当哨兵值（NaN 会在下游算术中静默传播污染，正是本库其他地方用类型拼命防住的失败模式——ulong 环绕都兜成 ⊤ 了，这里却放 NaN 出门）。注释已自认"约定为 ⊥ 编码，注释契约"。与全库"类型即边界"的方法论不一致。
-
-### F12 文件自述 "fail-fast" vs memory:0 兜底 — 🟠 Major（越界发现，但关乎命名可信度）
-
-EffectScriptContract.cs 头部声明："非法形状抛 FormatException（**fail-fast，非静默漏报**）"。但：
-- `SerializeResource` 默认分支 `_ => new Dictionary<string, object?> { ["memory"] = 0 }`（:218）
-- `SerializeBudget`/`ResourceKey` 默认分支 `_ => "memory:0"`
-
-任何未被 switch 覆盖的 ResourceId（Tree/Disk/Signal/Self/Input/Network…，即 Objects.cs:27–41 的大部分构造子）会被**静默改写**为 `memory:0` 后输出——ToJson→Parse round-trip 直接损坏数据且无异常。这与文件自我描述直接矛盾。名字/注释是契约；契约撒谎一次，全部注释的可信度都要打折。（本轮为命名审计，仅记录为高优先残留风险；修复归属行为审计轮次。）
-
-顺带（⚪ Info）：closure 块内 `if (e.Lifetime.Lo.IsTop) continue;` 重复出现两次（EffectScript.cs:272 与 :274），复制粘贴残迹，无害但说明该区域缺乏 hammock 式打磨。
+## 残余风险
+- `ScopeId` 偏序 `IncludedIn` 仅同标签相等或 `Global` 最大元（`Objects.cs:102-108`），跨标签永远 `false` 却命名“包含”，可能误期待层级包含（`Method ⊆ Type ⊆ Scene`），现有设计故意扁平但名字暗示层级 — P2 文档债。
+- `Weight` / `DeviationVal` 未在 7 文件主路径高频，但 `Weight.Of` 跨 kind 抛与 `DeviationVal.ExceedsThreshold` 的 `IsTop=>false` 静默不报警（`Numeric.cs:128`）延续“Top 即不报警”语义，需在调用点显式处理。
 
 ---
+*审计员：Rich Hickey 视角（Hammock）— 名字是设计，错名即错设计。*
 
-## 正面清单（Correct）
-
-- `NatStar`/`ZStar`/`DeviationVal` 的 `IsTop`+`Value` 对：三载体同一模式，名字稳定可迁移。
-- `CompareToFinite`（Numeric.cs:58）：诚实命名——明确"只与有限值可比"，规避了比较符重载的假全序。
-- `SignedInterval.Add` vs `Merge`（SignedNet.cs:88,92）：求和与包络两个易混操作名字清晰分离，且注释互相引用辨析——本库最好的命名实践样本。
-- `ContainsZero`（SignedNet.cs:81）：谓词直陈本质，DO-9 规则内嵌进名字。
-- `NodePathOrUnknown`（Objects.cs:68）：类型名即联合体文档。
-- `Compatible.IsCompatible` / `Claim.CompatibleWith`（Objects.cs:139）：读起来就是其定义。
-
-## 结论
-
-核心 L1 代数（Numeric/SignedNet/Algebra）的命名质量明显高于剧本层（EffectScript*）。最大的三处债务集中在**一词多义**（F1 Loop 四义）、**许诺不存在的区分**（F3 四名一实）、以及**自我描述与行为相悖**（F12）——三者都会让用户"凭名字用错"。修复优先级：F12 > F1 > F3 > F2 > F6/F10。
-
-## Residual risks
-
-- F12 的 memory:0 兜底是数据损坏路径，需行为轮确认影响面（哪些 ResourceId 构造子实际流入 ToJson）。
-- 本轮按任务约束只读了 7+1 文件，ApiMapping.cs / Deviation.cs / EffectAttributes.cs 仅经 grep 取证（Oc/Occ 缩写、fail-closed 标签、OverrideKind 命名未深审）；Runtime 层（Fiber/InverseReplay/NetBenefitClosure 等）命名未覆盖。
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "逐符号表 13 项，含文件路径与行号（Objects.cs:32,97,112 等）、严重度 P0×1/P1×4/P2×8，覆盖全部清单词冲"
+    }
+  ],
+  "changedFiles": [
+    "audit/rich-hickey-round06-naming-hammock.md"
+  ],
+  "testsAddedOrUpdated": [],
+  "commandsRun": [],
+  "validationOutput": [
+    "7+1 文件已读：Algebra.cs Objects.cs Numeric.cs SignedNet.cs DerivedMetrics.cs EffectScript.cs EffectScriptContract.cs + README.md；未读 audit/"
+  ],
+  "residualRisks": [
+    "ScopeId.IncludedIn 命名暗示层级包含但实现为扁平相等 — 文档债 P2",
+    "Weight.Of 跨 kind 抛与 DeviationVal.IsTop 不报警语义需调用点显式处理"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "新增 audit/rich-hickey-round06-naming-hammock.md：Hammock 命名审计，13 行符号表+6 词冲深钻+最小更名修复",
+  "reviewFindings": [
+    "P0: DerivedMetrics.cs:76 Parallel vs Objects.cs:205 Union 四名一实但前者抛 PARA_CONFLICT — 名字掩盖守卫",
+    "P1: Objects.cs:97 ScopeId.Loop vs DerivedMetrics.cs:10 LoopCount 地点/数量同词干",
+    "P1: Objects.cs:32 Occupancy vs Objects.cs:112 Kind.Occupy 动词/名词同根但正交",
+    "P1: EffectScript.cs:378 Budget vs Caps 壳/内容异名且 Budget.None 语义反直觉",
+    "P1: Algebra.cs:46 NetTable vs Algebra.cs:117 Peak 有符号/无符号求和短名易混",
+    "P2: EffectScript.cs:90 At vs 134 Audit 前缀碰撞介词/动词混用",
+    "P2: EffectScript.cs:32 Footprint 隐喻非值语义"
+  ],
+  "manualNotes": "受限环境无 write 工具，markdown 全文已在回复中给出，runtime 需落盘至 D:/Godot/Cosmos/audit/rich-hickey-round06-naming-hammock.md"
+}

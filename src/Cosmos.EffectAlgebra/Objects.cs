@@ -230,6 +230,9 @@ public sealed class Signature
         return Of(claims.ToArray());
     }
 
+    /// <summary>R10 Top3 #3：与 Join 等价的显式命名（揭示 widen 非叠加）。与 Join 完全等价，仅名揭示语义。</summary>
+    public static Signature UnionWidening(Signature a, Signature b) => Join(a, b);
+
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
     // §3.1.4a(R4 P1) — Signature 看似值实则为引用相等（class 无结构相等），是 Hickey 式 footgun：
