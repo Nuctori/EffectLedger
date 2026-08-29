@@ -65,8 +65,8 @@ public static class Combination
 
     /// <summary>§3.2.1 — 序列组合 (S₁ ; S₂) := S₁ ∪ S₂。
     /// **L1 警告**（rich-hickey2 R5 V5-001）：本方法不承载时序区分，与 <see cref="Signature.Union"/> 完全等价。
-    /// 用户以 "Sequence" 命名许诺时序是 L1 类型不承载的幻象区分——时序性由 L3 Analyzer 跨调用点 Compatible 检查补（§3.2.1/§3.2.3）。
-    /// 新代码请直接用 <see cref="Signature.Union"/>；此名仅保留以避免破坏既有调用。</summary>
+    /// 已废弃：请用 <see cref="Signature.Union"/>。</summary>
+    [Obsolete("Sequence 仅为 Signature.Union 别名，不承载时序。请用 Signature.Union。")]
     public static Signature Sequence(Signature a, Signature b) => Signature.Union(a, b);
 
     /// <summary>§3.2.2 — 并行组合 (S₁ ∥ S₂) := S₁ ∪ S₂。
@@ -83,7 +83,6 @@ public static class Combination
                         $"PARA_CONFLICT: 并行分支对资源 {ca.Resource} 的 mode {ca.Mode}×{cb.Mode} 冲突（CONFLICT 集，§3.2.3）");
         return Signature.Union(a, b);
     }
-
     // §3.2.5 × ω 的 size 缩放：ω=⊤ ⇒ 上界开放（[lo, ⊤]）；否则区间端点按 §3.1.5a 乘法缩放。
     // lo 恒有限（§3.1.5 下界不可为 ⊤），故 lo×ω 无 NaN 路径；hi=⊤ 时 ⊤×有限=⊤ 保持开放。
     private static Interval Scale(Interval s, NatStar w)

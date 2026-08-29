@@ -127,12 +127,19 @@ public enum Mode { Use, Create, Release, Move, Unknown }
 public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, ScopeId Scope, Interval? Size)
 {
     /// <summary>§3.1.4a 归一化：resource 走 ResourceId.Normalize；size 缺省（null）⇒ Default([1,1])，
-    /// 显式 Exact(0)=[0,0] 与缺省 null 通过可空类型区分，不再被膨胀为 [1,1]（修复零 size 误报泄漏）。</summary>
-    public Claim Normalize() => this with
+    /// 显式 Exact(0)=[0,0] 与缺省 null 通过可空类型区分，不再被膨胀为 [1,1]（修复零 size 误报泄漏）。
+    /// Hickey R1：Read 仅允许 Use/Unknown（读不应携带 Create/Release/Move 生命周期），构造期拒绝而非静默参与 net/peak。
+    /// Write/Occupy 保留 Create/Release/Move（白名单 AddChild/RemoveChild 等显式建模写时创建/释放）。</summary>
+    public Claim Normalize()
     {
-        Resource = ResourceId.Normalize(Resource),
-        Size = Size ?? Interval.Default
-    };
+        if (Kind == Kind.Read && Mode != Mode.Use && Mode != Mode.Unknown)
+            throw new ArgumentException($"非法 Kind×Mode：{Kind}+{Mode}（Read 仅允许 Use/Unknown，读操作不应携带 Create/Release/Move 生命周期）");
+        return this with
+        {
+            Resource = ResourceId.Normalize(Resource),
+            Size = Size ?? Interval.Default
+        };
+    }
 
     /// <summary>§3.2.3 全函数 Compatible 的单元调用（对称）。</summary>
     public bool CompatibleWith(Claim other) => Compatible.IsCompatible(Mode, other.Mode);
@@ -223,12 +230,8 @@ public sealed class Signature
         return Of(claims.ToArray());
     }
 
-    /// <summary>§3.2.4 P2 — MergeBySize 别名：Join 的易读别名（同键 size 求并区间）。</summary>
-    public static Signature MergeBySize(Signature a, Signature b) => Join(a, b);
-
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);
-
     // §3.1.4a(R4 P1) — Signature 看似值实则为引用相等（class 无结构相等），是 Hickey 式 footgun：
     // 两个结构相同的签名不会 == / 不会哈希相等。补结构相等使「值」语义与外观一致（不改任何代数语义）。
     public bool Equals(Signature? other) =>

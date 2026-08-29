@@ -57,13 +57,16 @@ public class LoopCombinationTests
     }
 
     // §3.2.1 — 序列组合 := ∪：Sequence(a,b) 与 Signature.Union(a,b) 三桶结构相等。
+    // §3.2.1 — 序列组合 := ∪：Sequence(a,b) 与 Signature.Union(a,b) 三桶结构相等。
     [Fact]
-    public void Sequence_EqualsUnion() // §3.2.1
+    public void Sequence_EqualsUnion() // §3.2.1 — Sequence 已废弃为 Union 别名（仅保留兼容，验证等价性）
     {
         var a = Signature.Of(new Claim(Kind.Occupy, X, Mode.Use, M, Interval.Exact(1)));
         var b = Signature.Of(new Claim(Kind.Read, new ResourceId.Memory(1), Mode.Use, M, Interval.Exact(1)));
 
+#pragma warning disable CS0618
         var seq = Combination.Sequence(a, b);
+#pragma warning restore CS0618
         var uni = Signature.Union(a, b);
 
         Assert.True(seq.ReadClaims.SetEquals(uni.ReadClaims));

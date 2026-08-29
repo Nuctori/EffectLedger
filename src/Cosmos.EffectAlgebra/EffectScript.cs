@@ -391,8 +391,10 @@ public readonly record struct Budget : IEquatable<Budget>
         Caps = norm.ToImmutable();
     }
 
-    /// <summary>§2.3 — 空预算（所有资源无上限；不可变单例，不可经 IDictionary 强转写入）。</summary>
+    /// <summary>§2.3 — 空预算（所有资源无上限；不可变单例，不可经 IDictionary 强转写入）。等价于显式“无上限”声明（Dean 有条件项的显式化；IsPeakChecked==false 可区分“没查”与“查过全绿”）。</summary>
     public static readonly Budget None = new(ImmutableDictionary<ResourceId, NatStar>.Empty);
+
+    public static Budget Unbounded => None;
 
     /// <summary>rich-hickey2 R3 V3-001 — 值相等：按键值对内容比较，与底座实例身份无关（§2.3；default(Budget).Caps=null 视为空预算）。</summary>
     public bool Equals(Budget other)

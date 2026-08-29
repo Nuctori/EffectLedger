@@ -65,10 +65,10 @@ public static class CosmosEffectConfig
         }
     }
 
-    /// <summary>内置 All 与额外映射合并（Canonical 去重，额外覆盖同 Canonical）。</summary>
-    public static ImmutableArray<ApiMapping> AllWithExtra(string path = "cosmos.effect.json")
+    /// <summary>内置 All 与额外映射合并（Canonical 去重，额外覆盖同 Canonical）。strict=true 时配置错配抛（CI 门）。</summary>
+    public static ImmutableArray<ApiMapping> AllWithExtra(string path = "cosmos.effect.json", bool strict = false)
     {
-        var extra = LoadExtra(path);
+        var extra = LoadExtra(path, strict);
         if (extra.IsDefaultOrEmpty) return GodotApiWhitelist.All;
         var dict = new Dictionary<string, ApiMapping>(StringComparer.Ordinal);
         foreach (var m in GodotApiWhitelist.All) dict[GodotApiWhitelist.Canonical(m.GodotApi)] = m;
