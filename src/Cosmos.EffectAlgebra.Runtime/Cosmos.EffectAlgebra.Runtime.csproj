@@ -1,15 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- 多目标：net10.0（游戏/测试消费）+ net9.0（与 L3 分析器同代 Roslyn，根除 CS8032）。
-         零 Godot 依赖：Godot 交互经 IHost 抽象（§7），本层只含纯逻辑（状态机/拓扑/逆回放/调度/门控判定）。 -->
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <!-- 多目标：net8.0(Godot 4.x) + net9.0(Roslyn) + net10.0(测试/游戏)，零 Godot 依赖经 IHost -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Cosmos.EffectAlgebra.Runtime</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Nuctori</Authors>
+    <Company>Cosmos</Company>
+    <Description>资源效应代价代数 Runtime：Fiber 状态机/依赖图/逆回放/宿主抽象，零 Godot 依赖（经 IHost）。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>effect-algebra;runtime;godot;fiber</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

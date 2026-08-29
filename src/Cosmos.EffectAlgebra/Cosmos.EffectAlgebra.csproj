@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- 多目标：net10.0（游戏/测试消费）+ net9.0（供 L3 分析器引用，分析器以 net9.0 为目标，与 SDK 自带 Roslyn 5.0.0.0 同代，根除 CS8032）。
          两 TFM 共享同一源码；net9.0 仅作为净代数数据/类型层，不触及 Godot。 -->
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
