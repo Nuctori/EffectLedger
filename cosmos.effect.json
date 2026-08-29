@@ -1,0 +1,10 @@
+{
+  "extraMappings": [
+    {
+      "api": "MyPool.Spawn",
+      "claims": [
+        { "kind": "occupy", "resource": { "memory": 1 }, "mode": "create", "scope": { "scene": "Battle" } }
+      ]
+    }
+  ]
+}

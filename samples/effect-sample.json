@@ -1,0 +1,7 @@
+{
+  "events": [
+    { "lifetime": [0, 6], "scope": {"scene": "Battle"}, "footprint": [{ "kind": "occupy", "resource": {"gpu": "tmp"}, "mode": "create", "scope": {"scene": "Battle"}, "size": [256, 256] }] },
+    { "lifetime": [6, 12], "scope": {"scene": "Battle"}, "footprint": [{ "kind": "occupy", "resource": {"gpu": "tmp"}, "mode": "release", "scope": {"scene": "Battle"}, "size": [256, 256] }] }
+  ],
+  "budget": { "gpu:tmp": 600 }
+}

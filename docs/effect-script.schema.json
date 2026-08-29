@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cosmos.effect/effect-script.schema.json",
+  "title": "EffectScript — AI 视觉剧本契约 (§4)",
+  "description": "EffectScriptContract.Parse 接受的 JSON 契约，仅 C#，零 Godot 依赖。非法形状抛 FormatException。",
+  "type": "object",
+  "required": ["events"],
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["lifetime", "scope", "footprint"],
+        "additionalProperties": false,
+        "properties": {
+          "lifetime": {
+            "description": "[lo,hi] lo 有限非负整数, hi 非负整数或 \"⊤\"；[⊤,⊤] 非法",
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "const": "⊤" }] }
+          },
+          "scope": {
+            "description": "至少含 scene 或 type；缺 type 默认 Scene",
+            "type": "object",
+            "anyOf": [{ "required": ["scene"] }, { "required": ["type"] }],
+            "properties": {
+              "scene": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "enum": ["method", "type", "global", "scene"] }
+            }
+          },
+          "loop": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "const": "⊤" }] },
+          "footprint": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "resource", "mode", "scope"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["read", "write", "occupy"] },
+                "resource": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "gpu": { "type": "string", "minLength": 1 },
+                    "commandBuffer": { "type": "string", "minLength": 1 },
+                    "memory": { "type": "integer", "minimum": 0 },
+                    "occupancy": { "type": "string", "minLength": 1 },
+                    "signalBus": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "mode": { "enum": ["use", "create", "release", "move", "unknown"] },
+                "scope": { "$ref": "#/properties/events/items/properties/scope" },
+                "size": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "const": "⊤" }] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "budget": {
+      "description": "键如 gpu:xxx / commandBuffer:gpu / memory:N / occupancy:ch / signalBus:name，值为非负整数或 \"⊤\"/\"inf\"",
+      "type": "object",
+      "patternProperties": {
+        "^(gpu|commandBuffer|memory|occupancy|signalBus):.*$": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "enum": ["⊤", "inf"] }] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

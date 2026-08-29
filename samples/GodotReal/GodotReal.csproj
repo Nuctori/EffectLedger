@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 最小真 Godot C# 消费样板（net8 验证 L1 net8 兼容）。Godot 4.x 真机 SDK 需 net8，此处以 PackageReference 复跑 L2/L3。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NoWarn>RS2008;RS2007</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <!-- Godot 4.x 真机：生产接法为 PackageReference 引用已 pack 的 Analyzer/Generator；
+         直接 ProjectReference 跨 TFM（net8→net9/10）被 SDK 禁止，故本地 net8 样板仅引 L1 验证 net8 兼容；
+         L2/L3 真机闭环由 GodotIntegration(net10) 已验证 CS8032 已根除。 -->
+  </ItemGroup>
+</Project>
