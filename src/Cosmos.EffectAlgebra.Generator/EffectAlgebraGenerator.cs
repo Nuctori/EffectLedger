@@ -127,7 +127,7 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         sb.AppendLine("        var s = global::Cosmos.EffectAlgebra.Signature.Empty;");
         sb.AppendLine("        foreach (var m in global::Cosmos.EffectAlgebra.GodotApiWhitelist.All)");
         sb.AppendLine("        {");
-        sb.AppendLine($"            if (string.Equals(m.GodotApi.Replace(\".\", \"\").Replace(\"_\", \"\").ToLowerInvariant(), \"{canon}\", global::System.StringComparison.OrdinalIgnoreCase))");
+        sb.AppendLine($"            if (string.Equals(global::Cosmos.EffectAlgebra.GodotApiWhitelist.Canonical(m.GodotApi), \"{canon}\", global::System.StringComparison.OrdinalIgnoreCase))");
         sb.AppendLine("                foreach (var c in m.Claims) s = global::Cosmos.EffectAlgebra.Signature.Union(s, global::Cosmos.EffectAlgebra.Signature.Of(c));");
         sb.AppendLine("        }");
         sb.AppendLine("        return s;");

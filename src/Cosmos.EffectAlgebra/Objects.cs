@@ -147,7 +147,7 @@ public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, S
 
 /// <summary>
 /// §3.1.4b — Signature 按 kind 分三不相交桶（DO-7 量纲隔离）。
-/// 跨桶聚合须显式 <see cref="Weight"/>，否则 KIND_MIX（L3 诊断，§3.3.2b）。
+/// 跨桶聚合须 Kind 过滤或 L3 EAA0303（L3 诊断，§3.3.2b）。
 /// 类型暴露三桶；运行时集异质使跨桶聚合无法纯类型静态护栏，故由 Analyzer 补（注释契约）。
 /// </summary>
 public sealed class Signature

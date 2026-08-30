@@ -1,5 +1,6 @@
 // ApiMapping.cs — PDR §7（§7.1–§7.10）实现：Godot API → Claim 白名单；§8.1 release-class。LANDING_PLAN §3：L1 数据层（零 Godot）。
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace Cosmos.EffectAlgebra;
 
@@ -202,7 +203,7 @@ public static class ReleaseClass
         "queue_free", "free", "remove_child", "disconnect", "remove_from_group", "cancel_free", "free_children_in_group");
 
     /// <summary>§8.1 — 判定 API（小写）是否属于 release-class；是则映射层必须 emit release/occupy-release。</summary>
-    public static bool IsRelease(string api) => !string.IsNullOrEmpty(api) && Names.Contains(api.ToLowerInvariant());
+    public static bool IsRelease(string api) => !string.IsNullOrEmpty(api) && Names.Select(GodotApiWhitelist.Canonical).Contains(GodotApiWhitelist.Canonical(api));
 
     /// <summary>§8.1 — 全部 release-class 名（不可变数组视图）。</summary>
     public static ImmutableArray<string> All => Names.ToImmutableArray();
