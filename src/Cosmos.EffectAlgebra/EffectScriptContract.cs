@@ -1,4 +1,6 @@
 // EffectScriptContract.cs — EFFECT_SCRIPT.md §4 AI 数据契约（L1 增量，零 Godot 依赖）。
+// 契约 scope 仅 4 型：Scene/Method/Type/Global（可序列化）；Shell/Loop/Conditional/Async 为 L1 内部作用域（Analyzer/Generator），
+// 不经此 JSON 契约——遇之抛“不可序列化 scope”（意向 loud-fail，R10 A 收口，见 docs/effect-script.schema.json）。
 // LANDING_PLAN 角色：把「AI 看参考图/视频 → 写视觉剧本 JSON」这一外部产物，映射为内部 L1 EffectScript 数据。
 // 数学全部在 EffectScript.cs（At/Audit）；本文件只做 JSON ⇄ L1 的类型安全搬运，不重算代数。
 // 类型即边界：序列化/反序列化逐字段校验 kind/mode/resource/scope 形状，非法形状抛 FormatException（fail-fast，非静默漏报）。

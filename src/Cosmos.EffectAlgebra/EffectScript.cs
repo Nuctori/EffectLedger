@@ -236,9 +236,8 @@ public sealed partial class EffectScript
                         // 判定：当前既无 top 也无 peakSum 计数>0 且 grp 中无该资源的活跃条目 ⇒ 可视为"当前无活跃峰值贡献者"
                         bool hasActivePeak = (topCount.TryGetValue(r, out var tc2) && tc2 > 0)
                             || (peakSum.TryGetValue(r, out var ps) && !ps.Equals(NatStar.Of(0)));
-                        bool hasActiveGrp = grp.Values.Any(h => h.Count > 0); // 简化：grp 有任意活跃则保留
-                        _ = hasActiveGrp; // 未来可细化为按资源分组的存活检查
-                        if (!hasActivePeak && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
+                        bool hasActiveGrp = grp.Any(kv => kv.Key.Item1.Equals(r) && kv.Value.Count > 0); // 按资源细化（R10 O10）
+                        if (!hasActivePeak && !hasActiveGrp && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
                         {
                             peakScope.Remove(r);
                         }
@@ -365,11 +364,6 @@ public sealed partial class EffectScript
     private static ZStar ToZ(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(unchecked((long)n.Value));
     private static ZStar Negate(NatStar n) => (n.IsTop || n.Value > long.MaxValue) ? ZStar.Top : ZStar.Of(-unchecked((long)n.Value));
 }
-
-/// <summary>§3 / PR2 — 三门抽取：可独立开关与测试。Audit = concat(gates)。</summary>
-public interface INetGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<ResourceId, SignedInterval> net, System.Collections.Generic.IReadOnlyDictionary<ResourceId, (ScopeId scope, int ei)> scopes, NatStar t); }
-public interface IPeakGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<ResourceId, NatStar> peakSum, System.Collections.Generic.IReadOnlyDictionary<ResourceId, int> topCount, System.Collections.Generic.IReadOnlyDictionary<ResourceId, (ScopeId scope, int ei)> scopes, System.Collections.Generic.IReadOnlyDictionary<ResourceId, NatStar> caps, System.Collections.Generic.HashSet<ResourceId> reported, NatStar t); }
-public interface ICompatGate { System.Collections.Generic.IReadOnlyList<Violation> Check(System.Collections.Generic.IReadOnlyDictionary<(ResourceId, ScopeId, int), System.Collections.Generic.HashSet<int>> grp, NatStar t); }
 
 /// <summary>§2.3 — 峰值预算壳（软约束）。缺省 = 该资源无上限（⊤）。审计时 Peak ≤ Caps[r]，超限报 PeakExceeded。
 /// 未设 cap（默认 ⊤）= 通过；显式有限 cap = 拒绝常驻资源并发（用户主动限制，非 bug，修 OPEN-4）。

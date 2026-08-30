@@ -27,17 +27,8 @@ public static class Compatible
         return false; // CONFLICT 集：create+create / move+move / release+release
     }
 }
-
 /// <summary>
-/// §3.3.2b — weight: Kind × Kind → ℝ ∪ {⊥}。⊥ 表示跨 kind 无定义 ⇒ 聚合须抛 KIND_MIX（L3）。
-/// 类型表达为 partial 函数：同 kind ⇒ 1.0；跨 kind ⇒ 抛 InvalidOperationException（非 NaN 毒值）。
-/// </summary>
-public static class Weight // §3.3.2b weight: Kind × Kind → ℝ ∪ {⊥}
-{
-    /// <summary>§3.3.2b — 跨 kind 未定义 ⇒ 抛（fail-fast），非返回 NaN。</summary>
-    public static double Of(Kind a, Kind b) => a == b ? 1.0 : throw new InvalidOperationException($"KIND_MIX: 跨 kind 权重未定义 {a}×{b}（需 L3 报错）");
-}
-
+/// §3.3.1 — net(S, scope)：按资源分组，有符号 size 求和（create/release 抵消）。
 /// <summary>
 /// §3.3.1 — net(S, scope)：按资源分组，有符号 size 求和（create/release 抵消）。
 /// 仅含 occupy 桶（c.kind == Occupy）的 Claim（read/write 不进 net 守恒，§3.3.1 量纲隔离）；且仅含 ⊆* 过滤的 Claim。

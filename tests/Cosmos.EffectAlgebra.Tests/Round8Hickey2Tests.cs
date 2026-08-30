@@ -41,14 +41,15 @@ public class Round8Hickey2Tests
         Assert.True(peak.Value > cap.Caps[new ResourceId.Gpu(new Rid("r"))].Value);
     }
 
-    // ── D08-003：NaN 毒值彻底缺席——NatStar 永远不 NaN，跨 kind weight 抛而非返回 NaN（R8：类型层消除 NaN） ──
+    // ── D08-003：NaN 毒值彻底缺席——NatStar 永远不 NaN，量纲隔离靠 Kind 过滤（R8：类型层消除 NaN，已删 Weight） ──
     [Fact]
     public void NoNaN_PeakOfMismatchedKinds_ThrowsNotNaN()
     {
-        // Weight.Of 跨 kind 抛 InvalidOperationException（非 NaN），调用方 fail-fast
-        Assert.Throws<System.InvalidOperationException>(() => Weight.Of(Kind.Occupy, Kind.Read));
-        // NatStar 运算不产 NaN：⊤×有限=⊤，有限×有限=有限，端点 CompareToFinite 无 NaN 路径
-        Assert.Equal((ulong)0, NatStar.Top.Value); // ⊤ 内部值恒 0（ulong 域，永不 NaN）
+        // 量纲隔离在 NetTable/Peak 层：if(Kind!=Occupy) continue，Weight 类已删
+        var gpu = new ResourceId.Gpu(new Rid("r")); var sc = new ScopeId.Scene("A");
+        var sig = Signature.Of(new Claim(Kind.Write, gpu, Mode.Use, sc, Interval.Exact(10)));
+        Assert.Equal(NatStar.Of(0), Peak.Compute(sig, sc));
+        Assert.Equal((ulong)0, NatStar.Top.Value);
         var fin = NatStar.Of(3) * NatStar.Of(4);
         Assert.Equal(NatStar.Of(12), fin);
         Assert.False(double.IsNaN((double)fin.Value));
