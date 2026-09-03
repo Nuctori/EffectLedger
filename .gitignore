@@ -1,9 +1,13 @@
 # Build artifacts
 bin/
 obj/
+*.binlog
 *.user
 *.suo
 .vs/
+
+# Tool caches
+.ruff_cache/
 
 # NuGet
 *.nupkg
