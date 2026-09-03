@@ -62,17 +62,22 @@ public sealed class Round2AdversarialTests
     [Fact]
     public async Task BUG_A_FullyQualifiedEffectOverride_NotMisReportedAsA3()
     {
+        // A2-15（生产审计批4 重_ARM）：Sample 迁入 Godot.Shapes——全局命名空间下调用点被类型门拦截，
+        // EAA0303 恒不存在 ⇒ DoesNotContain 恒真（假覆盖）。过门后本测试才真正验证 override 识别。
         const string source = @"
 using Cosmos.EffectAlgebra;
-public class Sample
+namespace Godot.Shapes
 {
-    public void Connect(object s, object c) { }
-    public void IsConnected(object s) { }
-    [Cosmos.EffectAlgebra.EffectOverride(""intent: paired signal read+write"")]
-    public void SignalMixWithQualifiedOverride()
+    public class Sample
     {
-        Connect(new object(), new object());
-        IsConnected(new object());
+        public void Connect(object s, object c) { }
+        public void IsConnected(object s) { }
+        [Cosmos.EffectAlgebra.EffectOverride(""intent: paired signal read+write"")]
+        public void SignalMixWithQualifiedOverride()
+        {
+            Connect(new object(), new object());
+            IsConnected(new object());
+        }
     }
 }";
         var diags = await RunAnalyzer(source);
@@ -83,17 +88,21 @@ public class Sample
     [Fact]
     public async Task BUG_A_GlobalQualifiedEffectOverride_NotMisReportedAsA3()
     {
+        // A2-15：同上，过类型门（Godot.Shapes）后才真正验证 global:: 形态的 override 识别。
         const string source = @"
 using Cosmos.EffectAlgebra;
-public class Sample
+namespace Godot.Shapes
 {
-    public void Connect(object s, object c) { }
-    public void IsConnected(object s) { }
-    [global::Cosmos.EffectAlgebra.EffectOverride(""intent: paired signal read+write"")]
-    public void SignalMixWithGlobalOverride()
+    public class Sample
     {
-        Connect(new object(), new object());
-        IsConnected(new object());
+        public void Connect(object s, object c) { }
+        public void IsConnected(object s) { }
+        [global::Cosmos.EffectAlgebra.EffectOverride(""intent: paired signal read+write"")]
+        public void SignalMixWithGlobalOverride()
+        {
+            Connect(new object(), new object());
+            IsConnected(new object());
+        }
     }
 }";
         var diags = await RunAnalyzer(source);
@@ -149,17 +158,19 @@ public class Sample
     [Fact]
     public async Task BUG_D_ReleaseClassOnlyCall_SuppressesUnrelatedLeak()
     {
+        // A2-15（生产审计批4 重_ARM）：释放类调用改经 Godot.Shapes 接收者（Disconnect 过类型门、计入 release-class）——
+        // 此前 RemoveFromGroup 在全局命名空间被类型门拦截 ⇒ release-class 计数为 0，blanket 抑制回归也不会让本测试变红。
+        // Disconnect 只释放 Callback，不释放 Tree：若有人重新引入「任一 release-class 即整体豁免」，Tree 泄漏被吞 ⇒ 本测试红。
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } public void Disconnect(object s, object c) { } } }
 public class Sample
 {
     private readonly Godot.Shapes.Node3D _n = new();
-    public void RemoveFromGroup(object g) { }
     public void M()
     {
-        RemoveFromGroup(new object());   // §8.1 release-class：仅释放组隶属，不释放 Tree
-        _n.AddChild(new object());       // §7 acquire Tree(node.id)，无任何对应 Tree release
+        _n.AddChild(new object());                   // §7 acquire Tree(node.id)，无任何对应 Tree release
+        _n.Disconnect(new object(), new object());   // §8.1 release-class：仅释放 Callback，不释放 Tree
     }
 }";
         var diags = await RunAnalyzer(source);

@@ -106,6 +106,25 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     // §3.3.1 / §14.3 — 白名单键归一化单一真源（R2 #3）：统一走 L1 GodotApiWhitelist.Canonical，避免与 Generator 各写一份漂移。
     private static string Canonical(string name) => GodotApiWhitelist.Canonical(name);
 
+    // A2-07（生产审计批5）：白名单 canonical 键预计算（静态只读 ⇒ 线程安全，进程内一次）——
+    // 此前每调用点对全白名单逐条重新 Canonical（小写+2×Replace 字符串分配 ×2 轮扫描），O(调用点×白名单)。
+    // ByFullCanon 键唯一性由 GodotApiWhitelist.All 的启动期 ValidateNoCollisions 保证；
+    // ByMethodCanon 同键碰撞取首个（与旧线性扫描的返回序一致）。
+    private static readonly ImmutableDictionary<string, ApiMapping> ByFullCanon =
+        GodotApiWhitelist.All.ToImmutableDictionary(m => GodotApiWhitelist.Canonical(m.GodotApi));
+    private static readonly ImmutableDictionary<string, ApiMapping> ByMethodCanon =
+        GodotApiWhitelist.All
+            .GroupBy(m => GodotApiWhitelist.Canonical(m.GodotApi.Split('.').Last()))
+            .ToImmutableDictionary(g => g.Key, g => g.First());
+
+    // A2-07：廉价语法预检——裸方法名/全名 canonical 不在任何白名单键集 ⇒ 不付 GetSymbolInfo 语义查询成本。
+    // 绝大多数调用（ToString/LINQ/业务方法）与白名单无关，此项把大方案上的分析时延从 O(调用点×语义查询) 压回 O(调用点×字符串)。
+    private static bool MaybeWhitelisted(InvocationExpressionSyntax inv)
+    {
+        if (ByMethodCanon.ContainsKey(Canonical(MethodName(inv)))) return true;
+        return ByFullCanon.ContainsKey(Canonical(RawName(inv)));
+    }
+
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
@@ -173,6 +192,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 
         foreach (var inv in invocations)
         {
+            if (!MaybeWhitelisted(inv)) continue; // A2-07：语法预检未命中 ⇒ 跳过语义查询
             var canon = Canonical(RawName(inv));
             var m = FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null)
@@ -224,6 +244,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         int invIndex = 0;
         foreach (var inv in invocations)
         {
+            if (!MaybeWhitelisted(inv)) { invIndex++; continue; } // A2-07：语法预检未命中 ⇒ 跳过语义查询
             var m = FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null) { invIndex++; continue; }
 
@@ -320,6 +341,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     // 用户自有 Load()/Connect() 等撞名方法不再被裸名定罪。判定规则：
     //   符号可解析 ⇒ 命名空间为 "Godot" 或 "Godot." 前缀才允许回退（真 Godot = namespace Godot；仓内 stub = Godot.Shapes）；
     //   符号不可解析（无引用的裸语法编译）⇒ 保留旧回退行为（召回优先，诚实记录启发式边界）。
+    // A2-07（生产审计批5）：canonical 匹配走预计算字典（键唯一性由白名单启动期 ValidateNoCollisions 保证；
+    // ByMethodCanon 同键碰撞取首个，与旧线性扫描返回序一致）。
     private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv, SemanticModel model)
     {
         // P0-2：门控前置——裸标识符调用的 RawName 即方法名，若不先过 Godot 类型门，
@@ -327,19 +350,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         // 符号不可解析（无引用的裸语法编译）⇒ IsGodotTypedInvocation 返回 true，保留旧回退行为（召回优先）。
         if (!IsGodotTypedInvocation(inv, model)) return null;
 
-        var full = Canonical(RawName(inv));
-        foreach (var m in GodotApiWhitelist.All)
-        {
-            var c = Canonical(m.GodotApi);
-            if (c == full) return m;
-        }
-        var method = Canonical(MethodName(inv));
-        foreach (var m in GodotApiWhitelist.All)
-        {
-            var c = Canonical(m.GodotApi);
-            if (c == method) return m;
-        }
-        return null;
+        return ByFullCanon.TryGetValue(Canonical(RawName(inv)), out var fullMatch) ? fullMatch
+            : ByMethodCanon.TryGetValue(Canonical(MethodName(inv)), out var methodMatch) ? methodMatch
+            : null;
     }
 
     // P0-2 — 接收者类型是否可判定为 Godot 类型。
