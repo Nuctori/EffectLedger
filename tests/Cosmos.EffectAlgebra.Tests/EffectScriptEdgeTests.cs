@@ -598,7 +598,9 @@ public class EffectScriptEdgeTests
         }
         var samplePoints = new List<NatStar>();
         if (anyFinite) foreach (var v in endpoints.OrderBy(x => x)) samplePoints.Add(NatStar.Of(v));
-        if (anyOpenEnd) samplePoints.Add(NatStar.Of(maxFinite + 1));
+        // A1-10（生产审计批1）：与生产侧同守卫——maxFinite==ulong.MaxValue 且开尾时 maxFinite+1 回绕为 0，
+        // 产出 t=0 幽灵采样（生产代码 R2-003 已修，替身曾未同步；替身是「两份实现靠测试钉等价」的一极，不得自带缺陷）。
+        if (anyOpenEnd && maxFinite != ulong.MaxValue) samplePoints.Add(NatStar.Of(maxFinite + 1));
         if (samplePoints.Count == 0) samplePoints.Add(NatStar.Of(0));
         var closureT = anyFinite ? NatStar.Of(maxFinite) : NatStar.Of(0);
 
@@ -687,14 +689,17 @@ public class EffectScriptEdgeTests
                     violations.Add(new Violation(t, kv.Key, sc2, "PeakExceeded", ""));
                 }
             }
-            // gate(3) 兼容（逐点全算，两两枚举，与原审计一致）
+            // gate(3) 兼容（逐点全算，两两枚举，与原审计一致）。
+            // A1-04（生产审计批1）同步：与主 Audit gate(3) 同为全桶（read/write/occupy）——只扫 occupy 会让
+            // write create×create 假绿；等价钉的两极必须同口径。
             var groups = new Dictionary<(ResourceId, ScopeId), List<(int, Mode)>>();
             for (int ei = 0; ei < s.Events.Length; ei++)
             {
                 var e = s.Events[ei];
                 if (!Alive(e.Lifetime, t)) continue;
-                var looped = Combination.Loop(e.Footprint, e.Loop, e.Scope).OccupyClaims;
-                foreach (var c in looped)
+                var looped = Combination.Loop(e.Footprint, e.Loop, e.Scope);
+                var allClaims = looped.ReadClaims.Concat(looped.WriteClaims).Concat(looped.OccupyClaims);
+                foreach (var c in allClaims)
                 {
                     var key = (ResourceId.Normalize(c.Resource), c.Scope);
                     if (!groups.TryGetValue(key, out var list)) groups[key] = list = new();
@@ -767,6 +772,18 @@ public class EffectScriptEdgeTests
             var rel = Ev(Interval.Exact(0), Gpu("m"), Mode.Release, Scene("S"), Interval.Exact(1));
             var cr = Ev(Interval.Exact(10), Gpu("m"), Mode.Create, Scene("S"), Interval.Exact(1));
             shapes.Add(new EffectScript(ImmutableArray.Create(rel, cr)));
+        }
+        // ⑤ A1-04（生产审计批1）：write 桶冲突形状——gate(3) 全桶化后两极必须等价（write create×create + 与 occupy 混合）。
+        {
+            var w1 = new EffectEvent(new Interval(NatStar.Of(0), NatStar.Of(50)), Scene("S"),
+                Signature.Of(new Claim(Kind.Write, Gpu("w"), Mode.Create, Scene("S"), Interval.Exact(1)).Normalize()), LoopCount.Of(1));
+            var w2 = new EffectEvent(new Interval(NatStar.Of(20), NatStar.Of(80)), Scene("S"),
+                Signature.Of(new Claim(Kind.Write, Gpu("w"), Mode.Create, Scene("S"), Interval.Exact(1)).Normalize()), LoopCount.Of(1));
+            var wr = new EffectEvent(new Interval(NatStar.Of(0), NatStar.Of(80)), Scene("S"),
+                Signature.Of(new Claim(Kind.Write, Gpu("w"), Mode.Release, Scene("S"), Interval.Exact(1)).Normalize()), LoopCount.Of(1));
+            var rd = new EffectEvent(new Interval(NatStar.Of(0), NatStar.Of(80)), Scene("S"),
+                Signature.Of(new Claim(Kind.Read, Gpu("w"), Mode.Use, Scene("S"), Interval.Exact(1)).Normalize()), LoopCount.Of(1));
+            shapes.Add(new EffectScript(ImmutableArray.Create(w1, w2, wr, rd)));
         }
         foreach (var s in shapes)
             Assert.Equal(ViolationKeys(ReferenceAudit(s, Budget.None)), ViolationKeys(s.Audit(Budget.None)));

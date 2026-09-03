@@ -106,15 +106,36 @@ public static class EffectScriptContract
         throw new FormatException($"{layer}: 须为 [lo,hi] 数组（hi 可为 \"⊤\" 表示∞）");
     }
 
-    // hi="⊤" 或数字字符串；lo 必须有限。
+    // A1-01（生产审计批1）：size 的 ⊤ 规则与 lifetime 分离——[⊤,⊤] 是 Interval 构造子明文允许的
+    // 「未知区间」（Numeric.cs §3.1.5），CosmosEffectConfig 同样允许；此前复用 ParseInterval 把
+    // lifetime 的「lo 不可 ⊤」错套到 size 上，导致合法 claim 经 ToJson 导出后 Parse 必炸（往返破裂）。
+    // [⊤,x]（x 有限）仍与 Interval 构造子同界拒绝。
+    static Interval ParseSizeInterval(JsonElement el, string layer)
+    {
+        if (el.ValueKind == JsonValueKind.Array)
+        {
+            var items = el.EnumerateArray().ToArray();
+            if (items.Length != 2) throw new FormatException($"{layer}: size 数组须 [lo,hi]");
+            var lo = ParseTop(items[0], $"{layer}.lo");
+            var hi = ParseTop(items[1], $"{layer}.hi");
+            if (lo.IsTop && !hi.IsTop)
+                throw new FormatException($"{layer}: [⊤,{hi}] 非法（下界 ⊤ 而上界有限；[⊤,⊤] 表示未知区间，合法）");
+            try { return new Interval(lo, hi); }
+            catch (ArgumentException ex) { throw new FormatException($"{layer}: {ex.Message}", ex); }
+        }
+        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（端点可为数字或 \"⊤\"）");
+    }
+
+    // hi="⊤" 或数字字符串；lo 必须有限。A1-07（生产审计批1）：接受 "inf" 别名（与 ParseBudget 单一真源——README 承诺 lifetime/loop/budget 三处均认 "⊤"/"inf" 双形式）。
+    static bool IsTopAlias(string? s) => s == "⊤" || s == "inf";
     static NatStar ParseTop(JsonElement el, string layer = "lifetime")
     {
-        if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return NatStar.Top;
+        if (el.ValueKind == JsonValueKind.String && IsTopAlias(el.GetString())) return NatStar.Top;
         // rich-hickey2 R2-006：负数/小数等非 UInt64 数字 ⇒ 契约 FormatException，不漏 BCL 异常。
         if (el.ValueKind == JsonValueKind.Number)
             return el.TryGetUInt64(out var n) ? NatStar.Of(n)
-                : throw new FormatException($"{layer}: 端点须为非负整数或 \"⊤\"");
-        throw new FormatException("lifetime 端点须为数字或 \"⊤\"");
+                : throw new FormatException($"{layer}: 端点须为非负整数或 \"⊤\"/\"inf\"");
+        throw new FormatException($"{layer}: 端点须为数字或 \"⊤\"/\"inf\"");
     }
 
     static ScopeId ParseScope(JsonElement el, string layer = "scope")
@@ -144,16 +165,17 @@ public static class EffectScriptContract
 
     static LoopCount ParseLoop(JsonElement el, string layer = "loop")
     {
-        if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return LoopCount.Top;
+        // A1-07：与 ParseTop 同型接受 "inf" 别名（单一真源 IsTopAlias）。
+        if (el.ValueKind == JsonValueKind.String && IsTopAlias(el.GetString())) return LoopCount.Top;
         // rich-hickey2 R4-002：TryGetUInt64 守 -1/1.5 ⇒ 契约 FormatException（与 ParseTop/ParseBudget 单一真源）。
         if (el.ValueKind == JsonValueKind.Number)
         {
             if (!el.TryGetUInt64(out var v))
-                throw new FormatException($"{layer}: 须为非负整数或 \"⊤\"");
-            if (v == 0) throw new FormatException($"{layer}: 必须 ≥1（0 无意义）或 \"⊤\"");
+                throw new FormatException($"{layer}: 须为非负整数或 \"⊤\"/\"inf\"");
+            if (v == 0) throw new FormatException($"{layer}: 必须 ≥1（0 无意义）或 \"⊤\"/\"inf\"");
             return LoopCount.Of(v);
         }
-        throw new FormatException($"{layer}: 须为数字或 \"⊤\"");
+        throw new FormatException($"{layer}: 须为数字或 \"⊤\"/\"inf\"");
     }
 
     static Signature ParseFootprint(JsonElement el, string layer = "footprint", ScopeId? eventScope = null)
@@ -192,7 +214,7 @@ public static class EffectScriptContract
         var res = ParseResource(Require(c, "resource", layer), $"{layer}.resource");
         var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
         var scope = c.TryGetProperty("scope", out var scEl) ? ParseScope(scEl, $"{layer}.scope") : (eventScope ?? throw new FormatException($"{layer}: 缺少 scope （且无 event scope 可继承）"));
-        var size = c.TryGetProperty("size", out var sz) ? ParseInterval(sz, $"{layer}.size") : Interval.Default;
+        var size = c.TryGetProperty("size", out var sz) ? ParseSizeInterval(sz, $"{layer}.size") : Interval.Default;
         return new Claim(kind, res, mode, scope, size).Normalize();
     }
 
@@ -236,7 +258,7 @@ public static class EffectScriptContract
             if (prop.Value.ValueKind == JsonValueKind.String)
             {
                 var s = prop.Value.GetString();
-                if (s == "⊤" || s == "inf") { dict[r] = NatStar.Top; continue; }
+                if (IsTopAlias(s)) { dict[r] = NatStar.Top; continue; }
                 throw new FormatException($"budget[\"{prop.Name}\"] 字符串值仅接受 \"⊤\" 或 \"inf\"（表示无上限），实际 \"{s}\"");
             }
             // rich-hickey2 R2-006：非数字非"⊤"字符串值，或负数/小数 ⇒ FormatException（原 GetUInt64() 漏 BCL 异常）。
@@ -250,14 +272,30 @@ public static class EffectScriptContract
 
     static ResourceId ParseResourceKey(string key) => key switch
     {
-        var k when k.StartsWith("gpu:", StringComparison.Ordinal) => new ResourceId.Gpu(new Rid(k["gpu:".Length..])),
-        var k when k.StartsWith("commandBuffer:", StringComparison.Ordinal) => new ResourceId.CommandBuffer(k["commandBuffer:".Length..]),
-        var k when k.StartsWith("memory:", StringComparison.Ordinal) => new ResourceId.Memory(k["memory:".Length..].Length > 0 ? ulong.Parse(k["memory:".Length..], CultureInfo.InvariantCulture) : 0),
-        var k when k.StartsWith("occupancy:", StringComparison.Ordinal) => new ResourceId.Occupancy(k["occupancy:".Length..]),
-        var k when k.StartsWith("signalBus:", StringComparison.Ordinal) => new ResourceId.SignalBus(new StringName(k["signalBus:".Length..])),
-        var k when k.StartsWith("custom:", StringComparison.Ordinal) => new ResourceId.Custom(k["custom:".Length..]),
+        // A1-12（生产审计批1）：字符串型 id 拒绝空串（"gpu:" ⇒ Gpu("") 是永不匹配 claim 的幽灵预算条目，
+        // 却照常虚增 CapsChecked 制造"已查"假象）——与 claim 侧 ReqStr 同口径。
+        var k when k.StartsWith("gpu:", StringComparison.Ordinal) => new ResourceId.Gpu(new Rid(NonEmptyId(k["gpu:".Length..], key))),
+        var k when k.StartsWith("commandBuffer:", StringComparison.Ordinal) => new ResourceId.CommandBuffer(NonEmptyId(k["commandBuffer:".Length..], key)),
+        // A1-06（生产审计批1）：memory 段 TryParse 守溢出——20 位以上数字此前抛 OverflowException（ArithmeticException 族），
+        // 漏出 catch(FormatException) 方言；"memory:" 空段保留原 Memory(0) 语义（与 claim 侧 {"memory":0} 可匹配，非幽灵条目）。
+        var k when k.StartsWith("memory:", StringComparison.Ordinal) => ParseMemoryKey(k["memory:".Length..], key),
+        var k when k.StartsWith("occupancy:", StringComparison.Ordinal) => new ResourceId.Occupancy(NonEmptyId(k["occupancy:".Length..], key)),
+        var k when k.StartsWith("signalBus:", StringComparison.Ordinal) => new ResourceId.SignalBus(new StringName(NonEmptyId(k["signalBus:".Length..], key))),
+        var k when k.StartsWith("custom:", StringComparison.Ordinal) => new ResourceId.Custom(NonEmptyId(k["custom:".Length..], key)),
         _ => throw new FormatException($"未知 budget 键: {key}")
     };
+
+    static string NonEmptyId(string id, string key) => string.IsNullOrEmpty(id)
+        ? throw new FormatException($"budget 键 \"{key}\" 资源 id 不可为空（形如 gpu:<name>；空 id 永不匹配任何 claim）")
+        : id;
+
+    static ResourceId.Memory ParseMemoryKey(string suffix, string key)
+    {
+        if (suffix.Length == 0) return new ResourceId.Memory(0);
+        if (!ulong.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var uid))
+            throw new FormatException($"budget 键 \"{key}\" memory 段须为非负整数（实际 \"{suffix}\"）");
+        return new ResourceId.Memory(uid);
+    }
 
     // ── 序列化（round-trip） ──
     static object SerializeEvent(EffectEvent e) => new Dictionary<string, object?>

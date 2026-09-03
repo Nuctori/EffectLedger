@@ -46,6 +46,10 @@ public readonly record struct EffectEvent
         // 会让 Audit 除法 DivideByZero / 闭包路径规模缩放为 [0,0] 致 Leak 误报。构造期拒绝，一处收口覆盖全部消费路径（R5 V5-002：以 IsValid 派生替散落判定）。
         if (!loop.IsValid)
             throw new ArgumentException("EffectEvent loop 须 ≥1 或 ⊤（default(LoopCount) 非法；用 LoopCount.Of(n≥1) 或 LoopCount.Top）", nameof(loop));
+        // A1-02①（生产审计批1）：Footprint/Scope 为引用类型字段，显式传 null 能过编译——
+        // 延后到 Audit 才 NRE 会把错误源头藏进调用栈深处，构造期即拒绝。
+        if (footprint is null) throw new ArgumentNullException(nameof(footprint));
+        if (scope is null) throw new ArgumentNullException(nameof(scope));
         Lifetime = lifetime;
         Scope = scope;
         Footprint = footprint;
@@ -80,6 +84,17 @@ public sealed partial class EffectScript
     public EffectScript(IEnumerable<EffectEvent> events, Budget budget = default)
         : this(events.ToImmutableArray(), budget) { }
 
+    // A1-02②（生产审计批1）：default(EffectEvent) 经 ImmutableArray.Create(default, ...) 等惯用法绕过构造期守卫
+    // （readonly record struct 的 default 不调用构造子），非法事件延后消费会变成 NRE（Footprint null）或
+    // 静默 [0,0] 缩放吞掉 Leak（假绿）。消费侧 loud 复查：At/Audit 入口统一拦截，带 events[i] 定位。
+    static void ValidateEvent(in EffectEvent e, int index)
+    {
+        if (e.Footprint is null || e.Scope is null || !e.Loop.IsValid || e.Lifetime.Lo.IsTop)
+            throw new ArgumentException(
+                $"events[{index}] 含非法字段（default(EffectEvent) 或旁路构造？）：Footprint/Scope 不可为 null，Loop 须 ≥1 或 ⊤，Lifetime.Lo 不可为 ⊤",
+                "events");
+    }
+
     /// <summary>
     /// §2.2 / §3 — At(t)：t 时刻屏幕总签名 = 所有 Lifetime∋t 的 Event 各取
     /// <see cref="Combination.Loop(Footprint, Loop, Scope)"/>（§3.2.5，loopScope=Event.Scope，修 OPEN-1）后 Union（§3.2.1 半格并）。
@@ -89,6 +104,7 @@ public sealed partial class EffectScript
     /// </summary>
     public Signature At(NatStar t)
     {
+        for (int i = 0; i < Events.Length; i++) ValidateEvent(Events[i], i);
         var acc = Signature.Empty;
         foreach (var e in Events)
         {
@@ -134,6 +150,9 @@ public sealed partial class EffectScript
     public AuditResult Audit(Budget cap)
     {
         var violations = new List<Violation>();
+
+        // A1-02②（生产审计批1）：消费侧 loud 复查（default 旁路守卫，与 At 同源）。
+        for (int i = 0; i < Events.Length; i++) ValidateEvent(Events[i], i);
 
         // R10-F1：default(Budget).Caps == null（struct 默认值绕过构造函数归一）⇒ 归一为无上限，不 NRE。
         if (cap.Caps is null) cap = Budget.None;
@@ -188,8 +207,12 @@ public sealed partial class EffectScript
                     net[r] = net.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
-            // gate(2) peak + gate(3) grp：enter(+) / exit(−)。
-            foreach (var c in e.Footprint.OccupyClaims)
+            // gate(3) grp 先于 gate(2) peak 处理（A1-04，生产审计批1）：exit 时 peakScope 清理（S06-004）要读
+            // hasActiveGrp——grp 必须先移除本事件，否则陈旧组员让清理被跳过、峰值归因退回旧 scope（Round6 回归）。
+            // 全桶参与（A1-04）——JSON 契约公开表达 kind=write + mode=create/release，只扫 occupy 桶会让
+            // write create×create / release×release 冲突静默放行（假绿，§3.2.3 CONFLICT 应报）。
+            // read 桶经 Claim.Normalize 仅存 Use/Unknown，二者自兼容/配对豁免（§3.2.3 P4），进组不产生冲突，无回归面。
+            foreach (var c in e.Footprint.AllClaims())
             {
                 var r = ResourceId.Normalize(c.Resource);
                 // OPEN-1 修（auditR3b TC7）：gate(3) 冲突分组按事件 scope(e.Scope)，与 At/ReferenceAudit 的 Combination.Loop 投影一致；
@@ -199,48 +222,54 @@ public sealed partial class EffectScript
                 {
                     if (!grp.TryGetValue(key, out var hs)) grp[key] = hs = new HashSet<int>();
                     hs.Add(ei);
-                    if (c.Mode != Mode.Release) // §3.3.2 release 不贡献峰值
-                    {
-                        if (!peakScope.ContainsKey(r)) peakScope[r] = (e.Scope, ei);
-                        bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
-                        if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
-                        else
-                        {
-                            var hi = (c.Size ?? Interval.Default).Hi;
-                            var w = e.Loop.Count;
-                            // rich-hickey2 R2-001：弃 ulong.MaxValue 哨兵（合法峰值 Max 被碰撞误判 ⊤，假阳性）——
-                            // NatStar 算术自带「环绕 ⇒ 保守 ⊤」，哨兵不再藏进值域。
-                            peakSum[r] = peakSum.GetValueOrDefault(r, NatStar.Of(0)) + hi * w;
-                        }
-                    }
                 }
                 else
                 {
                     if (grp.TryGetValue(key, out var hs)) { hs.Remove(ei); if (hs.Count == 0) grp.Remove(key); }
-                    if (c.Mode != Mode.Release)
+                }
+            }
+            // gate(2) peak：仅 occupy 桶（量纲隔离 DO-7；与 Peak.Compute/R2 单桶等价钉同口径）。
+            foreach (var c in e.Footprint.OccupyClaims)
+            {
+                var r = ResourceId.Normalize(c.Resource);
+                if (c.Mode == Mode.Release) continue; // §3.3.2 release 不贡献峰值
+                if (enter)
+                {
+                    if (!peakScope.ContainsKey(r)) peakScope[r] = (e.Scope, ei);
+                    bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
+                    if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
+                    else
                     {
-                        bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
-                        if (top) { if (topCount.TryGetValue(r, out var tc) && tc > 0) topCount[r] = tc - 1; }
-                        else
-                        {
-                            var cur = peakSum.GetValueOrDefault(r, NatStar.Of(0));
-                            // rich-hickey2 R2-001：与 enter 路径同型——NatStar 乘法环绕⇒⊤，弃哨兵；此分支两端恒有限。
-                            var hi = (c.Size ?? Interval.Default).Hi;
-                            var w = e.Loop.Count;
-                            var prod = hi * w;
-                            peakSum[r] = (prod.IsTop || cur.IsTop) ? NatStar.Top
-                                : prod.Value <= cur.Value ? NatStar.Of(cur.Value - prod.Value) : NatStar.Of(0);
-                        }
-                        // rich-hickey2 R6 S06-004：exit 后若该资源无活跃贡献者（无 peakSum 也不在 grp/存活峰值集），
-                        // 则清理陈旧的 peakScope——下一采样点若再触发峰值，其归因 scope 需取新存活者而非首个历史者。
-                        // 判定：当前既无 top 也无 peakSum 计数>0 且 grp 中无该资源的活跃条目 ⇒ 可视为"当前无活跃峰值贡献者"
-                        bool hasActivePeak = (topCount.TryGetValue(r, out var tc2) && tc2 > 0)
-                            || (peakSum.TryGetValue(r, out var ps) && !ps.Equals(NatStar.Of(0)));
-                        bool hasActiveGrp = grp.Any(kv => kv.Key.Item1.Equals(r) && kv.Value.Count > 0); // 按资源细化（R10 O10）
-                        if (!hasActivePeak && !hasActiveGrp && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
-                        {
-                            peakScope.Remove(r);
-                        }
+                        var hi = (c.Size ?? Interval.Default).Hi;
+                        var w = e.Loop.Count;
+                        // rich-hickey2 R2-001：弃 ulong.MaxValue 哨兵（合法峰值 Max 被碰撞误判 ⊤，假阳性）——
+                        // NatStar 算术自带「环绕 ⇒ 保守 ⊤」，哨兵不再藏进值域。
+                        peakSum[r] = peakSum.GetValueOrDefault(r, NatStar.Of(0)) + hi * w;
+                    }
+                }
+                else
+                {
+                    bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
+                    if (top) { if (topCount.TryGetValue(r, out var tc) && tc > 0) topCount[r] = tc - 1; }
+                    else
+                    {
+                        var cur = peakSum.GetValueOrDefault(r, NatStar.Of(0));
+                        // rich-hickey2 R2-001：与 enter 路径同型——NatStar 乘法环绕⇒⊤，弃哨兵；此分支两端恒有限。
+                        var hi = (c.Size ?? Interval.Default).Hi;
+                        var w = e.Loop.Count;
+                        var prod = hi * w;
+                        peakSum[r] = (prod.IsTop || cur.IsTop) ? NatStar.Top
+                            : prod.Value <= cur.Value ? NatStar.Of(cur.Value - prod.Value) : NatStar.Of(0);
+                    }
+                    // rich-hickey2 R6 S06-004：exit 后若该资源无活跃贡献者（无 peakSum 也不在 grp/存活峰值集），
+                    // 则清理陈旧的 peakScope——下一采样点若再触发峰值，其归因 scope 需取新存活者而非首个历史者。
+                    // 判定：当前既无 top 也无 peakSum 计数>0 且 grp 中无该资源的活跃条目 ⇒ 可视为"当前无活跃峰值贡献者"
+                    bool hasActivePeak = (topCount.TryGetValue(r, out var tc2) && tc2 > 0)
+                        || (peakSum.TryGetValue(r, out var ps) && !ps.Equals(NatStar.Of(0)));
+                    bool hasActiveGrp = grp.Any(kv => kv.Key.Item1.Equals(r) && kv.Value.Count > 0); // 按资源细化（R10 O10）
+                    if (!hasActivePeak && !hasActiveGrp && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
+                    {
+                        peakScope.Remove(r);
                     }
                 }
             }
@@ -320,8 +349,9 @@ public sealed partial class EffectScript
                     closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
                 }
             }
-            // rich-hickey2 R6 S06-004：Leak 归因取"最晚开始且尚未结束"的事件 scope（LastLeakSource: Lo 最大且 Hi>closureT）——
-            // "未闭合"的责任在脚本运行期间最晚开始且仍在泄漏的那个人，而非已正常关闭/更早的开始者。修复前 leakScope 取"首个有限贡献者"，陈旧。
+            // rich-hickey2 R6 S06-004 + A1-09（生产审计批1 正名）：Leak 归因取「最晚开始的有限贡献者」（Lo 最大者）。
+            // 注释曾声称额外按 Hi>closureT 过滤「尚未结束」，但 closureT=全剧本最大有限端点时该条件恒假，实现从未过滤——
+            // 按实现正名（R9 YAGNI：不做存活性过滤，归因可能指向已正常闭合但最晚开始的事件）。
             var leakScope = new Dictionary<ResourceId, (ulong lo, ScopeId scope, int ei)>();
             for (int ei2 = 0; ei2 < Events.Length; ei2++)
             {
