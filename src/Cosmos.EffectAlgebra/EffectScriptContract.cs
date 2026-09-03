@@ -28,7 +28,11 @@ public static class EffectScriptContract
             throw new FormatException("EFFECT_SCRIPT §4：根须含 'events' 数组");
         // R6-E1（hickey-x）：根级未知键静默忽略会让拼写错误（budgat / 大写 Budget）静默禁用整个预算门——
         // fail-fast 白名单：根级只认 events/budget，其余键拒绝并列出合法键集。
-        RejectUnknownKeys(root, "根", "events", "budget");
+        // A1-03/A4-02（生产审计批2）："$schema" 为 JSON 工程惯例键（编辑器按它拉 schema 校验），
+        // 读后丢弃——官方模板即带该键，拒绝会让 README 推荐的防假绿起步路径自己踩 FormatException。
+        if (root.TryGetProperty("$schema", out var schemaEl) && schemaEl.ValueKind != JsonValueKind.String)
+            throw new FormatException("根级 \"$schema\" 须为字符串（schema 引用）");
+        RejectUnknownKeys(root, "根", "events", "budget", "$schema");
 
         var events = new List<EffectEvent>();
         int evIdx = 0;

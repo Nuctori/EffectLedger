@@ -7,8 +7,9 @@ dotnet add package Cosmos.EffectAlgebra
 dotnet add package Cosmos.EffectAlgebra.Generator
 dotnet add package Cosmos.EffectAlgebra.Analyzer
 dotnet add package Cosmos.EffectAlgebra.Runtime
-# .editorconfig 已含 EAA*=error（泄漏/量纲/兼容/逃逸参数），build 即门禁
 ```
+
+**门禁须自行接线**（NuGet 包不含 severity 策略，诊断默认 warning）：把主 README §② 的五行 `dotnet_diagnostic.EAA*.severity = error` 复制进你的 `.editorconfig`，build 即门禁。不接线时泄漏只出 warning——别把"有告警"当"已拦截"。
 
 ## 白名单扩展
 
@@ -18,10 +19,12 @@ dotnet add package Cosmos.EffectAlgebra.Runtime
 { "extraMappings": [{ "api": "MyPool.Spawn", "claims": [{ "kind": "occupy", "resource": { "memory": 1 }, "mode": "create", "scope": { "scene": "Battle" } }] }] }
 ```
 
+> **诚实边界（当前未自动生效）**：该文件目前仅有 L1 加载 API（`CosmosEffectConfig.LoadExtra / AllWithExtra`）；L2 生成器与 L3 分析器**尚未**自动消费它——不写接线代码时自定义 API 不会进白名单，也就是"静默无保护"。运行 `cosmos audit` 的 CI 严格门请传 strict 或先调 `AllWithExtra` 自验。
+
 ## AI 闭环
 
 ```pwsh
-# 1. AI 产 JSON（符合 docs/effect-script.schema.json）
+# 1. AI 产 JSON（符合 docs/effect-script.schema.json；templates/effect-script.json 为可直接 Parse 的样板）
 # 2. 一键审计
 dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.json --out violations.json
 # 3. violations.json 喂回 LLM 重投直至 passed
@@ -29,4 +32,4 @@ dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.js
 
 ## CI
 
-`.github/workflows/cosmos-audit.yml` 已含 build/test/audit/pack 四门。
+`.github/workflows/cosmos-audit.yml` 提供 build/test/audit/pack 四门（默认手动触发 workflow_dispatch；push/PR 门由 ci.yml 承担，二者不再重复跑）。Tool 项目已入 slnx，`dotnet pack -c Release` 会一并产出 `cosmos` .NET tool 包。

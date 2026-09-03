@@ -9,6 +9,10 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "description": "JSON Schema 引用（工程惯例键；EffectScriptContract.Parse 接受并忽略）",
+      "type": "string"
+    },
     "events": {
       "type": "array",
       "items": {

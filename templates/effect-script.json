@@ -13,7 +13,8 @@
       "lifetime": [6, 12],
       "scope": { "scene": "Battle" },
       "footprint": [
-        { "kind": "occupy", "resource": { "gpu": "tmpMip0" }, "mode": "release", "size": [256, 256] }
+        { "kind": "occupy", "resource": { "gpu": "tmpMip0" }, "mode": "release", "size": [256, 256] },
+        { "kind": "occupy", "resource": { "commandBuffer": "gpu" }, "mode": "release", "size": [256, 256] }
       ]
     }
   ],

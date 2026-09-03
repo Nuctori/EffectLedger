@@ -1,5 +1,8 @@
 # Cosmos.EffectAlgebra 交付证明（v3.0-FINAL-rA6 实现）
 
+> **历史快照声明（A4-12，生产审计批2）**：本文中的测试计数（212 等）是写作时刻的快照，非当前基线。
+> 当前数字以 CI `dotnet test` 汇总与 README「测试与仪表航迹」为准。
+
 ## 构建状态
 - 全解 `dotnet build Cosmos.EffectAlgebra.slnx -clp:ErrorsOnly`（前置 `MSBUILD_EXE_PATH=`）：
   ```

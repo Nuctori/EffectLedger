@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Cosmos.EffectAlgebra.Analyzer/Cosmos.EffectAlgebra.Analyzer.csproj" />
     <Project Path="src/Cosmos.EffectAlgebra.Generator/Cosmos.EffectAlgebra.Generator.csproj" />
+    <Project Path="src/Cosmos.EffectAlgebra.Tool/Cosmos.EffectAlgebra.Tool.csproj" />
     <Project Path="src/Cosmos.EffectAlgebra/Cosmos.EffectAlgebra.csproj" />
     <Project Path="src/Cosmos.EffectAlgebra.Runtime/Cosmos.EffectAlgebra.Runtime.csproj" />
   </Folder>

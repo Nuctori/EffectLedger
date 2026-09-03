@@ -1,5 +1,8 @@
 name: cosmos-audit
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'  # 每周一 03:UTC 全量四门（push/PR 门由 ci.yml 承担，避免同仓双跑）
 jobs:
   audit:
     runs-on: ubuntu-latest

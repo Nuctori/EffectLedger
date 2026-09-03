@@ -50,7 +50,9 @@ public static class CosmosEffectConfig
         return arr2;
     }
 
-    /// <summary>从文件加载 extraMappings；文件不存在 ⇒ 空（回落）。IO/解析异常在严格模式抛。</summary>
+    /// <summary>从文件加载 extraMappings；文件不存在 ⇒ 空（回落）。IO/解析异常在严格模式抛；
+    /// 非 strict 回落时必须留一条可观测告警（A4-14，生产审计批2）——静默吞配置错误 = "静默无保护"，
+    /// 与本项目 fail-fast 立库原则冲突；stderr 告警不改变回落语义，仅消灭无声失败。</summary>
     public static ImmutableArray<ApiMapping> LoadExtra(string path = "cosmos.effect.json", bool strict = false)
     {
         if (!File.Exists(path)) return ImmutableArray<ApiMapping>.Empty;
@@ -61,6 +63,7 @@ public static class CosmosEffectConfig
         }
         catch (Exception ex) when (!strict && ex is FormatException or JsonException or IOException)
         {
+            Console.Error.WriteLine($"[cosmos-effect] 警告：{path} 解析失败已回落内置白名单（strict=true 可改为抛出）：{ex.Message}");
             return ImmutableArray<ApiMapping>.Empty;
         }
     }

@@ -252,6 +252,8 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 ### 10.3 最终状态
 
+> **历史快照声明（A4-12，生产审计批2）**：以下 279 等计数为该轮收尾快照，非当前基线；以 CI 汇总为准。
+
 - `dotnet build` 0 error / 0 warning（TreatWarningsAsErrors 开启）。
 - `dotnet test` **279 passed / 0 failed**（EffectScript 子系统 ~63 项 + 基座 212 项）。
 - 类型即边界：所有载体 `readonly record struct`，构造即全必填；注释承载 ω 语义、端点采样定理与 § 出处。
