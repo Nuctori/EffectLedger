@@ -118,23 +118,32 @@ public sealed class DependencyGraph
             adj[prov].Add(dep);
         }
         var color = new Dictionary<FiberId, int>(); // 0=white 1=gray 2=black
-        var stack = new Stack<FiberId>();
+        var path = new List<FiberId>();             // A3-11：显式维护当前 DFS 路径，命中环时可精确回卷
+        List<FiberId>? found = null;
         foreach (var node in adj.Keys.Concat(edges.Select(e => e.Item2)).Distinct())
         {
             if (color.TryGetValue(node, out var c) && c != 0) continue;
             if (Dfs(node)) break;
         }
-        return stack.ToImmutableArray();
+        // A3-11（生产审计批3）：只返回真环，不再混入 DFS 入环路径——
+        // 此前 d→a→b→a 时 d（非环节点）被记入 HardCycle，导致拒载消息误导、排空跳过集扩大（A3-04 滞留面）。
+        return found?.ToImmutableArray() ?? ImmutableArray<FiberId>.Empty;
 
         bool Dfs(FiberId u)
         {
-            color[u] = 1; stack.Push(u);
+            color[u] = 1; path.Add(u);
             foreach (var v in adj.GetValueOrDefault(u, new()))
             {
                 if (!color.TryGetValue(v, out var vc)) { if (Dfs(v)) return true; }
-                else if (vc == 1) { stack.Push(v); return true; }
+                else if (vc == 1)
+                {
+                    // 命中 gray：v 在当前路径上。真环 = path 中自 v 首次出现处到末尾（v → … → u → v）。
+                    int start = path.FindIndex(n => n.Equals(v));
+                    found = path.GetRange(start, path.Count - start);
+                    return true;
+                }
             }
-            color[u] = 2; stack.Pop();
+            color[u] = 2; path.RemoveAt(path.Count - 1);
             return false;
         }
     }

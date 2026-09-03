@@ -30,7 +30,9 @@ public sealed record InverseClaim(
     Action Execute,
     IReadOnlySet<string>? ReleaseApiTags = null);
 
-/// <summary>§1 — 插件组件（Fiber）。MVP：状态机 + 幂等守卫 + 看门狗转移。</summary>
+/// <summary>§1 — 插件组件（Fiber）。MVP：状态机 + 幂等守卫 + 看门狗转移。
+/// A3-06（生产审计批3）线程契约：本类型【非线程安全】（零锁）——全部状态迁移须在宿主主线程（帧循环）内调用；
+/// 跨线程调用无可见性保证，属未定义行为（Godot 场景帧驱动模型即此假设）。</summary>
 public sealed class Fiber
 {
     public FiberId Id { get; }
@@ -58,7 +60,9 @@ public sealed class Fiber
                 if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(Coeffect.Provides))
                     claims.Add(new Claim(Kind.Occupy, inv.Resource, Mode.Release, inv.Scope, null));
             // R7-N5/P0-4 配套：内部聚合走 Union（显式集合语义），不经带重复检测的 Of——
-            // 多个逆释放同一 Provides 是合法声明（net 按资源聚合，不按声明计数）。
+            // A3-14（生产审计批3 注释正名）：此处机制是【同形 Claim 经 ImmutableHashSet 去重】，非"按资源聚合"——
+            // Effect 已含不同 size/scope 的 release(Provides) 时两 claim 并存，net 可能多减 ⇒ fail-closed 误拒（已知锐边）。
+            // 多个逆释放同一 Provides 合法的前提是各逆经 Union 折叠为同形 claim。
             var sig = Effect;
             foreach (var c in claims)
                 sig = Signature.Union(sig, Signature.Of(c));
@@ -82,14 +86,22 @@ public sealed class Fiber
         return true;
     }
 
-    /// <summary>§2 — 卸载（幂等守卫：TearingDown/Dead 直接 return；Suspending→TearingDown 允许（级联 teardown）；
-    /// TeardownEnqueued 防二次入队）。</summary>
+    /// <summary>§2 — 卸载（A3-01/A3-02，生产审计批3 契约修正）：
+    /// Inactive（从未装载）⇒ 直达 Dead——D4「未 _Ready 也安全」：无已获取资源，逆回放会释放从未获取的句柄（双重释放类崩溃），跳过；
+    /// Active/Suspending ⇒ TearingDown（级联 teardown 推进）；TearingDown/Dead 幂等 no-op。
+    /// 本方法只做状态迁移，【不再置 TeardownEnqueued】——标志位语义收紧为「逆回放任务已入调度器队列」，
+    /// 由 PluginRuntime.BeginTeardown / SynchronousExitDrain / TickWatchdog 真正入队时置位。
+    /// 此前置位说谎：直接 Unload 后无人入队 ⇒ 永卡 TearingDown + Register 永久锁死（A3-01）。</summary>
     public void Unload()
     {
-        // Suspending 已进入“待卸载”态：级联显式 teardown 须推进到 TearingDown（不阻断）。
-        if (State is FiberState.TearingDown or FiberState.Dead) return;
-        if (TeardownEnqueued) return; // 防止重复入队（Suspending 经 NotifyProviderTeardown 后也走此路径）
-        TeardownEnqueued = true;
+        if (State == FiberState.Dead) return;
+        if (State == FiberState.Inactive)
+        {
+            State = FiberState.Dead;
+            TeardownEnqueued = true; // teardown 语义已完结（无事可回放），防调度器再入队
+            return;
+        }
+        if (State == FiberState.TearingDown) return;
         State = FiberState.TearingDown;
     }
 

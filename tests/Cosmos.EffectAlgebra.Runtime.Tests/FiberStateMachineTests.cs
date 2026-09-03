@@ -52,26 +52,28 @@ public class FiberStateMachineTests
         var f = Make(FiberState.Suspending);
         f.Unload();
         Assert.Equal(FiberState.TearingDown, f.State);
-        Assert.True(f.TeardownEnqueued);
+        // A3-01（生产审计批3）：Unload 只做状态迁移，不再置 TeardownEnqueued（标志位=「任务真已入调度器队列」，由 PluginRuntime 置位）
+        Assert.False(f.TeardownEnqueued);
     }
 
     [Fact]
-    public void Unload_FromActive_EnqueuesAndTearsDown()
+    public void Unload_FromActive_TransitionsToTearingDown()
     {
         var f = Make(FiberState.Active);
         f.Unload();
         Assert.Equal(FiberState.TearingDown, f.State);
-        Assert.True(f.TeardownEnqueued);
+        // A3-01：入队是调度器职责——旧断言「Unload 即 enqueued」正是标志位说谎 bug（直接 Unload 后无人入队 ⇒ 永卡）
+        Assert.False(f.TeardownEnqueued);
     }
 
     [Fact]
-    public void Unload_TearingDown_PreventsReEnqueue()
+    public void Unload_TearingDown_IsNoOp()
     {
         var f = Make(FiberState.TearingDown);
-        Assert.True(f.TeardownEnqueued);
-        f.Unload();                        // TearingDown → 直接 return（已 enqueued）
+        Assert.False(f.TeardownEnqueued);  // A3-01：标志由调度器置位，状态迁移本身不置
+        f.Unload();                        // TearingDown → 直接 return（幂等）
         Assert.Equal(FiberState.TearingDown, f.State);
-        Assert.True(f.TeardownEnqueued);
+        Assert.False(f.TeardownEnqueued);
     }
 
     [Fact]

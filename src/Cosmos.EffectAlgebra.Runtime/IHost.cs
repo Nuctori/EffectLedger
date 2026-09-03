@@ -10,8 +10,8 @@ public interface IHost
     /// <summary>§7 — 设置 Fiber 子树 ProcessMode=Disabled（Suspending/TearingDown 暂停派发）。</summary>
     void SetProcessMode(FiberId id, bool disabled);
 
-    /// <summary>§3 R4-1 — 关闭/退出路径同步排空队列（在调度器 _ExitTree 内执行）。</summary>
-    void EnqueueExitDrain(Action drain);
+    // A3-12（生产审计批3）：EnqueueExitDrain 死成员已移除——GodotShell 自持退出 drain 列表并自行 FlushExitDrain，
+    // 宿主从不接收注册；保留该成员会让自定义宿主实现者误以为经 IHost 注册即可参与退出排空。
 
     /// <summary>§1 R4-3 — 原生句柄判空（Godot Object 经 QueueFree 后的裸引用）。</summary>
     bool IsInstanceValid(object handle);

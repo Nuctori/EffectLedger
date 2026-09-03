@@ -3,7 +3,9 @@ using System.Collections.Immutable;
 
 namespace Cosmos.EffectAlgebra.Runtime;
 
-/// <summary>§3/§6 — 插件运行时调度器（TearingDown 帧安全队列 + 拓扑排序 + 关闭守卫）。</summary>
+/// <summary>§3/§6 — 插件运行时调度器（TearingDown 帧安全队列 + 拓扑排序 + 关闭守卫）。
+/// A3-06（生产审计批3）线程契约：本类型【非线程安全】（零锁）——Register/BeginTeardown/DrainTeardownBatch/
+/// TickWatchdog 等全部调用须在宿主主线程（帧循环）内；看门狗尤其不得从工作线程调（账本 Dictionary 无同步）。</summary>
 public sealed class PluginRuntime
 {
     private readonly DependencyGraph _graph = new();
@@ -97,6 +99,10 @@ public sealed class PluginRuntime
                 foreach (var other in all)
                 {
                     if (other.Id == f.Id) continue;
+                    // A3-03（生产审计批3）：派生须按 provider(other) Scope 过滤——跨 Scope 同名资源是合法配置
+                    //（LoadValidationTests R5-6：provider 在 shell、releaser 在 scene ⇒ 不误判），不过滤会让
+                    // AddSoftEdge 的 ValidateSameScope 在装载中途抛 InvalidOperationException（非 LoadValidationException 方言）且图半派生。
+                    if (other.Scope != f.Scope) continue;
                     if (ResourceId.Normalize(inv.Resource) == ResourceId.Normalize(other.Coeffect.Provides))
                     {
                         _graph.AddSoftEdge(f, other);           // 软依赖：teardown 不强制顺序（降级 warning），但参与 NotifyDependents 级联
@@ -114,8 +120,12 @@ public sealed class PluginRuntime
     /// 级联：provider 的 dependent 也经此递归入队（Suspending→TearingDown 由 Fiber.Unload 放行，reviewer MEDIUM 防资源泄漏），dedup 由 TeardownEnqueued 守卫。</summary>
     public void BeginTeardown(Fiber provider)
     {
-        if (provider.TeardownEnqueued) return; // 防二次入队
-        provider.Unload();                       // → TearingDown + 标志 enqueued
+        if (provider.TeardownEnqueued || provider.State == FiberState.Dead) return; // 防二次入队 / 已终结
+        provider.Unload();
+        // A3-02（生产审计批3）：Inactive fiber 经 Unload 直达 Dead（D4：未 _Ready 也安全）——
+        // 无已获取资源，不得入队逆回放（release-without-acquire = 对未拥有句柄的双重释放类崩溃）。
+        if (provider.State != FiberState.TearingDown) return;
+        provider.TeardownEnqueued = true; // A3-01：标志位=「任务真已入队」，由本方法在入队前置位（Fiber.Unload 不再代置）
         _graph.NotifyDependents(provider);       // provider-first-notify → dependent Suspending（R4-4 幂等）
         _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider))); // 返回诊断 ⇒ DrainTeardownBatch 按 AllCompleted 升级
         foreach (var dep in _graph.DependentsOf(provider.Id))
@@ -150,7 +160,8 @@ public sealed class PluginRuntime
                 var diag = task(); // 逆回放（R4-6 部分释放诊断）
                 // §6（reviewer #188 F2）：回放部分失败（AllCompleted=false）即升级崩溃级联——不再被 ReplayAndDead 静默 MarkDead 掩盖。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）")));
+                    // A3-08（生产审计批3）：原始逆异常作 InnerException 传递——根因类型/堆栈不得在重新合成时丢失。
+                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
             }
             catch (Exception ex) // 整任务抛异常（R4-6 外层）→ 升级到 ProviderCrashCascade.Handle（§6 reviewer #187）
             {
@@ -168,10 +179,30 @@ public sealed class PluginRuntime
         // 非关路径：no-op 占位（见 summary，§8 deferred）。
     }
 
-    /// <summary>§3 — 关闭路径同步排空（R4-1）：在调度器 _ExitTree 内调用，按 dependent-first 顺序释放全部 TearingDown。</summary>
+    /// <summary>§3 — 关闭路径同步排空（R4-1）：在调度器 _ExitTree 内调用，按 dependent-first 顺序释放全部 TearingDown。
+    /// A3-10（生产审计批3，规格 §3 step8）：退出时对全部存活 fiber 补「标记+入队」——宿主漏调 BeginTeardown 时
+    /// 队列为空 ⇒ 逆回放整批不执行且无诊断（假绿式退出）；Inactive fiber 跳过（D4，无资源可回放）。</summary>
     public void SynchronousExitDrain()
     {
         IsShuttingDown = true;
+        // A3-10：对仍 Active/Suspending（未标记）与 TearingDown 但任务不在队列（旁路 Unload / 上一批已清队）的 fiber 补入队。
+        foreach (var f in _fibers.Values)
+        {
+            bool inQueue = _teardownQueue.Any(t => t.Provider == f.Id);
+            if (inQueue) continue;
+            if (f.State is FiberState.Active or FiberState.Suspending)
+            {
+                f.Unload();
+                f.TeardownEnqueued = true;
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f)));
+            }
+            else if (f.State == FiberState.TearingDown)
+            {
+                f.TeardownEnqueued = true;
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f)));
+            }
+            // Inactive：D4——未装载无资源，跳过（不入队不标记）；Dead：已终结。
+        }
         // §3（reviewer #187 F3）：关闭路径同步排空也按 dependent-first（TopoSortLeafFirst）顺序，与 DrainTeardownBatch 一致。
         var order = _graph.TopoSortLeafFirst();
         var rank = new Dictionary<FiberId, int>();
@@ -186,7 +217,8 @@ public sealed class PluginRuntime
                 var diag = task();
                 // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）")));
+                    // A3-08：退出路径同样保留原始异常（与 DrainTeardownBatch 对称）。
+                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
             }
             catch (Exception ex)
             {
@@ -205,12 +237,18 @@ public sealed class PluginRuntime
         _netAccum = ImmutableDictionary<FiberId, long>.Empty;
     }
 
-    /// <summary>§7（reviewer #191 F1/F2）— 接线 Godot 壳：provider 通知 dependent 进入 Suspending 时驱动壳禁用 ProcessMode 级联；关闭路径排空时驱动壳 flush 退出 drain。打通 §7 ProcessMode 级联（此前 OnSuspending/ExitDrain 为孤岛）。</summary>
+    /// <summary>§7（reviewer #191 F1/F2）— 接线 Godot 壳：provider 通知 dependent 进入 Suspending 时驱动壳禁用 ProcessMode 级联；关闭路径排空时驱动壳 flush 退出 drain。打通 §7 ProcessMode 级联（此前 OnSuspending/ExitDrain 为孤岛）。
+    /// A3-13（生产审计批3）：幂等守卫——同一 shell 重复接线 no-op（热重载/重绑定场景 drain 会双入队），跨实例抛。</summary>
     public void AttachShell(GodotShell shell)
     {
+        if (ReferenceEquals(_attachedShell, shell)) return;
+        if (_attachedShell is not null)
+            throw new InvalidOperationException("PluginRuntime 已接线另一 GodotShell：跨实例接线须先解绑或新建运行时（重复接线会双入队退出 drain 并静默覆盖 OnSuspending）");
+        _attachedShell = shell;
         OnSuspending = shell.CascadeProcessModeDisabled; // dependent Suspending ⇒ 壳禁用其子树派发（级联）
         shell.EnqueueExitDrain(SynchronousExitDrain);   // 关闭路径由壳 _ExitTree 触发运行时同步排空
     }
+    private GodotShell? _attachedShell;
 
     public IReadOnlyCollection<Fiber> Fibers => _fibers.Values.ToImmutableArray();
 
@@ -222,10 +260,12 @@ public sealed class PluginRuntime
     public void TickWatchdog(Func<Fiber, bool> isTimedOut)
     {
         foreach (var f in _fibers.Values)
+        {
             // §6（reviewer #190 #1）：仅当 f 仍处 Active/Suspending（本帧发生转移）才强制+入队+级联——已 Dead/TearingDown 的 f 不重复入队（避免二次回放抛异常误填 LastCrashReport）。
             if (isTimedOut(f) && (f.State == FiberState.Active || f.State == FiberState.Suspending))
             {
                 f.ForceTeardownOnWatchdog();                         // Active/Suspending → TearingDown
+                f.TeardownEnqueued = true;                           // A3-01：与 BeginTeardown 同契约——入队前置位
                 _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 入队逆回放 ⇒ DrainTeardownBatch 真正回收资源
                 // §6（reviewer #189 F2）：超时 provider 须级联依赖者——否则依赖者仍 Active 派发且永不 teardown（use-after-free/泄漏）。
                 _graph.NotifyDependents(f);
@@ -239,6 +279,20 @@ public sealed class PluginRuntime
                     }
                 }
             }
+            // A3-01b/A3-04（生产审计批3）：看门狗自愈分支——TearingDown 但任务【不在队列】的 fiber（旁路 fiber.Unload()、
+            // 动态硬环子集被跳过后承诺"看门狗另行回收"却无路径）：内联逐 fiber 回放（回放本就 per-fiber 独立，无拓扑前提），
+            // 消灭永久滞留 + Register 永久锁死。已在队列中的 TearingDown 不受影响（原防重语义保留）。
+            else if (isTimedOut(f) && f.State == FiberState.TearingDown
+                     && !_teardownQueue.Any(t => t.Provider == f.Id))
+            {
+                f.TeardownEnqueued = true;
+                try { InverseReplay.ReplayAndDead(f); }
+                catch (Exception ex)
+                {
+                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, f, ex));
+                }
+            }
+        }
     }
 }
 
