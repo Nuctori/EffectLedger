@@ -159,10 +159,10 @@ public class Enemy
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object x) { } } }
 public class Leaker
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     public async Task Leak()
     {
         _n.AddChild(new object());
@@ -179,10 +179,10 @@ public class Leaker
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object x) { } } }
 public class Intended
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     [EffectOverride(""帧内临时占用，已知泄漏"")]
     public async Task Temp()
     {
@@ -206,7 +206,8 @@ public class Intended
         Assert.Contains("ComputeAddChild", generated);           // 每方法组合入口
 
         var asm = EmitWithGenerator(BalancedSource);
-        var genType = asm.GetType("EffectAlgebraGenerated")!;
+        // A2-14：生成类已移入 namespace Cosmos.EffectAlgebra.Generated——反射按 Name 查找（与 namespace 无关）
+        var genType = asm.GetTypes().First(t => t.Name == "EffectAlgebraGenerated")!;
         var empty = (global::Cosmos.EffectAlgebra.Signature)
             typeof(global::Cosmos.EffectAlgebra.Signature)
                 .GetField("Empty", BindingFlags.Public | BindingFlags.Static)!

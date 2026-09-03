@@ -42,6 +42,10 @@ namespace Cosmos.EffectAlgebra.Analyzer;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 {
+    // A2-10（生产审计批4）：语义化特性识别的 Cosmos 归属 FQN（分析器自包含编译，不引用 L1 程序集，按字符串精确比对）。
+    private const string CosmosEffectOverrideFqn = "Cosmos.EffectAlgebra.EffectOverrideAttribute";
+    private const string CosmosAcceptDeviationFqn = "Cosmos.EffectAlgebra.AcceptDeviationAttribute";
+
     // ── §3.3.1 DO-9 近似泄漏：方法内 acquire（create/occupy-create）无对应 release-class 且未标 [EffectOverride] ──
     // 诊断 id EAA0901（"09"=§3.3.1，"01"=DO-9 第 1 个静态近似规则）。
     private static readonly DiagnosticDescriptor MissingReleaseForAcquire = new(
@@ -117,6 +121,23 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         bool hasValidOverride = false;
         foreach (var attr in method.AttributeLists.SelectMany(l => l.Attributes))
         {
+            // A2-10（生产审计批4）：语义化特性识别（此前纯字符串末段匹配——用户自有同名 MyLib.EffectOverride
+            // 可冒充逃逸通道豁免 A3/A4，反向误触发 EAA0801）。语义可解析 ⇒ 按特性类型完全限定名精确比对 Cosmos 归属，
+            // 非 Cosmos 特性一律不参与；语义不可解析（无 L1 引用的裸语法编译）⇒ 回退名称末段匹配（召回优先）。
+            var attrType = context.SemanticModel.GetTypeInfo(attr.Name).Type;
+            if (attrType is not null)
+            {
+                var fqn = attrType.OriginalDefinition.ToDisplayString();
+                if (fqn == CosmosEffectOverrideFqn)
+                {
+                    if (IsValidOverrideReason(attr, context, method)) hasValidOverride = true;
+                }
+                else if (fqn == CosmosAcceptDeviationFqn)
+                {
+                    IsValidAcceptEpsilon(attr, context, method); // 仅校验并报告 EAA0802，不豁免
+                }
+                continue;
+            }
             var name = attr.Name.ToString();
             if (IsEffectOverride(name))
             {
@@ -297,7 +318,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     //
     // P0-2（hickey-x3 F3）：方法名回退匹配要求接收者类型可判定为 Godot 类型——
     // 用户自有 Load()/Connect() 等撞名方法不再被裸名定罪。判定规则：
-    //   符号可解析 ⇒ 包含类型命名空间以 "Godot" 开头才允许回退（真 Godot = namespace Godot；仓内 stub = GodotShapes）；
+    //   符号可解析 ⇒ 命名空间为 "Godot" 或 "Godot." 前缀才允许回退（真 Godot = namespace Godot；仓内 stub = Godot.Shapes）；
     //   符号不可解析（无引用的裸语法编译）⇒ 保留旧回退行为（召回优先，诚实记录启发式边界）。
     private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv, SemanticModel model)
     {
@@ -321,14 +342,16 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
-    // P0-2 — 接收者类型是否可判定为 Godot 类型（命名空间根以 "Godot" 开头的启发式）。
+    // P0-2 — 接收者类型是否可判定为 Godot 类型。
+    // A2-09（生产审计批4）：精确匹配 namespace "Godot" 或 "Godot.*"——此前 StartsWith("Godot") 会放行用户自有的
+    // GodotShapes/GodotTesting.Utils 等前缀命名空间，其撞名方法（Load/Connect）被误定罪（error 级假红）。
     private static bool IsGodotTypedInvocation(InvocationExpressionSyntax inv, SemanticModel model)
     {
         var info = model.GetSymbolInfo(inv);
         var sym = info.Symbol as IMethodSymbol ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
         if (sym?.ContainingType is null) return true; // 无法解析 ⇒ 保守保留旧回退（无引用编译场景）
         var ns = sym.ContainingType.ContainingNamespace.ToDisplayString();
-        return ns.StartsWith("Godot", StringComparison.Ordinal);
+        return ns == "Godot" || ns.StartsWith("Godot.", StringComparison.Ordinal);
     }
 
     // 调用的全名 canonical 键：成员访问 "Audio.Play" ⇒ "audioplay"；裸 "AddChild" ⇒ "addchild"。
@@ -396,8 +419,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             float f => f,
             _ => null
         } : null;
-        if (e is null || e < 0.0 || e > 0.5)
+        if (e is null || double.IsNaN(e.Value) || e.Value < 0.0 || e.Value > 0.5)
         {
+            // A2-03（生产审计批4）：NaN 是唯一同时骗过 e<0 与 e>0.5 的 double 常量——双层穿透使 ε 失去全部约束。
             context.ReportDiagnostic(Diagnostic.Create(AcceptDeviationRange, method.Identifier.GetLocation(), method.Identifier.Text));
             return false;
         }

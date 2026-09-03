@@ -38,11 +38,11 @@ public sealed class AdvE2E_R2
         return await withAnalyzers.GetAnalyzerDiagnosticsAsync();
     }
 
-    // P0-2 对齐（hickey-x3 F3）：桩类型放 GodotShapes 命名空间（分析器的 Godot 类型启发式），
+    // P0-2 对齐（hickey-x3 F3）：桩类型放 Godot.Shapes 命名空间（分析器的 Godot 类型门），
     // 消费者经接收者调用 _n.AddChild(...)——与真实 Godot 用法一致；用户自有撞名方法不再被裸名定罪。
     private const string Header = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class Node3D { public object? child; public void AddChild(object c) { } public void RemoveChild() { } }
     public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } }
 ";

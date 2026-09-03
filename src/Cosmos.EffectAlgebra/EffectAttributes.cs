@@ -67,8 +67,10 @@ public sealed class AcceptDeviationAttribute : Attribute // §8.3.2
     /// </summary>
     public AcceptDeviationAttribute(double epsilon)
     {
-        if (epsilon < 0.0 || epsilon > 0.5)
-            throw new ArgumentOutOfRangeException(nameof(epsilon), epsilon, "§8.3.2: epsilon ∈ [0.0, 0.5]（超出上界 ⇒ 编译错误）");
+        // A2-03（生产审计批4）：NaN 同步拦截（与 L3 EAA0802 同界）——NaN 骗过 <0.0 与 >0.5 两个比较，
+        // 是唯一能双层穿透的 double 常量，放行使 ε 失去全部约束语义。
+        if (double.IsNaN(epsilon) || epsilon < 0.0 || epsilon > 0.5)
+            throw new ArgumentOutOfRangeException(nameof(epsilon), epsilon, "§8.3.2: epsilon ∈ [0.0, 0.5]（NaN 或超出上界 ⇒ 编译错误）");
         Epsilon = epsilon;
     }
 }

@@ -68,7 +68,7 @@ public class ProdAuditBatch3Tests
         rt.BeginTeardown(a);
         rt.DrainTeardownBatch();               // 环子集被跳过（保守语义保留，CrashReport 已记录）
         Assert.True(rt.CrashReports.Length > 0);
-        Assert.Contains(rt.CrashReports, c => c.Exception.Message.Contains("硬环"));
+        Assert.Contains(rt.CrashReports, c => c.Exception!.Message.Contains("硬环"));
         rt.TickWatchdog(_ => true);            // 承诺的"看门狗另行回收"必须真存在（修改前：无任何路径）
         rt.DrainTeardownBatch();
         Assert.Equal(FiberState.Dead, a.State); // 修改前：永卡 TearingDown
@@ -157,7 +157,7 @@ public class ProdAuditBatch3Tests
         var rep = rt.LastCrashReport;
         Assert.NotNull(rep);
         // 修改前：重新合成的异常不带 InnerException，根因类型/堆栈永久丢失
-        Assert.Same(boom, rep!.Exception.InnerException);
+        Assert.Same(boom, rep!.Exception!.InnerException);
     }
 
     // ── A3-10：退出路径须对全部存活 fiber 补「标记+入队」（规格 §3 step8）——宿主漏调 BeginTeardown 不得假绿式退出 ──

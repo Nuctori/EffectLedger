@@ -72,15 +72,15 @@ public sealed class AdvE2E_R8
     // ── 场景源：pair 容器（P0-2 对齐：Godot 桩 + 接收者调用；标注方法保留供 L2 生成器 emit）──
     private const string PairSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) { } public void RemoveChild() { } }
     public sealed class ResourceLoader { public object Load() => new(); }
 }
 namespace R8 {
     public sealed class Node3D { public object? child; }
     public sealed class Paired {
-        private readonly GodotShapes.Node3D _n = new();
-        private readonly GodotShapes.ResourceLoader _rl = new();
+        private readonly Godot.Shapes.Node3D _n = new();
+        private readonly Godot.Shapes.ResourceLoader _rl = new();
         [EffectOverride(""spawn/despawn"")]
         public void AddChild(object c) { }
         [EffectOverride(""release tree"")]
@@ -158,10 +158,10 @@ namespace R8 {
     // ── 逃逸：per-method。[EffectOverride] 的逃逸方法 imbalance 不报；同类未标注兄弟 imbalance 必报。──
     private const string EscapeSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace R8b {
     public sealed class Escape {
-        private readonly GodotShapes.Node3D _n = new();
+        private readonly Godot.Shapes.Node3D _n = new();
         // 逃逸通道语义说明：EAA0901 永不豁免（P0-1 文档对齐）——本测试锁定的是 per-method 分析边界：
         // 同方法内 acquire 无 release ⇒ 该方法必报；标注在【其他】方法上不影响本方法的判定。
         public void EscapeMethod() { _n.AddChild(new object()); }

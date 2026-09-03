@@ -56,10 +56,10 @@ public sealed class AnalyzerCompletenessTests
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } } }
+namespace Godot.Shapes { public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } } }
 public class Sample
 {
-    private readonly GodotShapes.SignalHub _bus = new();
+    private readonly Godot.Shapes.SignalHub _bus = new();
     public void SignalMix()
     {
         _bus.Connect(new object(), new object());
@@ -77,10 +77,10 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 public class Sample
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     public void DoubleCreate()
     {
         _n.AddChild(new object());
@@ -97,14 +97,14 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) { } }
     public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } }
 }
 public class Sample
 {
-    private readonly GodotShapes.Node3D _n = new();
-    private readonly GodotShapes.SignalHub _bus = new();
+    private readonly Godot.Shapes.Node3D _n = new();
+    private readonly Godot.Shapes.SignalHub _bus = new();
     [EffectOverride(""intent: paired signal + node lifecycle"")]
     public void MixedWithOverride()
     {

@@ -93,9 +93,10 @@ namespace SampleGame {
         var (genText, success, asm) = Drive(src);
         Assert.True(success, "同名方法跨类不应引发 CS0101 或生成器 hint 重名崩溃");
         Assert.Contains("GodotApiWhitelist.All", genText);
-        // 跨类同名 AddChild → 生成器以 {MethodName}_{TypeName}_{idx} 消歧，不再成员重名（CS0101）
-        var a = Compute(asm, "AddChild", EmptySig(), "EnemyA", 0);
-        var b = Compute(asm, "AddChild", EmptySig(), "EnemyB", 1);
+        // 跨类同名 AddChild → 生成器以 {MethodName}_{FullTypeName}_{idx} 消歧（A2-05：完全限定类型名参与，
+        // NS1.Cfg 与 NS2.Cfg 不再同后缀），不再成员重名（CS0101）
+        var a = Compute(asm, "AddChild", EmptySig(), "SampleGame_EnemyA", 0);
+        var b = Compute(asm, "AddChild", EmptySig(), "SampleGame_EnemyB", 0); // A2-05：按 (方法,全限定类型) 各自从 0 起
         // 同时原始 ComputeAddChild 不应存在（已消歧）
         Assert.DoesNotContain(asm.GetTypes(), t => t.Name == "EffectAlgebraGenerated" && t.GetMethod("ComputeAddChild") is not null);
         Assert.NotEmpty(SignatureExtensions.AllClaims(a));

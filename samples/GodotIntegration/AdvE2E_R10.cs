@@ -30,10 +30,10 @@ public sealed class AdvE2E_R10
     // 与 IntegrationTests.cs 同构的 GameSource（acquire 无 release 的 LeakyEnemy 必触发 EAA0901）。
     private const string LeakyGameSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object child) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object child) { } } }
 namespace R10Game {
     public sealed class LeakyEnemy {
-        private readonly GodotShapes.Node3D _node = new();
+        private readonly Godot.Shapes.Node3D _node = new();
         public void Spawn() { _node.AddChild(new object()); }
     }
 }";

@@ -19,14 +19,14 @@ public sealed class IntegrationTests
 {
     private const string GameSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class GNode { public void AddChild(object c) { } public void RemoveChild() { } }
 }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class HealthyEnemy {
         private readonly Node3D _node = new();
-        private readonly GodotShapes.GNode _g = new();
+        private readonly Godot.Shapes.GNode _g = new();
         [EffectOverride(""spawn/despawn 配对"")]
         public void AddChild(object child) { _node.child = child; }
         [EffectOverride(""释放 Tree"")]
@@ -34,11 +34,11 @@ namespace SampleGame {
         public void SpawnAndDespawn() { _g.AddChild(new object()); _g.RemoveChild(); }
     }
     public sealed class LeakyEnemy {
-        private readonly GodotShapes.GNode _g = new();
+        private readonly Godot.Shapes.GNode _g = new();
         public void Spawn() { _g.AddChild(new object()); }
     }
     public sealed class IntentionalTemp {
-        private readonly GodotShapes.GNode _g = new();
+        private readonly Godot.Shapes.GNode _g = new();
         [EffectOverride(""帧内临时占用，已知泄漏"")]
         public void TempHold() { _g.AddChild(new object()); }
     }

@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
+using Cosmos.EffectAlgebra.Generator.Shared; // A2-06：L1 自包含副本（命名空间改写），切断对 L1 程序集的运行期引用
 
 namespace Cosmos.EffectAlgebra.Generator;
 
@@ -38,16 +39,19 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         var collected = methods.Collect();
         context.RegisterSourceOutput(collected, static (spc, all) =>
         {
+            // A2-05（生产审计批4）：消歧键 = (方法名, 完全限定类型名)——跨命名空间同名类型各得唯一后缀，
+            // 同一 partial 类不再产出重复成员（CS0111），AddSource hint 不再互相覆盖被 Roslyn 丢弃（R1.8）。
             var dupCount = all.GroupBy(m => m.MethodName).ToDictionary(g => g.Key, g => g.Count());
-            var seen = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+            var seen = new System.Collections.Generic.Dictionary<(string MethodName, string FullType), int>();
             foreach (var method in all)
             {
                 var suffix = string.Empty;
                 if (dupCount[method.MethodName] > 1)
                 {
-                    seen.TryGetValue(method.MethodName, out int idx);
+                    var key = (method.MethodName, method.TypeName);
+                    seen.TryGetValue(key, out int idx);
                     suffix = $"_{method.TypeName}_{idx}";
-                    seen[method.MethodName] = idx + 1;
+                    seen[key] = idx + 1;
                 }
                 var source = GenerateMethodSignature(method, suffix);
                 // hint 名不允许含 '@'（转义关键字方法名如 @class）；仅 method.MethodName 可能带前导 '@'，先剥离再拼文件名。
@@ -59,34 +63,62 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
     }
 
     /// <summary>§8.3 — 仅挑选带 [EffectOverride]/[AcceptDeviation] 的方法；其余忽略。
-    /// §8.3.1 不变式(1)：[EffectOverride] reason 非空由 L1 <c>EffectOverrideAttribute</c> 构造子强制（fail-fast 抛），故编译期无需额外诊断（类型保障，非运行期可发点）。</summary>
+    /// §8.3.1 不变式(1)：[EffectOverride] reason 非空由 L1 <c>EffectOverrideAttribute</c> 构造子强制（fail-fast 抛），故编译期无需额外诊断（类型保障，非运行期可发点）。
+    /// A2-04（生产审计批4）：特性名匹配补 AliasQualifiedNameSyntax（global:: 全限定形态）——此前落入 _ => null
+    /// 静默不生成，与 L3（认 global::）行为分叉。A2-10 对称：语义可解析时按 FQN 精确比对 Cosmos 归属，防同名冒充。</summary>
     private static AnnotatedMethod? GetAnnotatedMethod(GeneratorSyntaxContext ctx)
     {
         var method = (MethodDeclarationSyntax)ctx.Node;
         bool hasOverride = false, hasAccept = false;
         foreach (var attr in method.AttributeLists.SelectMany(l => l.Attributes))
         {
+            var attrType = ctx.SemanticModel.GetTypeInfo(attr.Name).Type;
+            if (attrType is not null)
+            {
+                // 语义路径：精确 FQN（与 L3 A2-10 同契约）
+                var fqn = attrType.OriginalDefinition.ToDisplayString();
+                if (fqn == CosmosEffectOverrideFqn) hasOverride = true;
+                else if (fqn == CosmosAcceptDeviationFqn) hasAccept = true;
+                continue;
+            }
+            // 语义不可解析 ⇒ 名称末段回退（召回优先）
             if (HasAttributeName(attr.Name, EffectOverrideName)) hasOverride = true;
             else if (HasAttributeName(attr.Name, AcceptDeviationName)) hasAccept = true;
         }
-        // 取声明类型名（用于跨类同名消歧；嵌套/泛型类型取最近非方法声明名）。
-        string typeName = "Global";
-        for (var p = method.Parent; p is not null; p = p.Parent)
+        // 取完全限定类型名（A2-05，生产审计批4）：命名空间链 + 外层类型链，'.' 折叠为 '_' 保证生成成员名合法。
+        // 此前仅取最近类型名——NS1.Cfg 与 NS2.Cfg 同名方法都得到 _Cfg_0 ⇒ CS0111 / AddSource hint 被丢。
+        string fullType = "Global";
         {
-            if (p is TypeDeclarationSyntax tds) { typeName = tds.Identifier.Text; break; }
+            var parts = new List<string>();
+            for (var p = method.Parent; p is not null; p = p.Parent)
+            {
+                if (p is TypeDeclarationSyntax tds) parts.Insert(0, tds.Identifier.Text);
+                else if (p is NamespaceDeclarationSyntax nsd) parts.Insert(0, SanitizeTypePart(nsd.Name.ToString()));
+                else if (p is FileScopedNamespaceDeclarationSyntax fsd) parts.Insert(0, SanitizeTypePart(fsd.Name.ToString()));
+            }
+            if (parts.Count > 0) fullType = string.Join("_", parts);
         }
         return !hasOverride && !hasAccept
             ? null
-            : new AnnotatedMethod(method.Identifier.Text, typeName, hasOverride, hasAccept);
+            : new AnnotatedMethod(method.Identifier.Text, fullType, hasOverride, hasAccept);
     }
 
-    /// <summary>按简单名匹配特性（含 `X` 与 `XAttribute` 两种写法）。等价于 Roslyn 常见 IsOrHasName 语义，本地实现以保证零依赖编译。</summary>
+    private static string SanitizeTypePart(string s) =>
+        s.Replace("global::", "").Replace('.', '_');
+
+    private const string CosmosEffectOverrideFqn = "Cosmos.EffectAlgebra.EffectOverrideAttribute";
+    private const string CosmosAcceptDeviationFqn = "Cosmos.EffectAlgebra.AcceptDeviationAttribute";
+
+    /// <summary>按简单名匹配特性（含 `X` 与 `XAttribute` 两种写法）。等价于 Roslyn 常见 IsOrHasName 语义，本地实现以保证零依赖编译。
+    /// A2-04（生产审计批4）：补 AliasQualifiedNameSyntax——[global::Cosmos.EffectAlgebra.EffectOverride] 此前落入
+    /// _ => null 静默不生成（与 L3 行为分叉，方法被校验/豁免却没有 L2 产物）。</summary>
     private static bool HasAttributeName(NameSyntax name, string simpleName)
     {
         var text = name switch
         {
             IdentifierNameSyntax i => i.Identifier.Text,
             QualifiedNameSyntax q => q.Right.Identifier.Text,
+            AliasQualifiedNameSyntax a => a.Name is IdentifierNameSyntax i2 ? i2.Identifier.Text : null,
             _ => null
         };
         return text == simpleName || text == simpleName + "Attribute";
@@ -115,8 +147,12 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         sb.AppendLine("// 不重算代数（net/Peak/Compatible 在运行期由 L1 完成，§3.3.1）。");
         sb.AppendLine("// L2 残差（honest）：方法体语义绑定靠「方法名↔白名单键」规范化匹配（§14 L2），");
         sb.AppendLine("// 真实调用级闭合由运行期 Σnet 判定（DO-9 近似见 L3）。");
-        sb.AppendLine("public static partial class EffectAlgebraGenerated");
+        // A2-14（生产审计批4）：生成类移入专属命名空间——全局命名空间形态会与消费者自有同名类 CS0101。
+        // 消费方经反射按 Name 查找的既有用法不受影响（Name 与 namespace 无关）。
+        sb.AppendLine("namespace Cosmos.EffectAlgebra.Generated");
         sb.AppendLine("{");
+        sb.AppendLine("    public static partial class EffectAlgebraGenerated");
+        sb.AppendLine("    {");
         sb.AppendLine($"    /// <summary>§14 L2：方法 {m.MethodName}（{tags}）的效应签名 = baseSig ∪ §7 白名单中同名 API 的 Claims 组合（L1 数学在运行期 Σnet 权威）。</summary>");
         sb.AppendLine($"    public static global::Cosmos.EffectAlgebra.Signature Compute{memberName}{suffix}(global::Cosmos.EffectAlgebra.Signature baseSig)");
         sb.AppendLine($"        => global::Cosmos.EffectAlgebra.Signature.Union(baseSig, {memberName}{suffix}_Claims());");
@@ -132,7 +168,8 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         sb.AppendLine("        }");
         sb.AppendLine("        return s;");
         sb.AppendLine("    }");
-        sb.AppendLine("}");
+        sb.AppendLine("    }"); // class（A2-14：随命名空间包裹新增层级）
+        sb.AppendLine("}");     // namespace
         return sb.ToString();
     }
 

@@ -89,11 +89,11 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class EmptyReason {
-        private readonly GodotShapes.Node3D _g = new();
+        private readonly Godot.Shapes.Node3D _g = new();
         [EffectOverride("""")]
         public void AddChild(object c) { } // 空 reason：标注保留 ⇒ EAA0801；生成器 emit 与否与本测无关
         public void Spawn() { _g.AddChild(new object()); }
@@ -111,11 +111,11 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class WsReason {
-        private readonly GodotShapes.Node3D _g = new();
+        private readonly Godot.Shapes.Node3D _g = new();
         [EffectOverride(""   "")]
         public void AddChild(object c) { }
         public void Spawn() { _g.AddChild(new object()); }
@@ -133,10 +133,10 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class BadEpsilon {
-        private readonly GodotShapes.Node3D _g = new();
+        private readonly Godot.Shapes.Node3D _g = new();
         [AcceptDeviation(0.7)]
         public void Spawn() { _g.AddChild(new object()); }
     }
@@ -174,11 +174,11 @@ namespace SampleGame {
     {
         const string src = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     [EffectOverride(""类级 reason"")]
     public sealed class OnClass {
-        private readonly GodotShapes.Node3D _g = new();
+        private readonly Godot.Shapes.Node3D _g = new();
         public void Spawn() { _g.AddChild(new object()); }   // acquire 无 release ⇒ 仍报 EAA0901
     }
 }";

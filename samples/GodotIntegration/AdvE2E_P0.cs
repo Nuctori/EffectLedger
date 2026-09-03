@@ -52,15 +52,15 @@ namespace UserCode {
         Assert.DoesNotContain(diags, d => d.Id.StartsWith("EAA", StringComparison.Ordinal));
     }
 
-    // ── P0-2b：Godot 类型（GodotShapes 桩）的 Load ⇒ 仍须命中白名单报泄漏 ──
+    // ── P0-2b：Godot 类型（Godot.Shapes 桩）的 Load ⇒ 仍须命中白名单报泄漏 ──
     private const string GodotTypedLoadSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class ResourceLoader { public object Load(string path) => new(); }
 }
 namespace GameCode {
     public sealed class Leaky {
-        private readonly GodotShapes.ResourceLoader _rl = new();
+        private readonly Godot.Shapes.ResourceLoader _rl = new();
         public void Spawn() { _rl.Load(""res://enemy.tscn""); }   // acquire 无 release ⇒ EAA0901
     }
 }";
@@ -75,12 +75,12 @@ namespace GameCode {
     // ── P0-3：官方推荐配对 AddChild→QueueFree ⇒ 不报 EAA0303（量纲提示豁免），且平衡不报 EAA0901 ──
     private const string PairedAcquireReleaseSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes {
+namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) { } public void QueueFree() { } }
 }
 namespace GameCode2 {
     public sealed class Spawner {
-        private readonly GodotShapes.Node3D _n = new();
+        private readonly Godot.Shapes.Node3D _n = new();
         public void SpawnAndDespawn() { _n.AddChild(new object()); _n.QueueFree(); }
     }
 }";
@@ -96,14 +96,14 @@ namespace GameCode2 {
     // ── P0-3 反向：非配对的真实混用仍报 A3 ──
     private const string GenuineMixSource = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes2 {
+namespace Godot.Shapes2 {
     public sealed class Node3D { public void AddChild(object c) { } }
     public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } }
 }
 namespace GameCode3 {
     public sealed class Mixer {
-        private readonly GodotShapes2.Node3D _n = new();
-        private readonly GodotShapes2.SignalHub _bus = new();
+        private readonly Godot.Shapes2.Node3D _n = new();
+        private readonly Godot.Shapes2.SignalHub _bus = new();
         public void Mixed() { _bus.Connect(new object(), new object()); _bus.IsConnected(new object()); _n.AddChild(new object()); }
     }
 }";

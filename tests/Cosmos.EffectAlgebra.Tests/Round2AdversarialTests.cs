@@ -151,10 +151,10 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 public class Sample
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     public void RemoveFromGroup(object g) { }
     public void M()
     {

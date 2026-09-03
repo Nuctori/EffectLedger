@@ -14,7 +14,7 @@ namespace SampleGame.IntegrationTests;
 public sealed class AdvE2E_R11
 {
     private const string Source = @"
-using GodotShapes;
+using Godot.Shapes;
 namespace SampleGame {
     public sealed class RealShapedLeaker {
         private readonly Node3D _node = new();
@@ -43,7 +43,7 @@ namespace SampleGame {
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
             .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
             .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(GodotShapes.Node).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(Godot.Shapes.Node).Assembly.Location));
         var comp = CSharpCompilation.Create("R11Game",
             new[] { CSharpSyntaxTree.ParseText(Source) }, refs,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

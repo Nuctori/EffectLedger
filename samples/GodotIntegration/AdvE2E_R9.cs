@@ -124,8 +124,8 @@ public sealed class AdvE2E_R9
         var genText = RunGeneratorText(comp, out var outComp);
         var genElapsed = sw.ElapsedMilliseconds;
 
-        // 跨类型同名 → 必须含类型_序号消歧符号（ComputeAddChild_Enemy0_0），且无裸重复 ComputeAddChild（防重名编译失败）
-        Assert.Contains("ComputeAddChild_Enemy0_0", genText);
+        // 跨类型同名 → 必须含 完全限定类型_序号 消歧符号（ComputeAddChild_SampleGame_Enemy0_0，A2-05 命名空间参与消歧），且无裸重复 ComputeAddChild（防重名编译失败）
+        Assert.Contains("ComputeAddChild_SampleGame_Enemy0_0", genText);
         Assert.DoesNotContain("public static global::Cosmos.EffectAlgebra.Signature ComputeAddChild(", genText);
 
         using var ms = new MemoryStream();
@@ -139,7 +139,7 @@ public sealed class AdvE2E_R9
         var asm = Assembly.Load(ms.ToArray());
         var t = asm.GetTypes().First(x => x.Name == "EffectAlgebraGenerated");
         var empty = (Signature)typeof(Signature).GetField("Empty", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
-        var sig = (Signature)t.GetMethod("ComputeAddChild_Enemy0_0")!.Invoke(null, new object[] { empty })!;
+        var sig = (Signature)t.GetMethod("ComputeAddChild_SampleGame_Enemy0_0")!.Invoke(null, new object[] { empty })!; // A2-05：全限定类型参与消歧
         Assert.NotEmpty(SignatureExtensions.AllClaims(sig));
 
         Assert.True(genElapsed < 5000, $"生成耗时应 < 5s，实际 {genElapsed}ms");
@@ -215,10 +215,10 @@ namespace A.B.C.D.E {
     {
         var src = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object c) { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Spammer {
-        private readonly GodotShapes.Node3D _node = new();
+        private readonly Godot.Shapes.Node3D _node = new();
         public void TenAdds() {
             _node.AddChild(new object()); _node.AddChild(new object()); _node.AddChild(new object());
             _node.AddChild(new object()); _node.AddChild(new object()); _node.AddChild(new object());

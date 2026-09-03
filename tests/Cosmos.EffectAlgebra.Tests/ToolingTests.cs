@@ -155,10 +155,10 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } public void QueueFree() { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object x) { } public void QueueFree() { } } }
 public class Sample
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     public void AcquireNoRelease()
     {
         _n.AddChild(new object());
@@ -193,10 +193,10 @@ public class Sample
     {
         const string source = @"
 using Cosmos.EffectAlgebra;
-namespace GodotShapes { public sealed class Node3D { public void AddChild(object x) { } public void QueueFree() { } } }
+namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object x) { } public void QueueFree() { } } }
 public class Sample
 {
-    private readonly GodotShapes.Node3D _n = new();
+    private readonly Godot.Shapes.Node3D _n = new();
     public void AcquireWithOverride()
     {
         _n.AddChild(new object());

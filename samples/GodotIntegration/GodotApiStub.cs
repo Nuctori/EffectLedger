@@ -3,7 +3,7 @@
 // 方法名/签名取自 §7 白名单（已对照 Godot 4.6.3 开源源码核实 28 个键为真实 Godot API 名）。
 // 真实 Godot.NET.Sdk 未安装（本机仅有 GDScript-only 引擎，无 GodotSharp.dll），故以结构等价 stub 替代，
 // 保留真实方法名 + 真实形参/返回形状，使 L2 生成的 Compute* 委托与 L3 的 acquire/release 判定得到 faithfully 验证。
-namespace GodotShapes;
+namespace Godot.Shapes;
 
 public class Node { public Node? Parent { get; set; } public void QueueFree() { } }
 public class Node2D : Node { public Vector2 Position { get; set; } = new Vector2(); public Vector2 GlobalPosition { get; set; } = new Vector2(); public float Rotation { get; set; } public Vector2 Scale { get; set; } = new Vector2(); }
