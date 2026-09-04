@@ -30,8 +30,8 @@ namespace SampleGame {
     public sealed class RealShapedPooled {
         private readonly Node3D _node = new();
         private PackedScene _scene = new();
-        // Instantiate(acquire Tree.new_id) + 把实例加入 _node(AddChild acquire) 后 QueueFree(释放 _node 的 Tree.node.id) ⇒ 跨资源不配对⇒ 报；
-        // 仅作「真实 Godot 形状」演示：配对须在归一资源上，见 RealShapedBalanced。
+        // R3-CG-01（三轮审计）翻转：Instantiate 的 Tree.new_id 幻影声明已删（无 release 端 ⇒ 标准
+        // Instantiate→AddChild→QueueFree 生命周期恒报 EAA0901 的结构性误报）——Use 现为完整生命周期，不报。
         public void Use() { var n = _scene.Instantiate(); _node.AddChild(n); n.QueueFree(); }
     }
 }";
@@ -50,6 +50,7 @@ var refs = CompilationRefs.Lean(typeof(Godot.Shapes.Node).Assembly.Location);
 
         Assert.Contains(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("Spawn")); // 泄漏必报（方法名 Spawn）
         Assert.DoesNotContain(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("Burst"));
-        // Use 因 Instantiate/AddChild 与 QueueFree 跨归一资源（new_id ≠ node.id）不配对，预期仍报；此处仅断言 Burst 配对不报
+        // R3-CG-01 翻转后：Use（Instantiate→AddChild→QueueFree 完整生命周期）也不再报
+        Assert.DoesNotContain(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("Use"));
     }
 }

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks><!-- R3-CG-04：与 L1 同三目标——单 net10.0 时 nuspec 依赖组仅 net10.0，net8/9 消费者 NuGet 静默丢 L1 ⇒ 生成代码 CS0246 -->
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -54,9 +54,11 @@
     </ItemGroup>
   </Target>
 
-  <!-- 生成器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。 -->
+  <!-- 生成器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。
+       R3-CG-04：多目标后外层 $(TargetFramework) 为空 ⇒ 显式取 net10.0 镜像（README 宿主前提：生成器跑在 .NET 10 SDK
+       Roslyn 宿主；多目标仅为 nuspec 按 TFM 生成 L1 依赖组，net8/9 消费者还原期自动联装 L1，非编译器镜像选择）。 -->
   <ItemGroup>
-    <None Include="bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+    <None Include="bin/$(Configuration)/net10.0/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
   </ItemGroup>
 
 </Project>

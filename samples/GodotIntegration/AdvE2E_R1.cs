@@ -148,7 +148,9 @@ namespace SampleGame {{
         Assert.Contains(SignatureExtensions.AllClaims(sig), c => c.Resource is ResourceId.Self);
     }
 
-    /// <summary>R1.7 — Instantiate 与 Instance 必须区分：Instantiate 命中 §7（Rd Mem/Wr Tree/Oc Mem），Instance 无键⇒空。</summary>
+    /// <summary>R1.7 — Instantiate 与 Instance 必须区分：Instantiate 命中 §7（Rd Mem Use / Oc Mem Create），Instance 无键⇒空。
+    /// R3-CG-01（三轮审计）翻转：Wr(Tree("new_id"), Create) 幻影声明已从白名单删除（永不配对 ⇒ 标准
+    /// Instantiate→AddChild→QueueFree 恒报 EAA0901 的结构性误报），不再断言 Tree 声明。</summary>
     [Fact]
     public void R1_InstantiateVsInstance_Distinct()
     {
@@ -160,7 +162,8 @@ namespace SampleGame {{
     [EffectOverride(""y"")] public void Instance() {{ }} }} }}";
         var (_, asm) = RunGenerator(src);
         var inst = InvokeCompute(asm, "Instantiate", EmptySig());
-        Assert.Contains(SignatureExtensions.AllClaims(inst), c => c.Resource is ResourceId.Tree);
+        Assert.Contains(SignatureExtensions.AllClaims(inst), c => c.Resource is ResourceId.Memory);
+        Assert.DoesNotContain(SignatureExtensions.AllClaims(inst), c => c.Resource is ResourceId.Tree); // 幻影键不得回归
         var instance = InvokeCompute(asm, "Instance", EmptySig());
         Assert.Empty(SignatureExtensions.AllClaims(instance));    // Instance 不是白名单键
     }

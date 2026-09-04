@@ -33,6 +33,7 @@ var result = script.Audit(script.Budget);
 var payload = new
 {
     passed = result.Passed,
+    events = script.Events.Length, // R3-CG-08：审计规模进载荷——空剧本全绿不再是不可见的「没查当全绿」
     violations = result.Violations.Select(v => new
     {
         kind = v.Kind.ToString(),
@@ -46,5 +47,10 @@ var payload = new
 var opts = new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 var outJson = JsonSerializer.Serialize(payload, opts);
 Console.WriteLine(outJson);
-if (outPath != null) File.WriteAllText(outPath, outJson);
+if (outPath != null)
+{
+    // R3-CG-05（三轮审计）：落盘失败须落契约退出码 1（此前未处理 IO 异常炸出非 0/1/2 码，破坏机器可读契约）。
+    try { File.WriteAllText(outPath, outJson); }
+    catch (Exception ex) { Console.Error.WriteLine($"write {outPath}: {ex.Message}"); return 1; }
+}
 return result.Passed ? 0 : 2;

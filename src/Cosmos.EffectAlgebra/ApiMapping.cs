@@ -124,7 +124,11 @@ public static class GodotApiWhitelist
         items.Add(M("LoadInteractive", Rd(Disk("path"), Mode.Use, Shell())));                           // §7.4 读磁盘
         items.Add(M("Instantiate",                                                                         // §7.4 读场景 + 创建 + 占用
             Rd(Mem(), Mode.Use, Shell()),
-            Wr(Tree("new_id"), Mode.Create, Shell()),
+            // R3-CG-01（三轮审计）：删除 Wr(Tree("new_id"), Create)——"new_id" 是永不配对的幻影资源键
+            //（白名单内无任何 release 端 emits 该键），标准 Instantiate→AddChild→QueueFree 生命周期恒报
+            // EAA0901 且诊断修复建议(1)不可达成。场景实例的树身份由 AddChild（acquire node.id）/
+            // QueueFree（release node.id）承载，实例化本身只占内存（Oc(Mem, Create)，与 QueueFree 的
+            // Mem release 配对）。
             Oc(Mem(), Mode.Create, Shell(), Interval.Dynamic)));
         items.Add(M("Preload",                                                                             // §7.4 读磁盘 + 占用内存(global)
             Rd(Disk("path"), Mode.Use, Shell()),

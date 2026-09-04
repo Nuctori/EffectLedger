@@ -14,7 +14,7 @@ namespace Cosmos.EffectAlgebra;
 ///   (4) 禁止静默豁免 DO-7 量纲混算：跨 kind 仍需 weight 定义（§3.3.2），本属性不提供跨 kind 豁免开关（注释不变式）。
 /// 作用对象：标注于单条 Claim 或 resource 上（L2/L3 解析 target）。
 /// </summary>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Class, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)] // R3-CG-06：收窄到 Method（L2/L3 只消费方法节点；类/属性级标注此前完全静默无效）
 public sealed class EffectOverrideAttribute : Attribute // §8.3.1
 {
     /// <summary>§8.3.1 审查：非空 reason，须引用 API 文档/实测证据，CI 人工 approve。构造子强制非空。</summary>
@@ -55,7 +55,7 @@ public sealed class EffectOverrideAttribute : Attribute // §8.3.1
 ///   (3) 作用域：标注对象所在 scope（§3.1.3b），不跨 scope 传播（注释不变式）。
 ///   (4) 若 epsilon < 阈值（0.2）则无意义 ⇒ 构造子发警告（此处仅注释，编译警告由 L2/L3 触发，见 §8.3.2）。
 /// </summary>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)] // R3-CG-06：收窄到 Method（同上）
 public sealed class AcceptDeviationAttribute : Attribute // §8.3.2
 {
     /// <summary>§8.3.2 放宽幅度，ε ∈ [0.0, 0.5]（构造子已强制）。</summary>

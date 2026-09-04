@@ -239,6 +239,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     {
         // 归一资源 → (调用序号 → 该调用的 (kind,mode) 集合)
         var byResource = new Dictionary<ResourceId, Dictionary<int, List<(Kind Kind, Mode Mode)>>>();
+        // R3-CG-02（三轮审计）：调用序号 → 白名单 API 名（A3 按 API 归并站点用）
+        var apiBySite = new Dictionary<int, string>();
         var resourceLabel = new Dictionary<ResourceId, string>();
 
         int invIndex = 0;
@@ -247,6 +249,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             if (!MaybeWhitelisted(inv)) { invIndex++; continue; } // A2-07：语法预检未命中 ⇒ 跳过语义查询
             var m = FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null) { invIndex++; continue; }
+            apiBySite[invIndex] = m.Value.GodotApi; // R3-CG-02
 
             // 同站点去重：本调用贡献的 (kind,mode) 集合（按（kind,mode）去重，避免单 API 内部重复 Claim 计入）
             var siteClaims = m.Value.Claims
@@ -274,16 +277,23 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             // P0-3（hickey-x3 F1）：白名单已知 acquire/release 配对（如 AddChild→QueueFree）跨调用的 kind 差异
             // 来自 Release-mode claim（配对的另一半），属推荐模式而非混用 ⇒ A3 豁免之。
             // A4 冲突检测不受影响（Create×Create 等冲突与 Release 端无关）。
-            var nonReleaseSites = kv.Value.Values
-                .Select(site => site.Where(x => x.Mode != Mode.Release).Select(x => x.Kind).ToImmutableHashSet())
-                .Where(kinds => kinds.Count > 0)
-                .ToImmutableArray();
-
-            // A3 KIND_MIX：跨调用出现多类效应（read/write/occupy）混用（§3.1.4b DO-7）。
-            // 仅当剔除 Release 配对端后仍有 ≥2 个调用贡献非 Release claim 时才评估。
-            if (nonReleaseSites.Length >= 2)
+            // R3-CG-02（三轮审计）：A3 站点按【API】归并——同一白名单 API 重复调用（如 AddChild×2）的
+            // 多 kind 是白名单内部多态（类注释明言"非用户混用"），按调用站点归并会把它误报 KIND_MIX；
+            // 仅当 ≥2 条不同 API 在同资源上贡献非 Release claim 且 kind 多样才报（真量纲混用仍报）。
+            var nonReleaseKindsByApi = new Dictionary<string, ImmutableHashSet<Kind>>();
+            foreach (var (siteIdx, site) in kv.Value)
             {
-                var allKinds = nonReleaseSites.SelectMany(k => k).ToImmutableHashSet();
+                if (!apiBySite.TryGetValue(siteIdx, out var api)) continue;
+                var kinds = site.Where(x => x.Mode != Mode.Release).Select(x => x.Kind).ToImmutableHashSet();
+                if (kinds.IsEmpty) continue;
+                nonReleaseKindsByApi[api] = nonReleaseKindsByApi.TryGetValue(api, out var merged)
+                    ? merged.Union(kinds) : kinds;
+            }
+
+            // A3 KIND_MIX：跨【不同 API】出现多类效应（read/write/occupy）混用（§3.1.4b DO-7）。
+            if (nonReleaseKindsByApi.Count >= 2)
+            {
+                var allKinds = nonReleaseKindsByApi.Values.SelectMany(k => k).ToImmutableHashSet();
                 if (allKinds.Count > 1)
                 {
                     var kindList = string.Join(",", allKinds.Select(k => k.ToString()));

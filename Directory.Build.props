@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <!-- 各 packable csproj 的包内 README（路径相对各 csproj：src/X 或 tests/X 或 samples/X 均为 ..\..\README.md）。 -->
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Condition="Exists('..\..\README.md')" />
+    <None Include="../../README.md" Pack="true" PackagePath="" Condition="Exists('../../README.md')" /><!-- R3-CG-03：正斜杠——反斜杠在 Linux MSBuild 的 Exists() 按字面文件名解析恒 false ⇒ NU5039 -->
   </ItemGroup>
 
 </Project>
