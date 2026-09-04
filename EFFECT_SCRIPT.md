@@ -166,6 +166,12 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 > - **"⊤"/"inf" 双形等价**：`lifetime.hi`、`loop`、budget 值、`size` 端点均可写 `"⊤"` 或 `"inf"`（∞）。
 > - **lifetime 下界（lo）必须为有限非负整数**（`"⊤"`/`"inf"` 均拒——事件永不存活会掩盖泄漏）；**size 允许 `["⊤","⊤"]`**（未知区间，合法），`["⊤", 整数]` 拒。
 > - budget 键：`memory:<非负整数>`（如 `memory:42`；空段/非数字拒），其余 `gpu:/commandBuffer:/occupancy:/signalBus:/custom:` 后须非空 id（`"gpu:"` 拒——空 id 是永不匹配 claim 的幽灵预算）。
+>
+> 契约要点（六轮审计 R6-RB 补记，与 Parse 同界）：
+> - **重复键拒**：任意对象层（根/事件/claim/scope/resource/budget）出现重复键即 `FormatException`——System.Text.Json 默认 last-win 会静默丢前值（根级 `events` 双写可把非空剧本静默当空剧本假绿，R6-RB-04）。
+> - **身份串拒控制字符**：claim 侧字符串（kind/mode 值、resource id、scope 名）与 budget 键 id 含 U+0000–U+001F 即拒（NUL 破坏下游日志与原生互操作；R6-RB-06，与 A1-12 空 id 拒绝同口径）。
+> - **整数须十进制字面量**：`loop:1e+19` 拒、`18446744073709551615` 收（System.Text.Json `TryGetUInt64` 方言；R6-RB-05）。
+> - **失败消息全路径可定位**：claim/kind/mode/lifetime/loop 报错均带 `events[N][M]` 级定位（R6-RB-03）。
 
 验证失败 → `AuditResult.Violations` 返回反例（哪个时刻、哪个资源、超什么界）→ AI 改 JSON 重投。**闭环无需运行游戏。**
 

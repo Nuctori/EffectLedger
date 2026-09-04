@@ -59,8 +59,14 @@ public static class EffectScriptContract
     /// <summary>R6-E1（hickey-x）— 对象层未知键白名单校验：layer 为层名（如「根」），合法键列表进报错。</summary>
     static void RejectUnknownKeys(JsonElement obj, string layer, params string[] known)
     {
+        var seen = new HashSet<string>();
         foreach (var prop in obj.EnumerateObject())
         {
+            // R6-RB-04（六轮审计）：重复键 last-win 是结构性假绿向量——根级 "events" 双写（一空一非空）
+            // 可把含泄漏事件的剧本静默当空剧本全绿。与 R3-L1-03（多键 resource 拒绝）同教义：静默改写
+            // 比报错危险。JsonElement.EnumerateObject 逐个吐出重复键（TryGetProperty 只取最后值）。
+            if (!seen.Add(prop.Name))
+                throw new FormatException($"{layer}层重复键 \"{prop.Name}\"（last-win 会静默丢弃前值，拒绝而非改写）");
             bool ok = false;
             foreach (var k in known)
                 if (prop.Name == k) { ok = true; break; }
@@ -90,9 +96,9 @@ public static class EffectScriptContract
         if (ev.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: event 须为对象");
         // rich-hickey2 R1-F2：事件层与根层同型未知键白名单——拼写错误（如大写 "Loop"）不得被静默吞掉后落回缺省 ω=1。
         RejectUnknownKeys(ev, layer, "lifetime", "scope", "loop", "footprint");
-        var life = ParseInterval(Require(ev, "lifetime", layer));
-        var scope = ParseScope(Require(ev, "scope", layer));
-        var loop = ev.TryGetProperty("loop", out var l) ? ParseLoop(l) : LoopCount.Of(1);
+        var life = ParseInterval(Require(ev, "lifetime", layer), $"{layer}.lifetime");   // R6-RB-03：消息带事件索引
+        var scope = ParseScope(Require(ev, "scope", layer), $"{layer}.scope");
+        var loop = ev.TryGetProperty("loop", out var l) ? ParseLoop(l, $"{layer}.loop") : LoopCount.Of(1);
         var fp = ParseFootprint(Require(ev, "footprint", layer), layer, scope);
         return new EffectEvent(life, scope, fp, loop);
     }
@@ -219,28 +225,31 @@ public static class EffectScriptContract
 
     static Claim ParseClaim(JsonElement c, string layer = "claim", ScopeId? eventScope = null)
     {
-        if (c.ValueKind == JsonValueKind.Object)
-            RejectUnknownKeys(c, layer, "kind", "resource", "mode", "scope", "size");
+        // R6-RB-01（六轮审计）：非对象 claim（数组/数字/字符串）此前漏 BCL InvalidOperationException
+        // （非对象上 TryGetProperty），违反 FormatException 单一方言——与 ParseEvent 事件层同型守卫。
+        if (c.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: claim 须为对象");
+        RejectUnknownKeys(c, layer, "kind", "resource", "mode", "scope", "size");
         // rich-hickey2 R1-F4：kind/mode 非字符串 ⇒ 带字段名的 FormatException（原 GetString() 漏 BCL 异常）。
-        var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"));
+        // R6-RB-03：kind/mode 报错须带事件定位（layer），10 万事件剧本中才可定位条目。
+        var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"), layer);
         var res = ParseResource(Require(c, "resource", layer), $"{layer}.resource");
-        var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
+        var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"), layer);
         var scope = c.TryGetProperty("scope", out var scEl) ? ParseScope(scEl, $"{layer}.scope") : (eventScope ?? throw new FormatException($"{layer}: 缺少 scope （且无 event scope 可继承）"));
         var size = c.TryGetProperty("size", out var sz) ? ParseSizeInterval(sz, $"{layer}.size") : Interval.Default;
         return new Claim(kind, res, mode, scope, size).Normalize();
     }
 
-    static Kind ParseKind(string k) => k switch
+    static Kind ParseKind(string k, string layer) => k switch
     {
         "read" => Kind.Read, "write" => Kind.Write, "occupy" => Kind.Occupy,
-        _ => throw new FormatException($"未知 kind: {k}")
+        _ => throw new FormatException($"{layer}.kind: 未知 kind \"{k}\"（合法: read/write/occupy）")
     };
 
-    static Mode ParseMode(string m) => m switch
+    static Mode ParseMode(string m, string layer) => m switch
     {
         "use" => Mode.Use, "create" => Mode.Create, "release" => Mode.Release,
         "move" => Mode.Move, "unknown" => Mode.Unknown,
-        _ => throw new FormatException($"未知 mode: {m}")
+        _ => throw new FormatException($"{layer}.mode: 未知 mode \"{m}\"（合法: use/create/release/move/unknown）")
     };
 
     static ResourceId ParseResource(JsonElement el, string layer = "resource")
@@ -263,17 +272,21 @@ public static class EffectScriptContract
         if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
         if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, $"{layer}.commandBuffer"));
         if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number && mem.TryGetUInt64(out var uid) ? uid : throw new FormatException($"resource.memory 须为非负整数（rich-hickey2 R3 V3-006），实际 {mem.ValueKind}"));
-        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, "occupancy"));
-        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, "signalBus")));
-        if (el.TryGetProperty("custom", out var cu)) return new ResourceId.Custom(ReqStr(cu, "custom"));
+        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, $"{layer}.occupancy"));
+        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, $"{layer}.signalBus")));
+        if (el.TryGetProperty("custom", out var cu)) return new ResourceId.Custom(ReqStr(cu, $"{layer}.custom"));
         throw new FormatException("resource 形状非法");
     }
 
     static IReadOnlyDictionary<ResourceId, NatStar> ParseBudget(JsonElement bud)
     {
         var dict = new Dictionary<ResourceId, NatStar>();
+        var seenKeys = new HashSet<string>();
         foreach (var prop in bud.EnumerateObject())
         {
+            // R6-RB-04：budget 对象不走 RejectUnknownKeys（键集开放），重复键检测在此单点补齐。
+            if (!seenKeys.Add(prop.Name))
+                throw new FormatException($"budget 层重复键 \"{prop.Name}\"（last-win 会静默丢弃前值，拒绝而非改写）");
             var r = ParseResourceKey(prop.Name);
             // R2-N1（hickey-x）：⊤ 须可往返——接受 "⊤"/"inf" 字符串为 NatStar.Top，否则序列化侧写出的 ⊤ 解析回有限值造成语义翻转。
             if (prop.Value.ValueKind == JsonValueKind.String)
@@ -307,9 +320,15 @@ public static class EffectScriptContract
         _ => throw new FormatException($"未知 budget 键: {key}")
     };
 
-    static string NonEmptyId(string id, string key) => string.IsNullOrEmpty(id)
-        ? throw new FormatException($"budget 键 \"{key}\" 资源 id 不可为空（形如 gpu:<name>；空 id 永不匹配任何 claim）")
-        : id;
+    static string NonEmptyId(string id, string key)
+    {
+        if (string.IsNullOrEmpty(id))
+            throw new FormatException($"budget 键 \"{key}\" 资源 id 不可为空（形如 gpu:<name>；空 id 永不匹配任何 claim）");
+        // R6-RB-06：与 claim 侧 ReqStr 控制字符口径同界——budget 键 id 同为分组身份。
+        foreach (var ch in id)
+            if (ch < ' ') throw new FormatException($"budget 键 \"{key}\" 资源 id 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
+        return id;
+    }
 
     static ResourceId.Memory ParseMemoryKey(string suffix, string key)
     {
@@ -388,9 +407,17 @@ public static class EffectScriptContract
     }
 
     // 资源值 fail-fast 提取（修 auditR2/R4 C2）：空串/非字符串 ⇒ 抛，不静默兜底。
-    static string ReqStr(JsonElement v, string field) => v.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(v.GetString())
-        ? v.GetString()!
-        : throw new FormatException($"resource.{field} 须为非空字符串");
+    // R6-RB-03：消息不再硬编码 "resource." 前缀（field 已是全路径，此前 kind=42 会报成 "resource.events[0][0].kind" 路径撒谎）。
+    // R6-RB-06（与 A1-12 budget 键空 id 拒绝同口径）：C0 控制字符（U+0000–U+001F）混入身份串会破坏
+    // 下游日志/原生互操作（NUL）——claim 侧字符串（kind/mode/resource id/scope 名）同为报告与分组身份，fail-fast 拒绝。
+    static string ReqStr(JsonElement v, string field)
+    {
+        if (v.ValueKind != JsonValueKind.String || v.GetString() is not { } s || s.Length == 0)
+            throw new FormatException($"{field} 须为非空字符串");
+        foreach (var ch in s)
+            if (ch < ' ') throw new FormatException($"{field} 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
+        return s;
+    }
 }
 
 /// <summary>§2.3 — 预算可附着在剧本上（便捷：Parse 后直接 Audit）。</summary>
