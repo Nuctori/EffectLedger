@@ -46,11 +46,7 @@ namespace SampleGame {
 
     private static CSharpCompilation MakeCompilation(string source)
     {
-        var refs = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(Claim).Assembly.Location));
+var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
         return CSharpCompilation.Create(
             "IntegrationGame",
             new[] { CSharpSyntaxTree.ParseText(source) },

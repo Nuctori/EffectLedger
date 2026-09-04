@@ -10,6 +10,8 @@
     <Deterministic>true</Deterministic>
     <!-- R2B-03（二轮审计）：nuget.org 页面带 README（此前仅注释声称，pack 一直报"缺少自述文件"）。 -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- R3 审计：全部测试项目统一串行执行（MaxCpuCount=1），根除多 testhost 并发 OOM 假红；非测试项目不消费此属性。 -->
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory).runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

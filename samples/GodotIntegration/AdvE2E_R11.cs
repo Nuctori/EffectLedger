@@ -39,11 +39,7 @@ namespace SampleGame {
     [Fact]
     public async Task R11_Analyzer_FiresOnRealGodotShapedLeak_NotOnPaired()
     {
-        var refs = System.AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(Godot.Shapes.Node).Assembly.Location));
+var refs = CompilationRefs.Lean(typeof(Godot.Shapes.Node).Assembly.Location);
         var comp = CSharpCompilation.Create("R11Game",
             new[] { CSharpSyntaxTree.ParseText(Source) }, refs,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

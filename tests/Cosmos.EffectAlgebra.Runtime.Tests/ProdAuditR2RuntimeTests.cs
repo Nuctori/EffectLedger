@@ -35,6 +35,7 @@ public class ProdAuditR2RuntimeTests
         p.Unload();                  // 旁路：无级联（宿主绕过 BeginTeardown）
         rt.TickWatchdog(_ => true);  // 自愈回收 p —— 须同帧级联 d（修改前：d 仍 Active 派发，永不 teardown）
         rt.DrainTeardownBatch();
+        Assert.True(released, "看门狗自愈分支必须真正回放逆声明（否则资源永不回收，仅状态迁 Dead 是假回收）");
         Assert.Equal(FiberState.Dead, p.State);
         Assert.NotEqual(FiberState.Active, d.State); // 修改前：Active（自愈分支未 NotifyDependents/BeginTeardown）
         rt.DrainTeardownBatch();

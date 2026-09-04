@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- R3 审计：测试程序集级串行执行（经 Directory.Build.props 的 RunSettingsFilePath 全测试项目自动生效）。
+       此前 solution 级 dotnet test 并发拉起 3 个 testhost（各含 Roslyn 编译/分析），
+       叠加机器内存压力时 commit 耗尽 → MetadataReference.CreateFromFile 抛 OutOfMemoryException，
+       28 个偶发假红（单跑各项目本就全绿）。串行后 host 独占内存，门禁恢复确定性。 -->
+  <RunConfiguration>
+    <MaxCpuCount>1</MaxCpuCount>
+  </RunConfiguration>
+</RunSettings>

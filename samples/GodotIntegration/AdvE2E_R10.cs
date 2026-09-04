@@ -40,11 +40,7 @@ namespace R10Game {
 
     private static CSharpCompilation MakeCompilation(string source)
     {
-        var refs = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(Claim).Assembly.Location));
+var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
         return CSharpCompilation.Create(
             "R10IntegrationGame",
             new[] { CSharpSyntaxTree.ParseText(source) },
@@ -119,11 +115,7 @@ namespace R10Game {
         }
         Assert.True(File.Exists(l1Dll), "L1 程序集应可由仓库相对路径解析: " + l1Dll);
 
-        var refs = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(l1Dll));
+var refs = CompilationRefs.Lean(l1Dll);
 
         var comp = CSharpCompilation.Create(
             "R10GenGame",

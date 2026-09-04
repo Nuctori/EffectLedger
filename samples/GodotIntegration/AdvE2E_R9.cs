@@ -20,11 +20,7 @@ public sealed class AdvE2E_R9
     // ── 驱动工具（同 IntegrationTests.MakeCompilation 语义）──
     private static CSharpCompilation MakeCompilation(string source)
     {
-        var refs = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(Claim).Assembly.Location));
+var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
         // 消费工程可能关闭 #nullable（真实 Godot 工程常见）；此处显式禁用，使生成代码（引用 L1 可空标注成员）
         // 在该上下文可编译，避免 CS8632（与生成器内 #nullable disable 双保险）。
         var opts = new CSharpCompilationOptions(

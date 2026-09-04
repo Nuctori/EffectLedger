@@ -23,11 +23,7 @@ public sealed class AdvE2E_R8
     // R8 本地 helper：构造游戏风格编译单元（复用 IntegrationTests 的 MakeCompilation 模式）。
     private static CSharpCompilation MakeCompilation(string source)
     {
-        var refs = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
-            .ToList();
-        refs.Add(MetadataReference.CreateFromFile(typeof(Claim).Assembly.Location));
+var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
         return CSharpCompilation.Create(
             "R8Game",
             new[] { CSharpSyntaxTree.ParseText(source) },
