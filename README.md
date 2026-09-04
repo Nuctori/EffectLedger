@@ -22,6 +22,18 @@
 
 ## 5 分钟上手（静态审计 + 剧本 DSL 演示）
 
+### ⓪ NuGet 安装（消费已发布的包；源码引用见 ①）
+
+```pwsh
+dotnet add package Cosmos.EffectAlgebra           # L1 代数核心（必需；Generator 产物硬引用其类型）
+dotnet add package Cosmos.EffectAlgebra.Runtime   # 运行时权威闭合（仅运行期闭合需要；预算-only 可跳过）
+dotnet add package Cosmos.EffectAlgebra.Analyzer  # L3 EAA* 诊断
+dotnet add package Cosmos.EffectAlgebra.Generator # L2 每方法 Signature 生成（依赖 L1，NuGet 自动联装）
+```
+
+**门禁须自行接线**：诊断默认 warning，把 ② 的五行 severity=error 复制进你的 `.editorconfig`。JSon 剧本一键审计用 `cosmos` CLI（见 ⑤）。
+
+
 ### ① 接 L1 + L3 分析器 + L2 生成器（消费工程 `.csproj`）
 
 ```xml
@@ -34,6 +46,8 @@
 <ProjectReference Include="..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj"
                   OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 ```
+
+> **宿主前提（R2B-02）**：分析器（net9.0）与生成器（net10.0）仅在 **.NET SDK 的 `dotnet build`**（Roslyn on .NET Core）下加载——Visual Studio / .NET Framework MSBuild 的 Roslyn 宿主暂不支持，会**静默不加载**（零诊断零生成）。CI/CLI 构建路径不受影响。
 
 ### ② 把 `EAA*` 诊断设为 error（否则只是 warning，门禁失效）
 
@@ -105,6 +119,24 @@ string back = EffectScriptContract.ToJson(script);
 > Assert.Equal(2, audit.CapsChecked);                   // 两资源峰值门实际运行（非零预算）
 > // 注意：Budget.None 时 gate(2) 不运行 ⇒ audit.CapsChecked==0，IsPeakChecked==false（R4/R7-D07-006：别把"没查"当"全绿"）
 > ```
+
+---
+
+### ⑤ `cosmos` CLI：剧本 JSON 一键审计（AI 闭环用）
+
+```pwsh
+dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.json --out violations.json
+```
+
+`violations.json` 喂回 LLM 重投直至 `passed`。**退出码契约（R2B-06，注意与常见惯例不同）**：
+
+| exit code | 含义 |
+| --------- | ---- |
+| `0` | 审计通过（`passed: true`） |
+| `2` | **存在违例**（解析成功但 Audit 不通过；`--out` 落盘反例） |
+| `1` | 解析/IO/未知命令错误 |
+
+CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（0/2 均非零）——按需用 `if [ $? -eq 2 ]` 区分违例与错误。
 
 ---
 

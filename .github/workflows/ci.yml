@@ -12,7 +12,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          cache: true
+          # R2A-03（二轮审计）：不开 cache:true——actions/setup-dotnet 的缓存依赖 packages.lock.json 哈希做键，
+          # 本仓库未启用 RestorePackagesWithLockFile，开了会在 GitHub Actions 上直接红（'Dependencies lock file is not found'）。
       - name: Restore
         run: dotnet restore Cosmos.EffectAlgebra.slnx
       - name: Build (编译期门禁：TreatWarningsAsErrors 使警告=错误)

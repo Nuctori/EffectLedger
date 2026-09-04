@@ -158,6 +158,12 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 > 契约要点（rich-hickey2 R1）：事件级 `scope` 必填；`resource` 为扁平字符串形态 `{"gpu":"mesh1"}`；
 > 键区分大小写且只认白名单（事件层：lifetime/scope/loop/footprint），未知键直接报错——拼写错误不会被静默吞掉。
+>
+> 契约要点（二轮审计 R2A-11 补记，与 Parse/JSON Schema 三方同界）：
+> - **根级可选 `"$schema"`**：JSON 工程惯例键，读后丢弃（templates/effect-script.json 即带此键）。
+> - **"⊤"/"inf" 双形等价**：`lifetime.hi`、`loop`、budget 值、`size` 端点均可写 `"⊤"` 或 `"inf"`（∞）。
+> - **lifetime 下界（lo）必须为有限非负整数**（`"⊤"`/`"inf"` 均拒——事件永不存活会掩盖泄漏）；**size 允许 `["⊤","⊤"]`**（未知区间，合法），`["⊤", 整数]` 拒。
+> - budget 键：`memory:<非负整数>`（如 `memory:42`；空段/非数字拒），其余 `gpu:/commandBuffer:/occupancy:/signalBus:/custom:` 后须非空 id（`"gpu:"` 拒——空 id 是永不匹配 claim 的幽灵预算）。
 
 验证失败 → `AuditResult.Violations` 返回反例（哪个时刻、哪个资源、超什么界）→ AI 改 JSON 重投。**闭环无需运行游戏。**
 

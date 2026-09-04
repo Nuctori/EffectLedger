@@ -154,4 +154,64 @@ public class ProdAuditBatch2DocGuardTests
         Assert.Contains("templates/effect-script.json", readme);
         Assert.True(File.Exists(Path.Combine(RepoRoot(), "templates", "effect-script.json")));
     }
+
+    // ── R2B-05：README 须含 NuGet 安装章节（含三包命令——单装 Generator 无 L1 会编译失败） ──
+    [Fact]
+    public void Readme_NuGetConsumption_SectionExists()
+    {
+        var readme = ReadRepo("README.md");
+        Assert.Contains("dotnet add package Cosmos.EffectAlgebra", readme);
+        Assert.Contains("dotnet add package Cosmos.EffectAlgebra.Generator", readme);
+    }
+
+    // ── R2B-02：分析器/生成器宿主前提必须声明（VS/.NET Framework MSBuild 静默不加载） ──
+    [Fact]
+    public void Readme_HostPrerequisite_Declared()
+    {
+        var readme = ReadRepo("README.md");
+        Assert.Matches(new System.Text.RegularExpressions.Regex("Visual Studio[^\n]{0,80}(静默|不加载|宿主)"), readme);
+    }
+
+    // ── R2B-06：cosmos CLI 退出码契约必须有外部文档（0=通过/2=违例/1=错误，与常见惯例不同） ──
+    [Fact]
+    public void Readme_ExitCodeContract_Documented()
+    {
+        var readme = ReadRepo("README.md");
+        Assert.Contains("退出码", readme);
+        // 三种退出码语义都在文档中（防止 CI 作者按 1=违例 的惯例把门接反）
+        Assert.True(
+            new System.Text.RegularExpressions.Regex("exit code").IsMatch(readme) && readme.Contains("| `0` |"),
+            "README 须含退出码表格（0=通过）");
+        Assert.Contains("`2`", readme);
+    }
+
+    // ── R2A-11：EFFECT_SCRIPT §4 契约主文档须记载 inf 别名与 $schema 键（Parse 接受集 = 文档声明集） ──
+    [Fact]
+    public void EffectScriptDoc_ContractPoints_Synced()
+    {
+        var doc = ReadRepo("EFFECT_SCRIPT.md");
+        Assert.Contains("inf", doc);
+        Assert.Contains("$schema", doc);
+        Assert.Contains("memory:", doc);
+    }
+
+    // ── R2A-04：JSON Schema 与 Parse 同界——lifetime lo 禁 ⊤、size 双 ⊤ 合法、budget memory 段数字 ──
+    [Fact]
+    public void JsonSchema_Constraints_MatchParse()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(ReadRepo("docs/effect-script.schema.json"));
+        var evProps = doc.RootElement.GetProperty("properties").GetProperty("events")
+            .GetProperty("items").GetProperty("properties");
+        // lifetime 用 prefixItems 且 lo（首位）为纯 integer（禁 ⊤/inf）
+        var lifetime = evProps.GetProperty("lifetime");
+        Assert.True(lifetime.TryGetProperty("prefixItems", out var pi));
+        Assert.Equal("integer", pi[0].GetProperty("type").GetString());
+        // size 是 anyOf 双分支（lo=⊤ 仅当 hi=⊤）
+        var size = evProps.GetProperty("footprint").GetProperty("items").GetProperty("properties").GetProperty("size");
+        Assert.True(size.TryGetProperty("anyOf", out _));
+        // budget：memory 段须数字、字符串 id 非空
+        var patterns = doc.RootElement.GetProperty("properties").GetProperty("budget").GetProperty("patternProperties");
+        Assert.True(patterns.TryGetProperty("^memory:\\d+$", out _));
+        Assert.True(patterns.TryGetProperty("^(gpu|commandBuffer|occupancy|signalBus|custom):\\S+$", out _));
+    }
 }

@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NU5128：analyzer-only 包（无 lib）带 TFM 依赖组的已知误报，显式压制 -->
+    <NoWarn>NU5128</NoWarn>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- NuGet 打包元数据（P0-2：生产可分发）。源生成器须落入 analyzers/dotnet/cs/ 以供消费方编译期加载。 -->
     <IsPackable>true</IsPackable>
@@ -16,7 +18,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>source-generator;effect-algebra;godot;roslyn</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
-    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- R2B-01（二轮审计）：依赖照常流转进 nuspec（此前 Suppress 使单装 Generator 的消费工程必然 CS0246）。
+         流转的是 NuGet 依赖（消费方还原 L1 包），不进编译器隔离 ALC，无 CS8032 风险。 -->
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -32,6 +35,10 @@
     <ShareSource Include="..\Cosmos.EffectAlgebra\Algebra.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\Numeric.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\SignedNet.cs" />
+    <!-- R2B-01：pack 期流转完整 NuGet 依赖（含 Compile——消费工程须能编译到 L1 类型，单装 Generator 不再 CS0246）。
+         生成器编译不受影响：代码里对 Shared 副本的引用全部完全限定（见 EffectAlgebraGenerator.cs R2B-01 注），
+         不使用 L1 程序集的任何类型 ⇒ 生成器 PE 不携带对 L1.dll 的引用，A2-06 自包含（隔离 ALC 可加载）语义保持。 -->
+    <ProjectReference Include="..\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
   </ItemGroup>
 
   <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Generator.Shared[.X]，

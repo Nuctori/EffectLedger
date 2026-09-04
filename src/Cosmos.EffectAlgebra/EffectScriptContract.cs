@@ -102,12 +102,12 @@ public static class EffectScriptContract
             var hi = ParseTop(items[1], $"{layer}.hi");
             // R10-F2 / EFFECT_SCRIPT.md §「已知锐边」：[⊤,⊤] 寿命视为非法输入——Lo=⊤ 的事件永不存活，
             // 会让 create-without-release 泄漏剧本在端点采样下静默全绿（假绿）。fail-fast 拒绝。
-            if (lo.IsTop) throw new FormatException($"{layer}: 下界不可为 \"⊤\"（[⊤,⊤] 非法：事件永不存活会掩盖泄漏，EFFECT_SCRIPT.md）");
+            if (lo.IsTop) throw new FormatException($"{layer}: 下界不可为 \"⊤\"/\"inf\"（[⊤,⊤] 非法：事件永不存活会掩盖泄漏，EFFECT_SCRIPT.md）");
             // rich-hickey2 R4-001：lo>hi 校验从内部 ArgumentException 翻为契约 FormatException（外部输入方言单一）。
             try { return new Interval(lo, hi); }
             catch (ArgumentException ex) { throw new FormatException($"{layer}: {ex.Message}", ex); }
         }
-        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（hi 可为 \"⊤\" 表示∞）");
+        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（hi 可为 \"⊤\"/\"inf\" 表示∞）");
     }
 
     // A1-01（生产审计批1）：size 的 ⊤ 规则与 lifetime 分离——[⊤,⊤] 是 Interval 构造子明文允许的
@@ -127,7 +127,7 @@ public static class EffectScriptContract
             try { return new Interval(lo, hi); }
             catch (ArgumentException ex) { throw new FormatException($"{layer}: {ex.Message}", ex); }
         }
-        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（端点可为数字或 \"⊤\"）");
+        throw new FormatException($"{layer}: 须为 [lo,hi] 数组（端点可为数字或 \"⊤\"/\"inf\"）");
     }
 
     // hi="⊤" 或数字字符串；lo 必须有限。A1-07（生产审计批1）：接受 "inf" 别名（与 ParseBudget 单一真源——README 承诺 lifetime/loop/budget 三处均认 "⊤"/"inf" 双形式）。

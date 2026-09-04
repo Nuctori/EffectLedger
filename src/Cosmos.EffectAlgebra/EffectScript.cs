@@ -116,6 +116,9 @@ public sealed partial class EffectScript
     /// <summary>§3 / PR1 — 纯函数：从事件集计算采样点与闭包时刻（可独立测试）。与 Audit 内联逻辑等价（含 R2-003 幽灵点规则）。</summary>
     public static (IReadOnlyList<NatStar> SamplePoints, NatStar ClosureT) ComputeSamplePoints(ImmutableArray<EffectEvent> events)
     {
+        // R2A-08（二轮审计）：本方法是 At/Audit 之外的第三个公开消费入口——同源 loud 守卫，
+        // 防 default(EffectEvent) 静默产出 [0] 采样点（独立测试替身等价性可被非法输入掩盖）。
+        for (int i = 0; i < events.Length; i++) ValidateEvent(events[i], i);
         var endpoints = new SortedSet<ulong>();
         ulong maxFinite = 0;
         bool anyFinite = false;
@@ -184,6 +187,8 @@ public sealed partial class EffectScript
         var netScope = new Dictionary<ResourceId, (ScopeId scope, int ei)>();   // gate(1) 资源→首个贡献者 (scope,ei)（用于 Violation 归因）
         var peakScope = new Dictionary<ResourceId, (ScopeId scope, int ei)>();  // gate(2) 资源→首个峰值贡献者 (scope,ei)
         var peakReported = new HashSet<ResourceId>();                           // rich-hickey2 R1：PeakExceeded 每（归一化）资源只报首个反例——同一违例逐采样点重复上报是时间序列不是问题集
+        var peakActive = new Dictionary<ResourceId, int>();                     // R2A-01（二轮审计）：峰值相关的活跃 occupy 非 release 计数——gate(3) 全桶化后 grp 含 read/write 组员，
+                                                                                // 若用 grp 判活跃会让 read claim 跨生命周期时清理被跳过 ⇒ peakScope 陈旧归因（S06-004 回归）
         ScopeId ResolveNetScope(ResourceId r) => netScope.TryGetValue(r, out var s) ? s.scope : new ScopeId.Global();
         int ResolveNetEi(ResourceId r) => netScope.TryGetValue(r, out var s) ? s.ei : -1;
         ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s.scope : new ScopeId.Global();
@@ -236,6 +241,7 @@ public sealed partial class EffectScript
                 if (enter)
                 {
                     if (!peakScope.ContainsKey(r)) peakScope[r] = (e.Scope, ei);
+                    peakActive[r] = peakActive.GetValueOrDefault(r) + 1; // R2A-01：峰值活跃计数（与 grp 解耦）
                     bool top = (c.Size ?? Interval.Default).Hi.IsTop || e.Loop.Count.IsTop;
                     if (top) topCount[r] = topCount.GetValueOrDefault(r) + 1;
                     else
@@ -264,10 +270,11 @@ public sealed partial class EffectScript
                     // rich-hickey2 R6 S06-004：exit 后若该资源无活跃贡献者（无 peakSum 也不在 grp/存活峰值集），
                     // 则清理陈旧的 peakScope——下一采样点若再触发峰值，其归因 scope 需取新存活者而非首个历史者。
                     // 判定：当前既无 top 也无 peakSum 计数>0 且 grp 中无该资源的活跃条目 ⇒ 可视为"当前无活跃峰值贡献者"
+                    if (peakActive.TryGetValue(r, out var pa) && pa > 0) peakActive[r] = pa - 1; // R2A-01：对称递减
                     bool hasActivePeak = (topCount.TryGetValue(r, out var tc2) && tc2 > 0)
                         || (peakSum.TryGetValue(r, out var ps) && !ps.Equals(NatStar.Of(0)));
-                    bool hasActiveGrp = grp.Any(kv => kv.Key.Item1.Equals(r) && kv.Value.Count > 0); // 按资源细化（R10 O10）
-                    if (!hasActivePeak && !hasActiveGrp && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
+                    bool hasPeakContributor = peakActive.TryGetValue(r, out var pa2) && pa2 > 0; // R2A-01：仅峰值相关桶参与判定（grp 全桶不具代表性）
+                    if (!hasActivePeak && !hasPeakContributor && peakSum.GetValueOrDefault(r, NatStar.Of(0)).Equals(NatStar.Of(0)))
                     {
                         peakScope.Remove(r);
                     }

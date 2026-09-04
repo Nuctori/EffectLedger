@@ -144,7 +144,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             // 可冒充逃逸通道豁免 A3/A4，反向误触发 EAA0801）。语义可解析 ⇒ 按特性类型完全限定名精确比对 Cosmos 归属，
             // 非 Cosmos 特性一律不参与；语义不可解析（无 L1 引用的裸语法编译）⇒ 回退名称末段匹配（召回优先）。
             var attrType = context.SemanticModel.GetTypeInfo(attr.Name).Type;
-            if (attrType is not null)
+            if (attrType is not null && attrType.TypeKind != TypeKind.Error)
             {
                 var fqn = attrType.OriginalDefinition.ToDisplayString();
                 if (fqn == CosmosEffectOverrideFqn)

@@ -22,4 +22,8 @@
     <ProjectReference Include="..\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- R2A-10：DependencyGraph.Remove 收为 internal，测试程序集经此可见（账本同步守卫）。 -->
+    <InternalsVisibleTo Include="Cosmos.EffectAlgebra.Runtime.Tests" />
+  </ItemGroup>
 </Project>

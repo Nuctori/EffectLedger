@@ -45,8 +45,11 @@ public sealed class DependencyGraph
                 $"依赖边前置条件违反（§3 step1）：{dependent.Id}.Scope({dependent.Scope}) != {provider.Id}.Scope({provider.Scope})，跨 Scope {(hard ? "硬" : "软")}边 teardown 语义未定义（R7-N5）");
     }
 
-    /// <summary>§3 — 移除某 Fiber 的全部边（dead 后清理）。</summary>
-    public void Remove(FiberId id)
+    /// <summary>§3 — 移除某 Fiber 的全部边（dead 后清理）。
+    /// R2A-10（二轮审计）：internal——生产零调用，且公开会让宿主经 PluginRuntime.Graph 移除图边后
+    /// 与 PluginRuntime._fibers 双账本失同步（BeginTeardown 级联对被删边静默失效、无诊断）。
+    /// 账本/图生命周期由调度器统一管理（实例为单场景生命周期，见 README 诚实边界 10）。</summary>
+    internal void Remove(FiberId id)
     {
         _hard.RemoveWhere(e => e.Dependent == id || e.Provider == id);
         _soft.RemoveWhere(e => e.Dependent == id || e.Provider == id);

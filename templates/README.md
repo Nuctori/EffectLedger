@@ -19,7 +19,7 @@ dotnet add package Cosmos.EffectAlgebra.Runtime
 { "extraMappings": [{ "api": "MyPool.Spawn", "claims": [{ "kind": "occupy", "resource": { "memory": 1 }, "mode": "create", "scope": { "scene": "Battle" } }] }] }
 ```
 
-> **诚实边界（当前未自动生效）**：该文件目前仅有 L1 加载 API（`CosmosEffectConfig.LoadExtra / AllWithExtra`）；L2 生成器与 L3 分析器**尚未**自动消费它——不写接线代码时自定义 API 不会进白名单，也就是"静默无保护"。运行 `cosmos audit` 的 CI 严格门请传 strict 或先调 `AllWithExtra` 自验。
+> **诚实边界（当前未自动生效）**：该文件目前仅有 L1 加载 API（`CosmosEffectConfig.LoadExtra / AllWithExtra`）；L2 生成器与 L3 分析器**尚未**自动消费它——不写接线代码时自定义 API 不会进白名单，也就是"静默无保护"。自写 CI 严格门时请在调用方传 `LoadExtra(path, strict: true)` / `AllWithExtra(...)`（cosmos audit CLI 本身不消费该文件，也无 strict 开关）。
 
 ## AI 闭环
 

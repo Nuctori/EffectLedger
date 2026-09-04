@@ -291,6 +291,16 @@ public sealed class PluginRuntime
                 {
                     CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, f, ex));
                 }
+                // R2A-02（二轮审计）：自愈须与第一分支同型级联——旁路 Unload 路径下依赖者从未收 Suspending 通知，
+                // provider 自愈 Dead 后依赖者仍 Active 派发（use-after-free 同型窗口，第一分支注释同源）。
+                // 硬环跳过路径的依赖者早经 BeginTeardown 级联过，此处幂等（!TeardownEnqueued 守卫去重）。
+                _graph.NotifyDependents(f);
+                foreach (var dep in _graph.DependentsOf(f.Id))
+                    if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
+                    {
+                        try { OnSuspending?.Invoke(d); } catch { /* 钩子异常隔离（与第一分支一致） */ }
+                        BeginTeardown(d);
+                    }
             }
         }
     }
