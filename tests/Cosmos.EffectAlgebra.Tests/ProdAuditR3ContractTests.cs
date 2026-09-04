@@ -84,7 +84,10 @@ public sealed class ProdAuditR3ContractTests
           ]
         }
         """;
-        Assert.NotNull(CosmosEffectConfig.LoadExtraFromJson(json)); // 修改前：ParseNat 只认 "⊤"，"inf" 抛 FormatException
+        // ImmutableArray 是值类型 ⇒ 断言语义而非引用非空（xUnit2002）：双拼写都须归一为 [⊤,⊤]
+        var extra = CosmosEffectConfig.LoadExtraFromJson(json); // 修改前：ParseNat 只认 "⊤"，"inf" 抛 FormatException
+        var size = Assert.Single(extra).Claims[0].Size ?? Interval.Default;
+        Assert.True(size.Lo.IsTop && size.Hi.IsTop, $"size 须归一为 [⊤,⊤]，实际 {size}");
     }
 
     // ── R3-L1-05：budget "memory:" 空段 → 拒绝（"memory:0" 合法） ──
