@@ -232,17 +232,17 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 ### 10.1 30 轮迭代闭环（#116–#148）
 
-以「对抗性数学审计 + 实现 + 测试 + 修复」循环推进，每轮独立 subagent 审计，证据落盘 `audit/iter-effect0N.md` / `audit/iter-effectNN.md`。关键进展：
+以「对抗性数学审计 + 实现 + 测试 + 修复」循环推进，每轮独立 subagent 审计，证据落盘 `audit/drafts/iter-effect0N.md` / `audit/drafts/iter-effectNN.md`。关键进展：
 
 | 轮次 | 主题 | 关键修复 | 审计落盘 |
 | --- | --- | --- | --- |
-| Iter1 (#119) | 骨架 + OPEN-1 | `EffectEvent` 自带 `Scope`（消除自由变量 `loopScope`） | `audit/iter-effect01.md` |
-| Iter2 (#120) | 守恒累积 | 居民层 ω=⊤ 豁免，双趟 `hasFinitePos`/`hasTopPos` 去序相关 | `audit/iter-effect01.md` |
-| Iter3–14 (#121–132) | 循环 ω / 兼容分组 / 预算 ⊤ / 代数定律 / 随机性质 / 溢出→⊤ / 非线性 / 确定性 / 类型硬化 / 居民豁免 | 端点采样完备性 + 反例测试 | `audit/iter-effect03_14.md` |
-| Iter11 (#129) | JSON 契约（AI 数据格式） | `EffectScriptContract.Parse/ToJson` 快速失败 `FormatException` | `audit/iter-effect03_14.md` |
-| Iter21/22/23 (#139–141) | 全 Compatible 矩阵 / 1000 fuzz / 端点采样==密集扫描 | 穷举 + HashSet 确定性比对 | `audit/iter-effect26.md` |
-| Iter24 (#142) | §7 形状一致（不发明新 ResourceId kind） | `ResourceKinds_MatchKnownSet` 集合比对 | `audit/iter-effect26.md` |
-| Iter25/26 (#143–146) | **性能**：Jeff Dean 审计 O(S·E²)→O(E·K·log E) 扫换线重写 | 见 §10.2 | `audit/iter-effect26.md` + `audit/iter-effect28-review.md` |
+| Iter1 (#119) | 骨架 + OPEN-1 | `EffectEvent` 自带 `Scope`（消除自由变量 `loopScope`） | `audit/drafts/iter-effect01.md` |
+| Iter2 (#120) | 守恒累积 | 居民层 ω=⊤ 豁免，双趟 `hasFinitePos`/`hasTopPos` 去序相关 | `audit/drafts/iter-effect01.md` |
+| Iter3–14 (#121–132) | 循环 ω / 兼容分组 / 预算 ⊤ / 代数定律 / 随机性质 / 溢出→⊤ / 非线性 / 确定性 / 类型硬化 / 居民豁免 | 端点采样完备性 + 反例测试 | `audit/drafts/iter-effect03_14.md` |
+| Iter11 (#129) | JSON 契约（AI 数据格式） | `EffectScriptContract.Parse/ToJson` 快速失败 `FormatException` | `audit/drafts/iter-effect03_14.md` |
+| Iter21/22/23 (#139–141) | 全 Compatible 矩阵 / 1000 fuzz / 端点采样==密集扫描 | 穷举 + HashSet 确定性比对 | `audit/drafts/iter-effect26.md` |
+| Iter24 (#142) | §7 形状一致（不发明新 ResourceId kind） | `ResourceKinds_MatchKnownSet` 集合比对 | `audit/drafts/iter-effect26.md` |
+| Iter25/26 (#143–146) | **性能**：Jeff Dean 审计 O(S·E²)→O(E·K·log E) 扫换线重写 | 见 §10.2 | `audit/drafts/iter-effect26.md` + `audit/drafts/iter-effect28-review.md` |
 
 ### 10.2 性能审计结论（Jeff Dean 视角，iter-effect26.md）
 
@@ -250,11 +250,11 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 **修复**：扫换线（sweep-line）。端点排序一次 O(E·log E)，沿时间轴增量维护①运行中累积 net ②每资源运行中峰值（含 ⊤ 计数）③每 `(resource,scope,mode)` 活跃事件集合；每个事件仅进入/退出各处理一次 ⇒ **O(E·K·log E)**、内存 **O(E·K)**，消除 S 乘子与 gate(3) 平方。
 
-**等价性证明**：`audit/iter-effect26.md` 给出不变量证明 + 独立暴力参考实现 `ReferenceAudit`（用 public API 重写旧 O(S·E²) 语义）与扫换线 `Audit` 在 100 随机 + 4 对抗形状上**逐条 Violation 集合相等**（测试 `Iter26_SweepLine_EqualsBruteForce_*`）。
+**等价性证明**：`audit/drafts/iter-effect26.md` 给出不变量证明 + 独立暴力参考实现 `ReferenceAudit`（用 public API 重写旧 O(S·E²) 语义）与扫换线 `Audit` 在 100 随机 + 4 对抗形状上**逐条 Violation 集合相等**（测试 `Iter26_SweepLine_EqualsBruteForce_*`）。
 
 **规模实测（阈值测试通过）**：5000 同资源同 scope 重叠粒子审计 <2s（朴素 O(S·E²) 在此输入下会卡死/分钟级）；1000 事件 <5s。
 
-**独立审查（fresh-context reviewer, `audit/iter-effect28-review.md`）**：确认四相位扫换线精确等价于 `alive ⇔ Lo≤t≤Hi`，三道 gate 与旧语义逐条对齐，**PASS**；等价性另有 `ReferenceAudit` 集相等断言背书。
+**独立审查（fresh-context reviewer, `audit/drafts/iter-effect28-review.md`）**：确认四相位扫换线精确等价于 `alive ⇔ Lo≤t≤Hi`，三道 gate 与旧语义逐条对齐，**PASS**；等价性另有 `ReferenceAudit` 集相等断言背书。
 
 ### 10.3 最终状态
 

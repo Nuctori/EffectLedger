@@ -11,11 +11,11 @@
 
 | 能力          | 输入                                                                      | 产出                                                                                                                          | 形式化保障                                                                                                                      |
 | ----------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **守恒/泄漏审计** | 一组 `EffectEvent`（`lifetime` × `scope` × `footprint` × `LoopCount`）      | `AuditResult.Violations`（type: Leak / NegativeDip / PeakExceeded / Conflict）                                              | Σnet(t) 含 ⊤ 保守律（MA-002），O(E·K·log E) 扫换线（等价端点采样，iter-effect26.md）                                                          |
+| **守恒/泄漏审计** | 一组 `EffectEvent`（`lifetime` × `scope` × `footprint` × `LoopCount`）      | `AuditResult.Violations`（`Kind`: Leak / NegativeDip / PeakExceeded / CompatibleConflict）                                              | Σnet(t) 含 ⊤ 保守律（MA-002），O(E·K·log E) 扫换线（等价端点采样，`audit/drafts/iter-effect26.md`）                                                          |
 | **峰值预算**    | `EffectScript.Budget.Caps`（按归一化资源键）                                     | `Peak ≤ cap`，`IsPeakChecked`/`CapsChecked` 报告门是否实际运行（R1-HIGH-3, R5）                                                         | 值语义 `Budget: ImmutableDictionary` 归一底座（Self→SignalBus 等，R6 S06-002）与 `peakReported` 问题集语义（同资源只报首个）                         |
-| **互斥冲突**    | `gate(3) Compatible`                                                    | `Conflict / ParaConflict`（跨 scope×mode×归一化 ResourceId）                                                                | `Compatible.IsCompatible` 对角律单一真源（CONFLICT 集 §3.2.3）                                                               |
+| **互斥冲突**    | `gate(3) Compatible`                                                    | `CompatibleConflict`（跨 scope×mode×归一化 ResourceId；CONFLICT 集见 §3.2.3）                                                                | `Compatible.IsCompatible` 对角律单一真源（CONFLICT 集 §3.2.3）                                                               |
 | **声明式剧本**   | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载                                                                                                      | fail-fast 白名单（根/事件/claim 层未知键拒，대 小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
-| **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界） | HLIR/LLIR 双近似 + SpecDrive 探针-fuzzer（`samples/GodotIntegration/AdvE2E_*` co-driven），白名单 §7 单点                                                |
+| **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界） | 对抗测试族 co-driven（`samples/GodotIntegration/AdvE2E_*`：逃逸/豁免/误报对抗形状），白名单 §7 单点                                                |
 
 
 ---
@@ -23,6 +23,8 @@
 ## 5 分钟上手（静态审计 + 剧本 DSL 演示）
 
 ### ⓪ NuGet 安装（消费已发布的包；源码引用见 ①）
+
+> **发布状态（R3-DT-01）**：以下包**尚未发布到 nuget.org**（`dotnet add package` 会 NU1101）。发布前请用 ① 的源码引用接入；包内容与依赖闭包已由 `dotnet pack` 门验证。
 
 ```pwsh
 dotnet add package Cosmos.EffectAlgebra           # L1 代数核心（必需；Generator 产物硬引用其类型）
@@ -136,7 +138,7 @@ dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.js
 | `2` | **存在违例**（解析成功但 Audit 不通过；`--out` 落盘反例） |
 | `1` | 解析/IO/未知命令错误 |
 
-CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（0/2 均非零）——按需用 `if [ $? -eq 2 ]` 区分违例与错误。
+CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（2 非零、0 通过）——按需用 `if [ $? -eq 2 ]` 区分违例与错误。
 
 ---
 
@@ -144,7 +146,7 @@ CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（0/2 �
 
 **AI（视觉剧本 JSON 生产者）**——瞄 `EFFECT_SCRIPT.md` §4 与 `EffectScriptContract.Parse(string)`：得到它的 R6-E1/E3 覆盖（未知键拒、budget 类型错抛、Loop 0 拒、空 scope 拒）、R2-N1 ⊤ 往返（budget/loop/lifetime ⊤ ↔ "⊤"/"inf"）与 `CapsChecked` 报告（R1-HIGH-3）。
 
-**审计驱动（L1+L2+L3）**——瞄 `EffectScript.Audit(*pretty)*` + `Analyzer/SpecDrive`：报告顶层 run summary（TR-001 形状、E2E co-run）与 HLIR/LLIR 布置。
+**审计驱动（L1+L2+L3）**——瞄 `EffectScript.Audit`（CLI `cosmos audit` 一键门）与 `samples/GodotIntegration/`（IntegrationTests + AdvE2E_* 对抗族）：报告 Violation 载荷与诊断 EAA*，门禁接线见 ②/⑤。
 
 **运行时集成者（Runtime 权威闭合）**——瞄 `Cosmos.EffectAlgebra.Runtime`：不动游戏代码，依 `docs/spatial-plugin-shell-design.md` 的套件—纤维工艺执行闭合；预算与泄漏的“权威判定”在运行关卡落地（TR-004 闭合，关卡改动只覆盖 `src/Cosmos.EffectAlgebra.Runtime`）。
 
@@ -182,17 +184,17 @@ dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror
 dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 ```
 
-- **跑盘门**：`a.StableHits==N && b.StableHits>=N && chance(b.AdvHits) ≥ chance(a.AdvHits)`（E2E 相对打点，而非绝对 gate）；跨切片大小/`maxSteps` 强性一致，不要求 `>=` 单袋子的绝对稳定性；`performance-mode=off` 下仍 co-run（含 `AdvE2E_P0` 的 LLIR=空/漏报链）。
-- **单一关**：`performance-mode=off`（默认）→ `on` 时标 `Experimental` 并改 `MaxPlayers→auto(100)`。两种模式 `Audit`-led 的 `Advanced*` 事件与 `L2-L3 AdvStats` 同可枚举。
-- **迁移/整理**：`EAA0205→EAA0801` 与 `effect-lint` → `effect-lint-eaa` 的迁移用 `SliceCheck`，CI 不改旧 gate 名；`split-slice-check` 并行化，不攫两批高携带的 EAA 查。
+- **变异门**：`tests/GateFixture/`（Leaky 工程必红且含 EAA0901 / Paired 工程必绿），由 `ProdAuditBatch4ToolingTests` 以真实 `dotnet build` 行使——分析器接线被静默拔掉（裸 ProjectReference）即红。
+- **性能钉**：`EffectScriptEdgeTests` 端点采样==密集扫描随机/对抗等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）+ 硬墙钟钉（5000 粒子 <2000ms / 1000 事件 <5000ms）。
+- **CLI 门**：`cosmos-audit.yml` 每周全量四门（build -warnaserror / test / `cosmos audit` 样本 / pack）；`ProdAuditR3ToolingTests` 以真实子进程钉退出码 0/1/2 契约。
 
 ---
 
 ## 运行期套件—纤维工艺（`docs/spatial-plugin-shell-design.md` 概要）
 
-- **正交**：`World`（`IHost` / 钩子管理） vs `Fiber`（布局身），发明转录存活单独于 `World`；GLUT 统揽 `Witr` OOP（ZX），对齐 `EffectScript` 退化为「不是层化的平淡」效果；`World↔Fiber.Contract` 压缩变种 SLO 加强。
-- **迁移范畴**：逐屏/迁移生成的「落入单张画时预候状态化 + 已有技性裹府后上后`At`权」与 `GodotShell.IsSafeToInvoke + ProviderCrashCascade` 分责。
-- **宿主合**：`ReasonOp` / `ScopeNested` / `ALL4` 闭合时 `GodotShell.IsSafeToInvoke` + 应对判据为唯一上「宿主还活+未屏」判层（单层），与 `EffectScript` 从 Godot 的 `OnHoverMove` 分离。
+- **状态机**：`Fiber` 五态（Inactive → Active → Suspending → TearingDown → Dead），全转移幂等守卫（`Fiber.Unload` 契约：Inactive 直达 Dead 防双重释放、TearingDown no-op）。
+- **闭合**：`InverseReplay` LIFO 逆回放（部分释放诊断 + 重入门）→ `DrainTeardownBatch` 按 dependent-first 拓扑序排空（硬环子集兜底回放 + CrashReport 可观测）→ `ProviderCrashCascade` fail-open 升级。
+- **兜底**：`PluginRuntime.TickWatchdog` 三路径（Active/Suspending 强转入队 + 自愈入队 + 依赖者级联，全部 OnSuspending 钩子接线）；`GodotShell` 帧驱动（Defer 退出期丢弃、`FlushExitDrain` 单场景生命周期）。
 
 ## 诚实边界（故意留债 · 测试守住不漂移）
 
@@ -209,5 +211,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 11. Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威
 12. `cosmos.effect.json` 白名单扩展当前仅提供 L1 加载 API（`CosmosEffectConfig.LoadExtra/AllWithExtra`），L2 生成器/L3 分析器尚未自动消费 `AdditionalFiles`——接线前该文件不生效（勿当作已受保护）
 13. L1 包 net9.0 TFM 仅含代数切片（无 `EffectScript`/DSL 类型，为分析器源内嵌而设）；需要剧本 DSL 请引用 net8.0 或 net10.0 TFM
+14. L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
+15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）
 
 验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 警告 0 错误；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。

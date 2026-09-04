@@ -2,6 +2,8 @@
 
 ## 任意 Godot C# 项目
 
+> **发布状态（R3-DT-01）**：以下包尚未发布到 nuget.org（`dotnet add package` 会 NU1101）。发布前请从 Cosmos 仓库源码引用（见主 README ①）。
+
 ```pwsh
 dotnet add package Cosmos.EffectAlgebra
 dotnet add package Cosmos.EffectAlgebra.Generator
@@ -25,9 +27,10 @@ dotnet add package Cosmos.EffectAlgebra.Runtime
 
 ```pwsh
 # 1. AI 产 JSON（符合 docs/effect-script.schema.json；templates/effect-script.json 为可直接 Parse 的样板）
-# 2. 一键审计
-dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.json --out violations.json
-# 3. violations.json 喂回 LLM 重投直至 passed
+# 2. 一键审计（消费工程：安装 .NET tool，勿用仓库相对路径 R3-CG-09）
+dotnet tool install -g Cosmos.EffectAlgebra.Tool   # 包发布前：在 Cosmos 仓根 dotnet pack 后 dotnet tool install -g --add-source ./src/Cosmos.EffectAlgebra.Tool/bin/Release
+cosmos audit effect.json --out violations.json
+# 3. violations.json 喂回 LLM 重投直至 passed（退出码 0=passed / 2=违例 / 1=错误；载荷含 events 审计计数）
 ```
 
 ## CI
