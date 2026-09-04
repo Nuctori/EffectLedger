@@ -10,6 +10,13 @@ using Xunit;
 
 namespace Cosmos.EffectAlgebra.Tests;
 
+// R6：本类 spawn 真实 dotnet build（AnalyzerConsumer 样例），与 ProdAuditBatch4ToolingTests 的
+// GateFixture 构建会并发触碰同一组 src/* obj ⇒ CS2001 偶红（GeneratedMSBuildEditorConfig 竞态）
+// ——与 batch4 共用串行集合，互相排斥执行。
+[CollectionDefinition("SerialDotnetBuild")]
+public sealed class SerialDotnetBuildCollection { }
+
+[Collection("SerialDotnetBuild")]
 public sealed class ProdAuditR6ToolingTests
 {
     static string RepoRoot()

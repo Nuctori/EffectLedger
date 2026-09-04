@@ -33,6 +33,17 @@ public sealed class ProdAuditR4AuditScaleTests
         return sw.Elapsed.TotalMilliseconds;
     }
 
+    // R6 收口（本机 CI 偶红实证：t(4000)/t(1000)=12.3x 越线 12x，历史基线 6x）——单次墙钟采样对
+    // 抢占/负载毛刺敏感，且大运行吃毛刺概率更高、系统性抬高比值。取 3 次重复最小值（墙钟微基准
+    // 标准去噪，min 对抢占毛刺最不敏感）；阈值 12x 不动——仍远高于健康 6x、低于二次 16x，无放松。
+    static double AuditMsBest(int n, bool distinctScope, int reps = 3)
+    {
+        var best = double.MaxValue;
+        for (int r = 0; r < reps; r++)
+            best = Math.Min(best, AuditMs(n, distinctScope));
+        return best;
+    }
+
     [Theory]
     [InlineData(false)]  // 共享资源×scope（常规形状）
     [InlineData(true)]   // 逐事件独立 scope（D=Θ(E) 劣化区）
@@ -40,8 +51,8 @@ public sealed class ProdAuditR4AuditScaleTests
     {
         // 预热（JIT/首次分配不进比值）
         AuditMs(200, distinctScope);
-        var t1 = AuditMs(1000, distinctScope);
-        var t4 = AuditMs(4000, distinctScope);
+        var t1 = AuditMsBest(1000, distinctScope);
+        var t4 = AuditMsBest(4000, distinctScope);
         var ratio = t4 / Math.Max(t1, 0.001);
         Assert.True(ratio < 12.0,
             $"{(distinctScope ? "独立 scope" : "共享形状")} 形状疑似二次劣化：t(4000)/t(1000)={ratio:F1}x（阈值 12x；二次基线 16x；实测基线 {(distinctScope ? 6.0 : 2.2):F1}x）");

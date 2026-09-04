@@ -44,7 +44,8 @@ dotnet add package Cosmos.EffectAlgebra.Generator # L2 每方法 Signature 生�
 ### ① 接 L1 + L3 分析器 + L2 生成器（消费工程 `.csproj`）
 
 ```xml
-<!-- L1 类型承载：普通引用（生成器 emit 的代码引用 Cosmos.EffectAlgebra.Signature 等） -->
+<!-- L1 类型承载：普通引用（生成器 emit 的代码引用 Cosmos.EffectAlgebra.Signature 等）。
+     路径按你的消费工程相对仓库位置自行调整（下为仓库内相对形状；仓库外工程改绝对/相对前缀）。 -->
 <ProjectReference Include="..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
 <!-- 分析器/生成器必须以 OutputItemType="Analyzer" 接线才会被编译器加载；
      裸 ProjectReference 只是普通库引用，编译期一条 EAA 诊断都不会触发（静默假绿）。 -->
@@ -94,6 +95,7 @@ AI/脚本可直接产出视觉/音频/网络效果的“视觉剧本”JSON，�
 
 ```csharp
 // §4 数据契约：AI/动画工具产出的可审计数据 — claim 省 scope 继承 event scope（R10 Top1）
+// 依赖引入：using Cosmos.EffectAlgebra;（L1 类型）+ using System.Linq;（下方 .Count()）
 string json = $$"""
 {
   "events": [
@@ -225,4 +227,4 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 18. **契约面子集**（R4-RH-13）：JSON 契约只认 6 资源（gpu/commandBuffer/memory/occupancy/signalBus/custom）× 4 scope（scene/method/type/global）；C# 超集（Tree/Self/Disk/Physics/… 与 Shell/Loop/…）可审计但 `ToJson` 抛 `FormatException`——审计不受影响，导出前请先归约到契约面
 19. `CrashReports`/`_netAccum` 单实例有界增长（以诚实边界 10 单场景生命周期为前提）；`ResetDiagnostics` 当前**无生产接线**（仅测试调用），长会话宿主须自行定期调用（R4-JD-08）
 
-验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 警告 0 错误；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。
+验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。

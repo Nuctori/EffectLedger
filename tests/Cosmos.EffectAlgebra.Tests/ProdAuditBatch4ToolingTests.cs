@@ -13,6 +13,9 @@ using Xunit;
 
 namespace Cosmos.EffectAlgebra.Tests;
 
+// R6：本类 spawn 真实 dotnet build（GateFixture），与 ProdAuditR6ToolingTests 的样例构建会并发
+// 触碰同一组 src/* obj ⇒ CS2001 偶红（GeneratedMSBuildEditorConfig 竞态）——锁进同一串行集合。
+[Collection("SerialDotnetBuild")]
 public sealed class ProdAuditBatch4ToolingTests
 {
     // ── Roslyn 测试基建（与 ToolingTests 同型拷贝，保持测试文件自包含） ──
