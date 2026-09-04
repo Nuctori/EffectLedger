@@ -30,8 +30,13 @@
 dotnet add package Cosmos.EffectAlgebra           # L1 代数核心（必需；Generator 产物硬引用其类型）
 dotnet add package Cosmos.EffectAlgebra.Runtime   # 运行时权威闭合（仅运行期闭合需要；预算-only 可跳过）
 dotnet add package Cosmos.EffectAlgebra.Analyzer  # L3 EAA* 诊断
-dotnet add package Cosmos.EffectAlgebra.Generator # L2 每方法 Signature 生成（依赖 L1，NuGet 自动联装）
+dotnet add package Cosmos.EffectAlgebra.Generator # L2 每方法 Signature 生成（nuspec 依赖 L1，干净缓存下 restore 自动联装）
 ```
+
+> **本地重打包陷阱（R6-P）**：NuGet 全局缓存（`~/.nuget/packages` 或 `$NUGET_PACKAGES`）按
+> **id+version** 复用且不校验内容——包版本号固定 1.0.0 时，本地重打包后重装会静默拿到旧缓存
+> （`dotnet list package --include-transitive` 可核对依赖是否真流动）。重打包后须先删除缓存中
+> 对应包目录。CI/全新机器不受影响。
 
 **门禁须自行接线**：诊断默认 warning，把 ② 的五行 severity=error 复制进你的 `.editorconfig`。JSon 剧本一键审计用 `cosmos` CLI（见 ⑤）。
 
@@ -80,6 +85,8 @@ void SpawnEnemy()
 `[EffectOverride("证据")]` **不豁免** EAA0901——它仅豁免 A3/A4 意图提示；DO-9 静态泄漏近似永不抑制（防止全标 override 静默泄漏）。
 
 > 注意：仅当 API 在 `ApiMapping.cs` 白名单（§7）中才有保护；自定义资源操作需扩展白名单并重建（见该文件注释）。未命中白名单的 API **静默无保护、无警告**。
+>
+> **触发前提（R6-P）**：调用的接收者须绑定 `Godot`/`Godot.*` 命名空间的类型（真实 Godot 工程天然满足；符号不可解析的裸语法编译保留回退判定）。自有类的同名方法（非 Godot 命名空间）按设计**零诊断**（A2-09 防同名误报）——包装层/非 Godot 工程不触发不是缺陷，但也没有保护。
 
 ### ④ 亮点：声明式剧本数据契约（JSON→L1 审计，零 Godot 依赖，AI/自动化可喂）
 
