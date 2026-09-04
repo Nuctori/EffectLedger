@@ -43,6 +43,9 @@ public sealed class Fiber
     public ImmutableStack<InverseClaim> Inverses { get; }
     public ImmutableHashSet<FiberId> Dependents { get; internal set; } = ImmutableHashSet<FiberId>.Empty;
     public bool TeardownEnqueued { get; internal set; }
+    /// <summary>R3-RT-04（三轮审计）：逆回放进行中标志——重入回放 loud 拒绝（双释放/多重重放守卫）；
+    /// 看门狗自愈条件亦以此跳过「正在回放」的 fiber（排空中队列已清空，仅凭不在队列判定会误判）。</summary>
+    public bool ReplayInProgress { get; internal set; }
 
     /// <summary>§5（reviewer #188 F1 / #189 F4）— 装载期有效签名：Effect ∪ create(Provides)（仅当 Effect 未含同名 create 时）∪ 「释放自身 Provides」的逆 release。
     /// 仅折入释放【自身 Provides】的逆：跨 Fiber 借用资源的逆（释放他人 Provides）不计入自身生命周期 net，由提供方 net 守恒（R4-7 Scope 仅分组、绝不跨 Fiber 求和）。

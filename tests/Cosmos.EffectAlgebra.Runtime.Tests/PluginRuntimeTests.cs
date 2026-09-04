@@ -523,7 +523,7 @@ public class PluginRuntimeTests
     }
 
     [Fact]
-    public void DrainTeardownBatch_HardCycleSubsetSkipped_EmitsCrashReport() // Round 7 N3 形状钉：硬环子集跳过须生成可见 CrashReport（否则 fiber 不可见永久滞留）
+    public void DrainTeardownBatch_HardCycleSubset_EmitsCrashReport_AndStillReplays() // Round 7 N3 形状钉（R3-RT-01b 翻转）：硬环子集无有效拓扑序——按入队序兜底回放（不再永久滞留）且 CrashReport 可观测
     {
         var rt = new PluginRuntime();
         // 构造硬环 a⇄b：绕过 LoadAll 的硬环拒载（直接 Load），使环子集进入 teardown 队列。
@@ -533,9 +533,12 @@ public class PluginRuntimeTests
         rt.AddDependency(b, a, EdgeKind.Hard); // b 依赖 a ⇒ 硬环
         a.Load(); b.Load();                    // 直接装载（不触发 LoadAll 硬环拒载）
         rt.BeginTeardown(a);                    // 级联入队 a + b（均处硬环）
-        rt.DrainTeardownBatch();                // 硬环子集应跳过并记 CrashReport（N3）
-        // N3：环中 fiber 不再不可见滞留——须有一条标注「动态硬环子集未排空」的 CrashReport。
+        rt.DrainTeardownBatch();                // 硬环子集无有效拓扑序：按入队序兜底回放 + 记 CrashReport（R3-RT-01b）
+        // N3（语义演进）：环中 fiber 仍可观测（CrashReport），且不再永久滞留——单批内兜底回收完成。
+        // 修改前：跳过 ⇒ 永卡 TearingDown，依赖看门狗内联自愈；自愈改入队后跳过永不收敛，故翻转为兜底回放。
         Assert.NotEmpty(rt.CrashReports);
-        Assert.Contains(rt.CrashReports, r => r.Exception!.Message.Contains("动态硬环") && r.Exception.Message.Contains("未排空"));
+        Assert.Contains(rt.CrashReports, r => r.Exception!.Message.Contains("动态硬环"));
+        Assert.Equal(FiberState.Dead, a.State);
+        Assert.Equal(FiberState.Dead, b.State);
     }
 }

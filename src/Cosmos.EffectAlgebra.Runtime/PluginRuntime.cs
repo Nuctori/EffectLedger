@@ -75,6 +75,12 @@ public sealed class PluginRuntime
         if (dependent.Scope != provider.Scope)
             throw new InvalidOperationException(
                 $"AddDependency 前置条件违反（§3 step1）：dependent {dependent.Id} Scope({dependent.Scope}) != provider {provider.Id} Scope({provider.Scope})，跨 Scope 依赖边 teardown 语义未定义（R7-M2）");
+        // R3-RT-02（三轮审计）：与 Register 同型关路径/级联期守卫——级联期把新依赖者挂上正在拆除的
+        // provider，provider 排空为 Dead 后无任何路径再推进该依赖者（永久 Active 派发于已 Dead provider，
+        // use-after-free 同型窗口）；Register 已有同守卫，此处补齐后门。
+        if (IsShuttingDown || _fibers.Values.Any(f => f.State == FiberState.TearingDown))
+            throw new InvalidOperationException(
+                $"AddDependency 禁止于关闭/级联 teardown 进行中调用（provider {provider.Id} 正在拆除或全 runtime 关闭中；待其 Dead 后重建 runtime 关系）");
         if (kind == EdgeKind.Hard) _graph.AddHardEdge(dependent, provider);
         else _graph.AddSoftEdge(dependent, provider);
         provider.Dependents = provider.Dependents.Add(dependent.Id); // 回填依赖者集合（供 Godot 壳级联）
@@ -154,7 +160,11 @@ public sealed class PluginRuntime
         var ordered = batch.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
         foreach (var (providerId, task) in ordered)
         {
-            if (cyclic.Contains(providerId)) { CrashReports = CrashReports.Add(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集未排空（环 {string.Join(" -> ", cycle.HardCycle)}），相关 fiber 永久滞留，须宿主/看门狗另行回收"), cycle.HardCycle)); continue; } // 环中子集在拓扑序下不可排空，故意跳过并记 CrashReport（非重入队），由宿主/看门狗另行回收（reviewer #187 / D-041 #4）
+            // R3-RT-01b（三轮审计）：环内子集无有效拓扑序（dependent-first 不可满足）——按入队序兜底回放
+            //（回放 per-fiber 独立，与旧自愈内联等价）并保留崩溃报告可观测。原「跳过+另行回收」在自愈改
+            // 入队后永不收敛（重入队→再跳过），救援路径断裂（reviewer #187 跳过语义 + A3-01b 自愈的组合修复）。
+            if (cyclic.Contains(providerId))
+                CrashReports = CrashReports.Add(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集无有效拓扑序，已按入队序兜底回放（环 {string.Join(" -> ", cycle.HardCycle)}）——硬环本身须宿主修复（LoadAll 拒载静态硬环）"), cycle.HardCycle));
             try
             {
                 var diag = task(); // 逆回放（R4-6 部分释放诊断）
@@ -226,7 +236,7 @@ public sealed class PluginRuntime
                     CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, ex));
             }
         }
-        IsShuttingDown = false; // §3（reviewer #191 F5）：排空完毕复位，允许实例复用（场景重载）后正常 Register/RecomputeTopology；关路径仅限本次排空
+        IsShuttingDown = false; // §3（reviewer #191 F5）：关路径标志仅限本次排空，复位为防御性默认（README 诚实边界 10：实例仍为单场景生命周期——场景重载请新建 PluginRuntime，勿复用）
     }
 
     /// <summary>§6/§7（reviewer #191 F3 / #194 LOW）— 清空累积诊断（CrashReports/SoftCycles/_netAccum 永久 Fiber 周期快照表）。跨批次/场景重载时由宿主定期调用，避免无界增长与跨批次泄漏观测；一并 ResetNetAccum 防止旧 FiberId 在永久 Fiber 表中残留。</summary>
@@ -280,17 +290,19 @@ public sealed class PluginRuntime
                 }
             }
             // A3-01b/A3-04（生产审计批3）：看门狗自愈分支——TearingDown 但任务【不在队列】的 fiber（旁路 fiber.Unload()、
-            // 动态硬环子集被跳过后承诺"看门狗另行回收"却无路径）：内联逐 fiber 回放（回放本就 per-fiber 独立，无拓扑前提），
-            // 消灭永久滞留 + Register 永久锁死。已在队列中的 TearingDown 不受影响（原防重语义保留）。
+            // 动态硬环子集被跳过后承诺"看门狗另行回收"却无路径）：入队逆回放任务，消灭永久滞留 + Register 永久锁死。
+            // 已在队列中的 TearingDown 不受影响（原防重语义保留）。
+            // R3-RT-01（三轮审计）：与主路径同构【入队 → DrainTeardownBatch 按 dependent-first 拓扑排空】——
+            // 原内联先回放 provider，后级联依赖者（其回放下次排空才执行），破坏回收序：依赖者逆声明若释放
+            // provider 所供资源（跨 Fiber 借用），将在资源被 provider 释放后才执行（use-after-free 同型回收序变体）。
+            // R3-RT-04：ReplayInProgress 条件排除「正在回放」的 fiber——排空中队列已清空，仅凭不在队列判定
+            // 会让逆 Action 重入 TickWatchdog 时二次入队/二次回放。
             else if (isTimedOut(f) && f.State == FiberState.TearingDown
+                     && !f.ReplayInProgress
                      && !_teardownQueue.Any(t => t.Provider == f.Id))
             {
                 f.TeardownEnqueued = true;
-                try { InverseReplay.ReplayAndDead(f); }
-                catch (Exception ex)
-                {
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, f, ex));
-                }
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 异常/部分失败由 DrainTeardownBatch 升级崩溃级联（与第一分支同契约）
                 // R2A-02（二轮审计）：自愈须与第一分支同型级联——旁路 Unload 路径下依赖者从未收 Suspending 通知，
                 // provider 自愈 Dead 后依赖者仍 Active 派发（use-after-free 同型窗口，第一分支注释同源）。
                 // 硬环跳过路径的依赖者早经 BeginTeardown 级联过，此处幂等（!TeardownEnqueued 守卫去重）。

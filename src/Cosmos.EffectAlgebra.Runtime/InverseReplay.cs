@@ -23,6 +23,20 @@ public static class InverseReplay
         // reviewer #188 F3：逆回放前置于 TearingDown（设计假设「仅 TearingDown 态回放」；否则对 Active 纤程回放会遗贸 Active 且 MarkDead 成 no-op）。
         if (fiber.State != FiberState.TearingDown)
             throw new InvalidOperationException($"逆回放须于 TearingDown 态进行（当前 {fiber.State}）；禁止对 Active/Suspending 纤程回放");
+        // R3-RT-04（三轮审计）：重入守卫——逆 Action 内重入 runtime API（TickWatchdog 自愈条件在排空中为真/
+        // 宿主直接调本方法）曾致整栈被反复回放（多重重放=双释放类）。重入 loud 抛，由调用方 try/catch 升级崩溃报告。
+        if (fiber.ReplayInProgress)
+            throw new InvalidOperationException($"Fiber {fiber.Id} 逆回放进行中禁止重入回放（R3-RT-04：重入=双释放/多重重放）");
+        fiber.ReplayInProgress = true;
+        try
+        {
+            return ReplayCore(fiber);
+        }
+        finally { fiber.ReplayInProgress = false; }
+    }
+
+    static PartialReleaseDiagnosis ReplayCore(Fiber fiber)
+    {
         var completed = ImmutableArray.CreateBuilder<ResourceId>();
         var pending = ImmutableArray.CreateBuilder<ResourceId>();
         int failedIndex = -1;

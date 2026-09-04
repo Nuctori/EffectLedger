@@ -20,7 +20,12 @@ public static class ProviderCrashCascade
         var dependents = runtime.Graph.DependentsOf(provider.Id);
         foreach (var dep in dependents)
             if (runtime.TryGetFiber(dep, out var d))
+            {
                 d.NotifyProviderTeardown(); // provider-first-notify → dependent Suspending（R4-4 幂等）
+                // R3-RT-05（三轮审计）：与 BeginTeardown/看门狗两分支同型触发 OnSuspending（Godot 壳禁用
+                // ProcessMode 的唯一接线）——崩溃升级路径新增的 Suspending dependent 此前不禁用 ProcessMode。
+                try { runtime.OnSuspending?.Invoke(d); } catch { /* 钩子异常隔离（与其余级联路径一致） */ }
+            }
         return new CrashReport(provider.Id, ex, dependents);
     }
 }
