@@ -19,6 +19,7 @@ public static class CosmosEffectConfig
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new FormatException($"cosmos.effect.json JSON 非法: {ex.Message}", ex); }
+        using var _ = doc; // R4-JD-07：同契约侧，归还池化缓冲
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) throw new FormatException("根须为对象，含 extraMappings 数组");
         if (!root.TryGetProperty("extraMappings", out var arr)) return ImmutableArray<ApiMapping>.Empty;
@@ -158,6 +159,13 @@ public static class CosmosEffectConfig
     static ScopeId ParseScope(JsonElement el, string layer)
     {
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer} 须为对象");
+        // R4-RH-04（Hickey 视角）：与 EffectScriptContract.ParseScope 同界——未知键白名单 + 零字段拒绝。
+        // 此前两份物理解析器严格性漂移：拼写键此处静默降级、零字段静默产出匿名 scope 参与冲突分组。
+        foreach (var prop in el.EnumerateObject())
+            if (prop.Name is not ("scene" or "type"))
+                throw new FormatException($"{layer} 未知键 {prop.Name}（合法键: scene, type；区分大小写与拼写）");
+        if (!el.TryGetProperty("scene", out _) && !el.TryGetProperty("type", out _))
+            throw new FormatException($"{layer}: scope 须含 scene 或 type（至少一个字段）");
         var hasScene = el.TryGetProperty("scene", out var sc);
         var name = hasScene ? ReqStr(sc, $"{layer}.scene") : "";
         if (!el.TryGetProperty("type", out var ty)) return new ScopeId.Scene(name);

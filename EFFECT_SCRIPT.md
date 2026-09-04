@@ -41,6 +41,8 @@
 
 ## 2. 核心类型（最小集合）
 
+> **形状注记（R4-RH-16）**：本节 C# 代码块为**设计期草样**——权威形状以 `src/Cosmos.EffectAlgebra` 的 XML doc 为准（实际差异：`EffectEvent` 含 `Scope` 字段、`EffectScript` 是 sealed class 非 record struct、`AuditResult` 含 `CapsChecked`/`IsPeakChecked`）。§4 JSON 契约部分始终精确且有 doc-guard 守护。
+
 ### 2.1 `EffectEvent` — 一个视觉元素的生命周期
 
 ```csharp

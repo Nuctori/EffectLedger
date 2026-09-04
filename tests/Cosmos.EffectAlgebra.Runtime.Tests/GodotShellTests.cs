@@ -133,7 +133,8 @@ sealed class ThrowingInstanceValidHost : IHost
 {
     public void Defer(Action action) => action(); // 立即同步执行，暴露任何逃逸异常
     public void FlushDeferred() { }
-    public void SetProcessMode(FiberId id, bool disabled) { }
+    public void DisableDispatch(FiberId id) { }
+    public void EnableDispatch(FiberId id) { }
     public void EnqueueExitDrain(Action drain) { }
     public bool IsInstanceValid(object handle) => throw new InvalidOperationException("host IsInstanceValid boom");
 }

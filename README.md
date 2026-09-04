@@ -213,5 +213,9 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 13. L1 包 net9.0 TFM 仅含代数切片（无 `EffectScript`/DSL 类型，为分析器源内嵌而设）；需要剧本 DSL 请引用 net8.0 或 net10.0 TFM
 14. L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
 15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）
+16. `O(E·K·log E)` 以「互异 (资源,scope) 组数 D 有界」为前提；逐事件独立 scope/resource 的脚本 gate(1)/(3) 每采样点扫 net/grp 字典 ⇒ 整体 O(S·D) 超线性（实测 4 倍数据 ≈6x，曲线钉 `ProdAuditR4AuditScaleTests`）。`NegativeDip`/`CompatibleConflict` 逐采样点上报在此区间输出可达 O(S·G) 条（R4-JD-05/06）
+17. **Runtime 异常方言表**（R4-RH-05/15）：JSON 契约=`FormatException`；L1 参数违约=`ArgumentException`（含 `ArgumentOutOfRangeException` 子类）；Runtime 装载校验=`LoadValidationException`；Runtime 状态机/装配前置=`InvalidOperationException`。catch 面按表接，跨族混接会漏
+18. **契约面子集**（R4-RH-13）：JSON 契约只认 6 资源（gpu/commandBuffer/memory/occupancy/signalBus/custom）× 4 scope（scene/method/type/global）；C# 超集（Tree/Self/Disk/Physics/… 与 Shell/Loop/…）可审计但 `ToJson` 抛 `FormatException`——审计不受影响，导出前请先归约到契约面
+19. `CrashReports`/`_netAccum` 单实例有界增长（以诚实边界 10 单场景生命周期为前提）；`ResetDiagnostics` 当前**无生产接线**（仅测试调用），长会话宿主须自行定期调用（R4-JD-08）
 
 验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 警告 0 错误；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。

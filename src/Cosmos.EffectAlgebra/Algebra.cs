@@ -84,20 +84,16 @@ public sealed class NetTable
     /// <summary>§3.3.1 守恒判定：资源必须出现在净效应中且区间跨 0（下界 ≤ 0 ≤ 上界）⇒ 生命周期闭合（DO-9 不报警）。
     /// 未出现在 net 中的资源 ⇒ 无任何净效应记录 ⇒ 视为未闭合，fail-closed 返回 false（触发 DO-9 报警，不静默漏报）。
     /// 任一端 ⊤（未知上界）⇒ 视为「需人工界定」⇒ 不守恒（fail-closed，§3.3.1 DO-9）。</summary>
-    public bool IsConserved(ResourceId r) => TryConserve(r, out var ok) ? ok : false;
-
-    public enum ConserveReason { Missing, Top, NotZero, Conserved }
-    public bool TryConserve(ResourceId r, out bool conserved, out ConserveReason reason)
+    // R4-RH-02（Hickey 视角）：删除撒谎的 Try 模式（TryConserve 双重载恒返回 true，bool 返回零信息）
+    // 与 ConserveReason 枚举——一个概念一个名字，守恒判定唯一入口是 IsConserved。
+    public bool IsConserved(ResourceId r)
     {
-        conserved = false;
         var key = ResourceId.Normalize(r);
-        if (!_net.ContainsKey(key)) { reason = ConserveReason.Missing; return true; }
+        if (!_net.ContainsKey(key)) return false;      // Missing：无净效应记录，fail-closed
         var v = _net[key];
-        if (v.Lo.IsTop || v.Hi.IsTop) { reason = ConserveReason.Top; return true; }
-        if (!v.ContainsZero) { reason = ConserveReason.NotZero; return true; }
-        reason = ConserveReason.Conserved; conserved = true; return true;
+        if (v.Lo.IsTop || v.Hi.IsTop) return false;    // Top：需人工界定，fail-closed
+        return v.ContainsZero;                          // NotZero ⇒ false；跨 0 ⇒ true
     }
-    public bool TryConserve(ResourceId r, out bool ok) { var ok2 = TryConserve(r, out ok, out _); return ok2; }
 }
 
 /// <summary>

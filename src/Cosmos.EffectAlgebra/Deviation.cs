@@ -48,6 +48,5 @@ public static class SignatureDeviation
         return anyTop ? DeviationVal.Top : DeviationVal.Of(sum);
     }
 
-    /// <summary>§9.1/§3.1.5c — 复用 DeviationVal.ExceedsThreshold：先判 ⊤ 再比数值；IsTop ⇒ false（不报警）。</summary>
-    public static bool ExceedsThreshold(DeviationVal d, double threshold) => d.ExceedsThreshold(threshold);
+    // R4-RH-03（Hickey 视角）：静态转发包装已删（零消费）——直接用 d.ExceedsThreshold(t)。
 }

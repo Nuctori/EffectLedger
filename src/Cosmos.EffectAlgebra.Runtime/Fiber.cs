@@ -81,8 +81,10 @@ public sealed class Fiber
         Inverses = inverses;
     }
 
-    /// <summary>§2 — 装载（幂等守卫：非 Inactive 直接 return false）。</summary>
-    public bool Load()
+    /// <summary>§2 — 装载（幂等守卫：非 Inactive 直接 return false）。
+    /// R4-RH-01（Hickey 视角）：internal——装载的四道校验锁（硬环/双重释放/net 闭合/release-class）
+    /// 只在 PluginRuntime.LoadAll 编排，公开 Load 会成为绕过全部校验的旁路；公开面只留 LoadAll。</summary>
+    internal bool Load()
     {
         if (State != FiberState.Inactive) return false;
         State = FiberState.Active;
@@ -109,7 +111,7 @@ public sealed class Fiber
     }
 
     /// <summary>§2 — provider 通知 dependent 进入 Suspending（幂等：仅 Active → Suspendeding，其它态 no-op，防 R4-4 振荡）。</summary>
-    public void NotifyProviderTeardown()
+    public void MarkSuspending()
     {
         if (State == FiberState.Active) State = FiberState.Suspending;
     }

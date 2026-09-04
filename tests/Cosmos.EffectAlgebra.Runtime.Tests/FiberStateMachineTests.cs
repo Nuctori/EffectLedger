@@ -16,7 +16,7 @@ public class FiberStateMachineTests
         switch (target)
         {
             case FiberState.Active: f.Load(); break;
-            case FiberState.Suspending: f.Load(); f.NotifyProviderTeardown(); break;
+            case FiberState.Suspending: f.Load(); f.MarkSuspending(); break;
             case FiberState.TearingDown: f.Load(); f.Unload(); break;
             case FiberState.Dead: f.Load(); f.Unload(); f.MarkDead(); break;
             case FiberState.Inactive:
@@ -87,20 +87,20 @@ public class FiberStateMachineTests
     }
 
     [Fact]
-    public void NotifyProviderTeardown_ActiveToSuspending_Idempotent()
+    public void MarkSuspending_ActiveToSuspending_Idempotent()
     {
         var f = Make(FiberState.Active);
-        f.NotifyProviderTeardown();
+        f.MarkSuspending();
         Assert.Equal(FiberState.Suspending, f.State);
-        f.NotifyProviderTeardown();        // 幂等：Suspending 时 no-op（防 R4-4 振荡）
+        f.MarkSuspending();        // 幂等：Suspending 时 no-op（防 R4-4 振荡）
         Assert.Equal(FiberState.Suspending, f.State);
     }
 
     [Fact]
-    public void NotifyProviderTeardown_NonActive_NoOp()
+    public void MarkSuspending_NonActive_NoOp()
     {
         var f = Make(FiberState.TearingDown);
-        f.NotifyProviderTeardown();
+        f.MarkSuspending();
         Assert.Equal(FiberState.TearingDown, f.State);
     }
 

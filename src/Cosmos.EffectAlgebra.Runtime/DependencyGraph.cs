@@ -83,10 +83,12 @@ public sealed class DependencyGraph
         // Kahn：从 indeg==0（根 provider）开始，得 provider-first 拓扑序；teardown 需 dependent-first ⇒ 反转。
         var queue = new Queue<FiberId>(indeg.Where(kv => kv.Value == 0).Select(kv => kv.Key));
         var topo = ImmutableArray.CreateBuilder<FiberId>();
+        // R4-JD-03（Dean 视角）：HashSet 成员判定替代 ImmutableArray.Builder.Contains 线性扫（O(V²)→O(V)）。
+        var inTopo = new HashSet<FiberId>();
         while (queue.Count > 0)
         {
             var n = queue.Dequeue();
-            topo.Add(n);
+            topo.Add(n); inTopo.Add(n);
             foreach (var (dep, prov) in _hard)
                 if (prov == n && indeg.ContainsKey(dep))
                 {
@@ -94,7 +96,7 @@ public sealed class DependencyGraph
                 }
         }
         // 若有硬环（拓扑序不完整），将剩余节点追加（调用方须先 DetectCycles 拒绝）。
-        foreach (var f in _fibers.Keys) if (!topo.Contains(f)) topo.Add(f);
+        foreach (var f in _fibers.Keys) if (!inTopo.Contains(f)) topo.Add(f);
         // 反转 ⇒ dependent-first（叶子优先）：最底层 dependent 先释放，根 provider 最后。
         var result = ImmutableArray.CreateBuilder<FiberId>();
         for (int i = topo.Count - 1; i >= 0; i--) result.Add(topo[i]);
@@ -106,12 +108,15 @@ public sealed class DependencyGraph
     {
         foreach (var (dep, prov) in _hard)
             if (prov == provider.Id && _fibers.TryGetValue(dep, out var d))
-                d.NotifyProviderTeardown();
+                d.MarkSuspending();
         foreach (var (dep, prov) in _soft)
             if (prov == provider.Id && _fibers.TryGetValue(dep, out var d))
-                d.NotifyProviderTeardown();
+                d.MarkSuspending();
     }
 
+    // R4-JD-04 实测记录（Dean 探针，2026-09）：递归 DFS 在线性链深 20000 时安全（约 40B/帧），
+    // Godot 插件依赖网链深现实上界（<10²）远低于风险区；改迭代 DFS 需重写 A3-11 精确回卷语义，
+    // 回归风险大于收益——维持递归并以注释钉住实测边界，集成落地时若引入更深链形再重估。
     private static ImmutableArray<FiberId> FindCycle(HashSet<(FiberId, FiberId)> edges)
     {
         var adj = new Dictionary<FiberId, List<FiberId>>();

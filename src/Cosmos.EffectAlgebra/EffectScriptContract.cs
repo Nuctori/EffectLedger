@@ -27,6 +27,7 @@ public static class EffectScriptContract
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new FormatException($"JSON 非法: {ex.Message}", ex); }
+        using var _ = doc; // R4-JD-07（Dean 视角）：归还池化缓冲（大 JSON 高频解析不再走 GC 回收）
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("events", out var evArr) || evArr.ValueKind != JsonValueKind.Array)
             throw new FormatException("EFFECT_SCRIPT §4：根须含 'events' 数组");

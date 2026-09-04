@@ -141,8 +141,8 @@ public readonly record struct Claim(Kind Kind, ResourceId Resource, Mode Mode, S
         };
     }
 
-    /// <summary>§3.2.3 全函数 Compatible 的单元调用（对称）。</summary>
-    public bool CompatibleWith(Claim other) => Compatible.IsCompatible(Mode, other.Mode);
+    // R4-RH-12（Hickey 视角）：CompatibleWith 已删（零消费且名过实——只比 Mode 不看 Resource/Kind，
+    // 按名使用会误判；完整冲突判定唯一入口是 EffectScript.Audit gate(3) 的 resource×scope×mode 分组）。
 }
 
 /// <summary>
@@ -230,8 +230,7 @@ public sealed class Signature
         return Of(claims.ToArray());
     }
 
-    /// <summary>R10 Top3 #3：与 Join 等价的显式命名（揭示 widen 非叠加）。与 Join 完全等价，仅名揭示语义。</summary>
-    public static Signature UnionWidening(Signature a, Signature b) => Join(a, b);
+    // R4-RH-03（Hickey 视角）：UnionWidening 与 Join 完全等价的别名已删（零消费；揭示语义见 Join 的 XML doc）。
 
     /// <summary>§3.3.1 net(S,scope)：按资源分组，带符号 size 求和（create/release 抵消），仅含 ⊆* 过滤的 Claim。</summary>
     public NetTable Net(ScopeId scope) => NetTable.Compute(this, scope);

@@ -7,6 +7,9 @@
 // 最坏 O(S·E²)（S=采样点, E=事件）；对「数千粒子同屏同资源」的 AI 视觉脚本尾延迟与内存平方恶化。
 // 本实现改用「扫换线（sweep-line）」：端点排序一次 O(E log E)，沿时间轴增量维护活动集与运行计数，
 // 每个事件只在「进入(Lo)」/「退出(Hi)」各处理一次 ⇒ 总复杂度 O(E·K·log E)，内存 O(E·K)。
+// R4-JD-05 前提修正：O(E·K·log E) 以「互异 (资源,scope) 组数 D 有界」为前提——gate(1)/(3) 每采样点
+// 全量扫 net/grp 字典（O(S·D) 乘子），逐事件独立 scope/resource 的脚本 D=Θ(E) 时整体超线性
+//（实测 4 倍数据 ≈6x，见 ProdAuditR4AuditScaleTests 曲线钉与 README 诚实边界 16）。
 // 数学上与端点采样定理等价（At 分段常数、仅各有限端点跳变；各 gate 输出集合与逐点全算版本一致）。
 using System;
 using System.Collections.Generic;
@@ -158,7 +161,7 @@ public sealed partial class EffectScript
         for (int i = 0; i < Events.Length; i++) ValidateEvent(Events[i], i);
 
         // R10-F1：default(Budget).Caps == null（struct 默认值绕过构造函数归一）⇒ 归一为无上限，不 NRE。
-        if (cap.Caps is null) cap = Budget.None;
+        // R4-RH-14：cap.Caps 不可能为 null（Budget.Caps getter 单点归一），原死防御已删。
 
         // PR1：采样点与闭包时刻由纯函数统一计算（可独立测试，含 R2-003 幽灵点规则）。
         var (samplePoints, closureT) = ComputeSamplePoints(Events);
@@ -408,30 +411,33 @@ public sealed partial class EffectScript
 /// None 不可被 IDictionary 强转污染；Equals/GetHashCode 按内容（record struct 名副其实的值语义）。</summary>
 public readonly record struct Budget : IEquatable<Budget>
 {
-    /// <summary>§2.3 — 每资源峰值上限；缺省该资源无上限。恒为不可变底座（ImmutableDictionary）。</summary>
-    public IReadOnlyDictionary<ResourceId, NatStar> Caps { get; }
+    /// <summary>§2.3 — 每资源峰值上限；缺省该资源无上限。恒为不可变底座（ImmutableDictionary）。
+    /// R4-RH-14（Hickey 视角）：getter 单点归一——default(Budget).Caps 永不为 null 外泄，
+    /// 归一策略从 ctor/Audit/Equals/GetHashCode 四处散布收敛到一点。</summary>
+    public IReadOnlyDictionary<ResourceId, NatStar> Caps => _caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty;
+    private readonly IReadOnlyDictionary<ResourceId, NatStar>? _caps;
 
     /// <summary>§2.3 — 从上限表构造（防御拷贝，null ⇒ 空预算；S06-002 归一键：caps 按归一化资源分组，同一资源的自别名如 Self(signal_x)/SignalBus(x) 合并为一条）。</summary>
     public Budget(IReadOnlyDictionary<ResourceId, NatStar>? caps)
     {
-        if (caps is null) { Caps = ImmutableDictionary<ResourceId, NatStar>.Empty; return; }
+        if (caps is null) { _caps = ImmutableDictionary<ResourceId, NatStar>.Empty; return; }
         // rich-hickey2 R6 S06-002：caps 按归一化 ResourceId 分组（单一真源与 Audit 峰值键对齐），避免同一资源占两条目导致相等/哈希/ToJson 分裂。
         // 多条同归一键时取最后一条（后者赢），与 EffectScript.Audit 中 peakReported 去重后的单值一致。
         var norm = ImmutableDictionary.CreateBuilder<ResourceId, NatStar>();
         foreach (var kv in caps) norm[ResourceId.Normalize(kv.Key)] = kv.Value;
-        Caps = norm.ToImmutable();
+        _caps = norm.ToImmutable();
     }
 
     /// <summary>§2.3 — 空预算（所有资源无上限；不可变单例，不可经 IDictionary 强转写入）。等价于显式“无上限”声明（Dean 有条件项的显式化；IsPeakChecked==false 可区分“没查”与“查过全绿”）。</summary>
     public static readonly Budget None = new(ImmutableDictionary<ResourceId, NatStar>.Empty);
 
-    public static Budget Unbounded => None;
+    // R4-RH-03（Hickey 视角）：Budget.Unbounded 与 None 完全等价的别名已删（零消费）。
 
     /// <summary>rich-hickey2 R3 V3-001 — 值相等：按键值对内容比较，与底座实例身份无关（§2.3；default(Budget).Caps=null 视为空预算）。</summary>
     public bool Equals(Budget other)
     {
-        var a = Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty;
-        var b = other.Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty;
+        var a = Caps;
+        var b = other.Caps;
         if (a.Count != b.Count) return false;
         foreach (var kv in a)
             if (!b.TryGetValue(kv.Key, out var v) || !v.Equals(kv.Value)) return false;
@@ -444,7 +450,7 @@ public readonly record struct Budget : IEquatable<Budget>
         unchecked
         {
             var h = 17;
-            foreach (var kv in Caps ?? ImmutableDictionary<ResourceId, NatStar>.Empty)
+            foreach (var kv in Caps)
                 h = h * 31 + (kv.Key.GetHashCode() ^ kv.Value.GetHashCode());
             return h;
         }

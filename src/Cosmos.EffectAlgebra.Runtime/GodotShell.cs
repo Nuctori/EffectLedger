@@ -48,8 +48,8 @@ public sealed class GodotShell
     /// <summary>§7 — 子树 ProcessMode 级联：teardown 启动时禁用派发（Suspending/TearingDown）。</summary>
     public void CascadeProcessModeDisabled(Fiber fiber)
     {
-        _host.SetProcessMode(fiber.Id, true); // 禁用该 Fiber 子树派发
-        foreach (var dep in fiber.Dependents) _host.SetProcessMode(dep, true); // 级联依赖者
+        _host.DisableDispatch(fiber.Id); // 禁用该 Fiber 子树派发
+        foreach (var dep in fiber.Dependents) _host.DisableDispatch(dep); // 级联依赖者
     }
 
     /// <summary>§3 R4-1 — 退出路径同步排空：注册 drain，由宿主在 _ExitTree 调用 FlushExitDrain。</summary>
@@ -89,6 +89,8 @@ public sealed class FakeHost : IHost
     public void Defer(Action action) => Deferred.Add(action);
     /// <summary>测试用：同步执行全部已记录 Defer 闭包（Godot 壳真实宿主由 _Process 帧驱动排空；FakeHost 无帧循环故显式 flush）。</summary>
     public void FlushDeferred() { foreach (var a in Deferred.ToArray()) a(); Deferred.Clear(); }
-    public void SetProcessMode(FiberId id, bool disabled) => ProcessModes.Add((id, disabled));
+    // R4-RH-09：布尔参拆双方法——记录 (Id, Disabled=true/false)，断言语义不变。
+    public void DisableDispatch(FiberId id) => ProcessModes.Add((id, true));
+    public void EnableDispatch(FiberId id) => ProcessModes.Add((id, false));
     public bool IsInstanceValid(object handle) => AllValid;
 }

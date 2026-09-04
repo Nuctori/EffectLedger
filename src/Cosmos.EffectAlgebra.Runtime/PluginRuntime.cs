@@ -12,6 +12,7 @@ public sealed class PluginRuntime
     private readonly Dictionary<FiberId, Fiber> _fibers = new();
     // 队列元素携带 provider FiberId，便于按拓扑序排空（R2：dependent-first）。任务返回逆回放诊断，供崩溃级联升级（reviewer #188 F2）。
     private readonly List<(FiberId Provider, Func<PartialReleaseDiagnosis> Task)> _teardownQueue = new();
+    private readonly HashSet<FiberId> _queuedProviders = new(); // R4-JD-01：队列成员 O(1) 判定（原 _teardownQueue.Any 线性扫）
 
     /// <summary>§6 — 依赖图（崩溃级联/拓扑排序查询用）。</summary>
     public DependencyGraph Graph => _graph;
@@ -20,9 +21,8 @@ public sealed class PluginRuntime
     public bool TryGetFiber(FiberId id, out Fiber fiber) => _fibers.TryGetValue(id, out fiber!);
 
     /// <summary>§6 R5-7 — 关闭路径标志：关路径 RecomputeTopology 硬拒绝（非关路径延迟执行）。测试可置位以模拟关闭路径。</summary>
-    public enum RuntimePhase { Running, ShuttingDown }
-    public RuntimePhase Phase { get; private set; } = RuntimePhase.Running;
-    public bool IsShuttingDown { get => Phase == RuntimePhase.ShuttingDown; set => Phase = value ? RuntimePhase.ShuttingDown : RuntimePhase.Running; }
+    // R4-RH-10（Hickey 视角）：RuntimePhase/Phase 双名一实已删；public setter（测试钩子住生产 API 面）收 internal（IVT 覆盖测试）。
+    public bool IsShuttingDown { get; internal set; }
 
     /// <summary>§6（reviewer #189 F1 / #190 F1）— 崩溃级联报告累积表（ProviderCrashCascade.Handle 每次填充一条）。用 List 累积而非覆盖，使单批多 Fiber 失败均能观测（§6 记录累积、供宿主轮询，不自动上抛/日志，不丢早期失败）。</summary>
     public ImmutableArray<CrashReport> CrashReports { get; private set; } = ImmutableArray<CrashReport>.Empty;
@@ -56,6 +56,15 @@ public sealed class PluginRuntime
     /// <summary>§3 — 注册 Fiber（装载期）。返回 Fiber 供后续 Load/Unload。</summary>
     public Fiber Register(FiberSpec spec)
     {
+        // R4-RH-07（Hickey 视角）：构造期守卫——非法输入在注册现场 loud 拒绝，
+        // 不延后到 LoadAll 校验/逆回放中途以无归因异常冒出（与 L1 EffectEvent 构造期纪律对齐）。
+        if (spec is null) throw new ArgumentNullException(nameof(spec));
+        if (spec.Effect is null) throw new ArgumentNullException(nameof(spec), $"Fiber {spec.Id}：Effect 不可为 null");
+        if (spec.Coeffect is null || spec.Coeffect.Requires is null || spec.Coeffect.Provides is null || spec.Coeffect.Scope is null)
+            throw new ArgumentNullException(nameof(spec), $"Fiber {spec.Id}：Coeffect 及其字段不可为 null");
+        foreach (var inv in spec.Inverses)
+            if (inv.Execute is null)
+                throw new ArgumentNullException(nameof(spec), $"Fiber {spec.Id}：逆声明 {inv.Resource} 的 Execute 不可为 null（否则 teardown 回放中途 NRE）");
         if (IsShuttingDown) throw new InvalidOperationException("关闭路径禁止新装载（级联期新装载须延迟到 provider 真正 Dead 后）");
         // §10 must-land（reviewer #190 #2）：级联进行中（有 provider 处于 TearingDown）也禁止新装载，避免挂上正在拆除的 provider。
         if (_fibers.Values.Any(f => f.State == FiberState.TearingDown))
@@ -133,7 +142,7 @@ public sealed class PluginRuntime
         if (provider.State != FiberState.TearingDown) return;
         provider.TeardownEnqueued = true; // A3-01：标志位=「任务真已入队」，由本方法在入队前置位（Fiber.Unload 不再代置）
         _graph.NotifyDependents(provider);       // provider-first-notify → dependent Suspending（R4-4 幂等）
-        _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider))); // 返回诊断 ⇒ DrainTeardownBatch 按 AllCompleted 升级
+        _teardownQueue.Add((provider.Id, () => InverseReplay.ReplayAndDead(provider))); // 返回诊断 ⇒ DrainTeardownBatch 按 AllCompleted 升级 _queuedProviders.Add(provider.Id);
         foreach (var dep in _graph.DependentsOf(provider.Id))
         {
             if (_fibers.TryGetValue(dep, out var d) && !d.TeardownEnqueued)
@@ -148,12 +157,15 @@ public sealed class PluginRuntime
     /// <summary>§3 — 每批重拓扑 + 调度：按 dependent-first（TopoSortLeafFirst）顺序排空 teardown 队列（R2：拓扑序真正生效；整任务 try/catch 继续其余）。</summary>
     public void DrainTeardownBatch()
     {
+        // R4-JD-03（Dean 视角）：空队列早退——此前无条件做 DetectCycles+TopoSort（O(V·E+V²)），
+        // 宿主帧循环逐帧调用时即使无事可排空也付全图重算；有排空需求时才付排序成本。
+        if (_teardownQueue.Count == 0) return;
         var cycle = _graph.DetectCycles();
         // §6（reviewer #187）：硬环不整批早退——跳过成环子集、其余按拓扑序排空（防止环中 fiber 永不 Dead）。
         var cyclic = cycle.HasHardCycle ? new HashSet<FiberId>(cycle.HardCycle) : new HashSet<FiberId>();
         var order = _graph.TopoSortLeafFirst();   // dependent-first
         var batch = _teardownQueue.ToArray();      // 固定快照（重入仅 append）
-        _teardownQueue.Clear();
+        _teardownQueue.Clear(); _queuedProviders.Clear();
         // R2：按拓扑序（dependent 先于 provider）排序批次后执行；缺序项（环中）追加末尾。
         var rank = new Dictionary<FiberId, int>();
         for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
@@ -202,27 +214,29 @@ public sealed class PluginRuntime
         // A3-10：对仍 Active/Suspending（未标记）与 TearingDown 但任务不在队列（旁路 Unload / 上一批已清队）的 fiber 补入队。
         foreach (var f in _fibers.Values)
         {
-            bool inQueue = _teardownQueue.Any(t => t.Provider == f.Id);
+            bool inQueue = _queuedProviders.Contains(f.Id); // R4-JD-01：O(1)
             if (inQueue) continue;
             if (f.State is FiberState.Active or FiberState.Suspending)
             {
                 f.Unload();
                 f.TeardownEnqueued = true;
-                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f)));
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); _queuedProviders.Add(f.Id);
             }
             else if (f.State == FiberState.TearingDown)
             {
                 f.TeardownEnqueued = true;
-                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f)));
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); _queuedProviders.Add(f.Id);
             }
             // Inactive：D4——未装载无资源，跳过（不入队不标记）；Dead：已终结。
         }
+        // R4-JD-03：空队列早退（同 DrainTeardownBatch；IsShuttingDown 复位保持在唯一出口）。
+        if (_teardownQueue.Count == 0) { IsShuttingDown = false; _queuedProviders.Clear(); return; }
         // §3（reviewer #187 F3）：关闭路径同步排空也按 dependent-first（TopoSortLeafFirst）顺序，与 DrainTeardownBatch 一致。
         var order = _graph.TopoSortLeafFirst();
         var rank = new Dictionary<FiberId, int>();
         for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
         var ordered = _teardownQueue.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
-        _teardownQueue.Clear();
+        _teardownQueue.Clear(); _queuedProviders.Clear();
         // §3（reviewer #188 F5）：关闭路径崩溃也升级到 ProviderCrashCascade.Handle，不再静默 catch{} 吞掉（与 DrainTeardownBatch 一致）。
         foreach (var (providerId, task) in ordered)
         {
@@ -282,7 +296,7 @@ public sealed class PluginRuntime
             {
                 f.ForceTeardownOnWatchdog();                         // Active/Suspending → TearingDown
                 f.TeardownEnqueued = true;                           // A3-01：与 BeginTeardown 同契约——入队前置位
-                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 入队逆回放 ⇒ DrainTeardownBatch 真正回收资源
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 入队逆回放 ⇒ DrainTeardownBatch 真正回收资源 _queuedProviders.Add(f.Id);
                 // §6（reviewer #189 F2）：超时 provider 须级联依赖者——否则依赖者仍 Active 派发且永不 teardown（use-after-free/泄漏）。
                 _graph.NotifyDependents(f);
                 foreach (var dep in _graph.DependentsOf(f.Id))
@@ -305,10 +319,10 @@ public sealed class PluginRuntime
             // 会让逆 Action 重入 TickWatchdog 时二次入队/二次回放。
             else if (isTimedOut(f) && f.State == FiberState.TearingDown
                      && !f.ReplayInProgress
-                     && !_teardownQueue.Any(t => t.Provider == f.Id))
+                     && !_queuedProviders.Contains(f.Id)) // R4-JD-01：O(1)（原 Any 线性扫）
             {
                 f.TeardownEnqueued = true;
-                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 异常/部分失败由 DrainTeardownBatch 升级崩溃级联（与第一分支同契约）
+                _teardownQueue.Add((f.Id, () => InverseReplay.ReplayAndDead(f))); // 异常/部分失败由 DrainTeardownBatch 升级崩溃级联（与第一分支同契约） _queuedProviders.Add(f.Id);
                 // R2A-02（二轮审计）：自愈须与第一分支同型级联——旁路 Unload 路径下依赖者从未收 Suspending 通知，
                 // provider 自愈 Dead 后依赖者仍 Active 派发（use-after-free 同型窗口，第一分支注释同源）。
                 // 硬环跳过路径的依赖者早经 BeginTeardown 级联过，此处幂等（!TeardownEnqueued 守卫去重）。

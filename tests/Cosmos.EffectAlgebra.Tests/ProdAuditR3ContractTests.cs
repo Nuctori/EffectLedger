@@ -113,7 +113,7 @@ public sealed class ProdAuditR3ContractTests
           "budget": { "memory:0": 5 }
         }
         """;
-        Assert.NotNull(EffectScriptContract.Parse(ok));
+        Assert.Single(EffectScriptContract.Parse(ok).Events); // 非 NotNull：ImmutableArray 是值类型（xUnit2002）
     }
 
     // ── R3-L1-02：CosmosEffectConfig 全量 FormatException 方言 + 非 strict 回落 ──

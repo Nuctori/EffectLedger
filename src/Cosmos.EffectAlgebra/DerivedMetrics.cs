@@ -25,13 +25,8 @@ public readonly record struct LoopCount
     /// 替代散落的 `!IsTop && Value==0` 判定；`default(LoopCount)` 即非法。</summary>
     public bool IsValid => Count.IsTop || Count.Value >= 1;
 
-    /// <summary>rich-hickey2 R5 V5-002：n≥1 ⇒ 返回合法值；n==0 ⇒ 静默失败并返回 default（非法值，让 IsValid 显式化）。</summary>
-    public static bool TryOf(ulong n, out LoopCount result)
-    {
-        if (n >= 1) { result = Of(n); return true; }
-        result = default;
-        return false;
-    }
+    // R4-RH-11（Hickey 视角）：LoopCount.TryOf 已删除——零消费且失败时递出 IsValid=false 毒值
+    //（V5-002「非法值构造期不可表达」被自家旁路 API 削弱）。需要软失败时自写 n >= 1 ? Of(n) : Top。
 }
 
 /// <summary>
@@ -84,8 +79,7 @@ public static class Combination
         return Signature.Union(a, b);
     }
 
-    /// <summary>R10 Top3 #3：与 Parallel 等价的显式命名（揭示守卫差异）。与 Parallel 完全等价，仅名揭示语义。</summary>
-    public static Signature UnionChecked(Signature a, Signature b) => Parallel(a, b);
+    // R4-RH-03（Hickey 视角）：UnionChecked 与 Parallel 完全等价的别名已删（零消费；揭示语义见 Parallel 的 XML doc）。
     // §3.2.5 × ω 的 size 缩放：ω=⊤ ⇒ 上界开放（[lo, ⊤]）；否则区间端点按 §3.1.5a 乘法缩放。
     // lo 恒有限（§3.1.5 下界不可为 ⊤），故 lo×ω 无 NaN 路径；hi=⊤ 时 ⊤×有限=⊤ 保持开放。
     private static Interval Scale(Interval s, NatStar w)
