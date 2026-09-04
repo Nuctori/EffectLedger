@@ -90,4 +90,29 @@ public class ProdAuditR3RuntimeTests
         rt.DrainTeardownBatch();    // 修复前重入会把「正在回放」的 fiber 二次入队 ⇒ 再排空就二次回放
         Assert.Equal(1, runs);      // 二次排空后仍 1 次：重入 no-op（ReplayInProgress 门），无残留任务
     }
+
+    // ── REG-01（复审计）：排空中重入 TickWatchdog 对同批未回放 batch-mate 的二次入队 ⇒ 陈旧任务下批假 CrashReport ──
+    [Fact]
+    public void Drain_ReentrantWatchdog_DoesNotLeaveStaleTask_FakeCrash()
+    {
+        var rt = new PluginRuntime();
+        var m1 = new ResourceId.Memory(1);
+        var m2 = new ResourceId.Memory(2);
+        // p2 硬依赖 p1 ⇒ dependent-first 拓扑序 p2 先回放；其逆重入 TickWatchdog 时 provider p1
+        // 尚未回放（TearingDown+队列已清）——修改前自愈条件全真 ⇒ p1 被二次入队，外层快照回放后
+        // 队列残留陈旧任务，下批执行对 Dead fiber 回放抛异常 ⇒ 假 CrashReport 污染 §6 诊断。
+        var p2 = rt.Register(Spec("p2", m2, m1,
+            (m2, () => rt.TickWatchdog(_ => true))));
+        var p1 = rt.Register(Spec("p1", m1, m1));
+        rt.AddDependency(p2, p1, EdgeKind.Hard);
+        rt.LoadAll();
+        p1.Unload();
+        p2.Unload();
+        rt.TickWatchdog(_ => true);  // 双双自愈入队
+        rt.DrainTeardownBatch();     // p2 回放（重入触发）→ p1 回放至 Dead；修改前队列残留 p1 陈旧任务
+        rt.DrainTeardownBatch();     // 陈旧任务被执行 ⇒ 对 Dead fiber 回放抛异常 ⇒ 假 CrashReport
+        Assert.Equal(FiberState.Dead, p1.State);
+        Assert.Equal(FiberState.Dead, p2.State);
+        Assert.Empty(rt.CrashReports); // 修改前：含「逆回放须于 TearingDown 态进行（当前 Dead）」假报告
+    }
 }

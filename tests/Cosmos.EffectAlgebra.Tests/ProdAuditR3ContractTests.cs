@@ -56,6 +56,37 @@ public sealed class ProdAuditR3ContractTests
         Assert.Contains("typ", ex.Message);
     }
 
+    // ── REG-02（复审计）：resource 已知键+未知键组合 → 拒绝（与 schema maxProperties:1+additionalProperties 同界） ──
+    [Fact]
+    public void Parse_ResourceKnownPlusUnknownKey_IsRejected()
+    {
+        const string json = """
+        {
+          "events": [
+            { "lifetime":[0,6], "scope":{"scene":"Battle"},
+              "footprint":[{"kind":"occupy","resource":{"gpu":"x","typo":1},"mode":"create"}] }
+          ]
+        }
+        """;
+        Assert.Throws<FormatException>(() => EffectScriptContract.Parse(json));
+    }
+
+    // ── REG-03（复审计）：CosmosEffectConfig size ⊤/inf 双形式方言统一 ──
+    [Fact]
+    public void LoadExtraFromJson_SizeInfAlias_Accepted()
+    {
+        const string json = """
+        {
+          "extraMappings": [
+            { "api": "MyNode.DoThing",
+              "claims": [ { "kind": "occupy", "resource": { "gpu": "x" }, "mode": "create", "scope": { "scene": "S" },
+                            "size": ["⊤", "inf"] } ] }
+          ]
+        }
+        """;
+        Assert.NotNull(CosmosEffectConfig.LoadExtraFromJson(json)); // 修改前：ParseNat 只认 "⊤"，"inf" 抛 FormatException
+    }
+
     // ── R3-L1-05：budget "memory:" 空段 → 拒绝（"memory:0" 合法） ──
     [Fact]
     public void Parse_BudgetMemoryEmptySuffix_IsRejected()

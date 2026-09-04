@@ -247,6 +247,9 @@ public static class EffectScriptContract
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: resource 须为对象");
         // R3-L1-03（三轮审计，schema maxProperties:1 同界）：多键 resource 此前按固定优先级静默择一，
         // 其余键被丢弃 ⇒ claim 脱离其预算键/冲突分组（静默改写数据，比报错更危险）。
+        // REG-02（复审计）：补未知键白名单——{已知键+拼写键} 组合不再静默丢弃拼写键，与 schema
+        // maxProperties:1 + additionalProperties:false 完全同界。
+        RejectUnknownKeys(el, layer, "gpu", "commandBuffer", "memory", "occupancy", "signalBus", "custom");
         int hitCount = 0;
         foreach (var prop in el.EnumerateObject())
             if (prop.Name is "gpu" or "commandBuffer" or "memory" or "occupancy" or "signalBus" or "custom")

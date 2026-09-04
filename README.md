@@ -169,7 +169,7 @@ CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（2 非�
 | L1 纯代数 | `src/Cosmos.EffectAlgebra`                    | `Claim/Signature/NetTable/Compatible/SignedNet`（零 Godot 依赖）+ `EffectScript`（含 Audit/At/Budget/AuditResult，非真环理性） |
 | L2 生成器 | `src/Cosmos.EffectAlgebra.Generator`          | 按方法名匹配 §7 白名单，Union 出每方法 Signature                                                                               |
 | L3 分析器 | `src/Cosmos.EffectAlgebra.Analyzer`           | 方法内 acquire/release 配对近似（EAA* 诊断）                                                                                |
-| 剧本 DSL | `Cosmos.EffectAlgebra` `EffectScriptContract` | 声明式契约（`EFFECT_SCRIPT.md`）——`EffectScript` 从手工 JSON 构造，`EAA*` 诊断 + `AdvE2E`（`performance-mode=off`）对照             |
+| 剧本 DSL | `Cosmos.EffectAlgebra` `EffectScriptContract` | 声明式契约（`EFFECT_SCRIPT.md`）——`EffectScript` 从手工 JSON 构造，`EAA*` 诊断 + `AdvE2E` 对抗测试族对照             |
 | 运行时    | `src/Cosmos.EffectAlgebra.Runtime`            | Fiber 状态机 / 依赖图 / 逆回放 / 退出期 drain（权威 Σnet 闭合），TR-004                                                             |
 
 

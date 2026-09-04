@@ -112,9 +112,10 @@ public static class CosmosEffectConfig
 
     static NatStar ParseNat(JsonElement el, string layer)
     {
-        if (el.ValueKind == JsonValueKind.String && el.GetString() == "⊤") return NatStar.Top;
+        // REG-03（复审计）：⊤/inf 双别名与 EffectScriptContract.IsTopAlias 单一真源对齐（A1-07 方言承诺）。
+        if (el.ValueKind == JsonValueKind.String && (el.GetString() == "⊤" || el.GetString() == "inf")) return NatStar.Top;
         if (el.ValueKind == JsonValueKind.Number && el.TryGetUInt64(out var v)) return NatStar.Of(v);
-        throw new FormatException($"{layer} 须为非负整数或 \"⊤\"");
+        throw new FormatException($"{layer} 须为非负整数或 \"⊤\"/\"inf\"");
     }
 
     static Kind ParseKind(string k) => k switch
@@ -132,6 +133,10 @@ public static class CosmosEffectConfig
     {
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer} 须为对象");
         // R3-L1-03（三轮审计，与 EffectScriptContract.ParseResource 同界）：多键静默择一 ⇒ 拒绝。
+        // REG-02（复审计）：未知键同界拒绝（拼写键静默丢弃 = 静默改写数据）。
+        foreach (var prop in el.EnumerateObject())
+            if (prop.Name is not ("gpu" or "commandBuffer" or "memory" or "occupancy" or "signalBus" or "custom"))
+                throw new FormatException($"{layer} 未知键 \"{prop.Name}\"（合法键: gpu, commandBuffer, memory, occupancy, signalBus, custom）");
         int hitCount = 0;
         foreach (var prop in el.EnumerateObject())
             if (prop.Name is "gpu" or "commandBuffer" or "memory" or "occupancy" or "signalBus" or "custom")

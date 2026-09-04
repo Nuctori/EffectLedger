@@ -165,6 +165,10 @@ public sealed class PluginRuntime
             // 入队后永不收敛（重入队→再跳过），救援路径断裂（reviewer #187 跳过语义 + A3-01b 自愈的组合修复）。
             if (cyclic.Contains(providerId))
                 CrashReports = CrashReports.Add(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集无有效拓扑序，已按入队序兜底回放（环 {string.Join(" -> ", cycle.HardCycle)}）——硬环本身须宿主修复（LoadAll 拒载静态硬环）"), cycle.HardCycle));
+            // REG-01（复审计）：陈旧任务防御——排空中同批兄弟的逆 Action 重入 TickWatchdog 会把
+            // 尚未回放的 batch-mate 二次入队；其陈旧任务随后由外层快照执行至 Dead。下一批若再执行
+            // 会对 Dead fiber 回放抛异常 ⇒ 假 CrashReport 污染 §6 诊断 + 冗余 OnSuspending。丢弃之。
+            if (_fibers.TryGetValue(providerId, out var st) && st.State == FiberState.Dead) continue;
             try
             {
                 var diag = task(); // 逆回放（R4-6 部分释放诊断）
@@ -222,6 +226,8 @@ public sealed class PluginRuntime
         // §3（reviewer #188 F5）：关闭路径崩溃也升级到 ProviderCrashCascade.Handle，不再静默 catch{} 吞掉（与 DrainTeardownBatch 一致）。
         foreach (var (providerId, task) in ordered)
         {
+            // REG-01（复审计）：同 DrainTeardownBatch 的陈旧任务防御。
+            if (_fibers.TryGetValue(providerId, out var st) && st.State == FiberState.Dead) continue;
             try
             {
                 var diag = task();
