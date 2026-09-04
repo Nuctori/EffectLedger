@@ -2,7 +2,7 @@
 // 此前性能钉全是绝对墙钟（慢 CI 易 flaky，且测不出复杂度劣化）；本钉用倍增比值断言非二次。
 // 实测基线（2026-09，本机 Release）：共享形状 ratio≈2.2x；逐事件独立 scope 形状 ratio≈6.0x
 //（AuditAtSample 每采样点扫 net/grp 字典、D=Θ(E) 时超线性——README 诚实边界已记录该前提）。
-// 二次劣化（4 倍数据 ⇒ ≥16x 时间）将被 <12x 断言当场抓住。
+// 两形状共用单一 12x 阈值：实测最差 6.0x 留 2 倍抖动余量，二次劣化基线（4 倍数据 ⇒ 16x）当场抓住。
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

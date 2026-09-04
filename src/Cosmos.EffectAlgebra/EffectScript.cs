@@ -80,7 +80,8 @@ public sealed partial class EffectScript
     public EffectScript(ImmutableArray<EffectEvent> events, Budget budget = default)
     {
         Events = events;
-        Budget = budget.Caps != null ? budget : Budget.None;
+        // R4-RH-14：Caps getter 单点归一后 budget.Caps 恒非 null，原死三分支已简化。
+        Budget = budget;
     }
 
     /// <summary>§2.2 — 从事件集构造剧本（IEnumerable 便捷）。</summary>

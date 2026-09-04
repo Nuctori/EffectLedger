@@ -32,6 +32,36 @@ public class ProdAuditR4RuntimeTests
         Assert.Contains("p", ex.Message); // 归因到 FiberId
     }
 
+    // ── REG-01'（复审计）：入队单点成对——BeginTeardown 后看门狗不得对已入队者二次入队 ──
+    // 此前 _queuedProviders.Add 被 3/5 站点误并入行注释未执行（字节级确认，提交 340eccd），
+    // set 与队列失步 ⇒ 已入队 fiber 每帧重复入队。PendingTeardownCount 数量契约钉死之。
+    [Fact]
+    public void BeginTeardown_ThenWatchdog_NoDuplicateEnqueue()
+    {
+        var rt = new PluginRuntime();
+        var mem = new ResourceId.Memory(0);
+        // 构造与 R3-RT-01 同型（过 §5 闭合 + R5-6 跨 Fiber 释放须 release-class 标签）
+        var pInv = ImmutableStack<InverseClaim>.Empty.Push(new InverseClaim(mem, new ScopeId.Shell(), () => { }));
+        var dInv = ImmutableStack<InverseClaim>.Empty.Push(new InverseClaim(mem, new ScopeId.Shell(), () => { },
+            new HashSet<string> { "queue_free" }));
+        var p = rt.Register(new FiberSpec(new FiberId("p"), Signature.Empty,
+            new Coeffect(mem, mem, new ScopeId.Shell()), pInv));
+        var d = rt.Register(new FiberSpec(new FiberId("d"), Signature.Empty,
+            new Coeffect(new ResourceId.Gpu(new Rid("g")), mem, new ScopeId.Shell()), dInv));
+        rt.AddDependency(d, p, EdgeKind.Hard);
+        rt.LoadAll();
+
+        rt.BeginTeardown(p);                    // p 入队 + 级联 d 入队 ⇒ 2
+        int afterBegin = rt.PendingTeardownCount;
+        rt.TickWatchdog(_ => true);             // 自愈分支对已入队者必须 no-op（成员集 O(1) 判定）
+        Assert.Equal(afterBegin, rt.PendingTeardownCount); // 失步时：每帧 +N 无界增长
+
+        rt.DrainTeardownBatch();
+        Assert.Equal(0, rt.PendingTeardownCount);
+        Assert.Equal(FiberState.Dead, p.State);
+        Assert.Equal(FiberState.Dead, d.State);
+    }
+
     // ── JD-10：3000 深依赖链全流程规模钉（软墙钟 <30s，硬断言是全部 Dead） ──
     [Fact]
     public void DeepChain_3000Fibers_FullLifecycle_Completes()
