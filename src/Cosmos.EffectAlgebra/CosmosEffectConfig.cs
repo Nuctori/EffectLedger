@@ -45,8 +45,11 @@ public static class CosmosEffectConfig
             idx++;
         }
         var arr2 = list.ToImmutableArray();
-        // 复用 Canonical 碰撞校验（与内置一致）
-        GodotApiWhitelist.ValidateNoCollisions(arr2);
+        // 复用 Canonical 碰撞校验（与内置一致）；R3-L1-02：碰撞异常（InvalidOperationException，实测）
+        // 须翻为契约方言，否则 extra 内部同 Canonical 碰撞会绕过 LoadExtra 非 strict 回落过滤器直接炸出。
+        try { GodotApiWhitelist.ValidateNoCollisions(arr2); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { throw new FormatException($"extraMappings: {ex.Message}", ex); }
         return arr2;
     }
 
@@ -81,12 +84,15 @@ public static class CosmosEffectConfig
     }
 
     // ── Claim 解析（复用 EffectScriptContract 扁平形态子集：kind/resource/mode/scope/size）──
+    // R3-L1-02（三轮审计）：ParseClaim 曾把整个 claim 对象当值传给三参 ReqStr（应先 Require 取属性值），
+    // 任何输入都在 "kind 须为字符串" 处炸出——公共扩展入口完全不可用且零测试腐烂（R3-TQ-01）。
+    // 归一化 ArgumentException（如 read+create）同步翻为契约 FormatException，保 LoadExtra 非 strict 回落过滤器的方言前提。
     static Claim ParseClaim(JsonElement c, string layer)
     {
         if (c.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer} 须为对象");
-        var kind = ParseKind(ReqStr(c, "kind", layer));
+        var kind = ParseKind(ReqStr(Require(c, "kind", layer), $"{layer}.kind"));
         var res = ParseResource(Require(c, "resource", layer), $"{layer}.resource");
-        var mode = ParseMode(ReqStr(c, "mode", layer));
+        var mode = ParseMode(ReqStr(Require(c, "mode", layer), $"{layer}.mode"));
         var scope = ParseScope(Require(c, "scope", layer), $"{layer}.scope");
         Interval? size = null;
         if (c.TryGetProperty("size", out var sz))
@@ -100,7 +106,8 @@ public static class CosmosEffectConfig
             if (!lo.IsTop && !hi.IsTop && lo.Value > hi.Value) throw new FormatException($"{layer}.size lo>hi");
             size = new Interval(lo, hi);
         }
-        return new Claim(kind, res, mode, scope, size).Normalize();
+        try { return new Claim(kind, res, mode, scope, size).Normalize(); }
+        catch (ArgumentException ex) { throw new FormatException($"{layer}: {ex.Message}", ex); }
     }
 
     static NatStar ParseNat(JsonElement el, string layer)
@@ -124,6 +131,13 @@ public static class CosmosEffectConfig
     static ResourceId ParseResource(JsonElement el, string layer)
     {
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer} 须为对象");
+        // R3-L1-03（三轮审计，与 EffectScriptContract.ParseResource 同界）：多键静默择一 ⇒ 拒绝。
+        int hitCount = 0;
+        foreach (var prop in el.EnumerateObject())
+            if (prop.Name is "gpu" or "commandBuffer" or "memory" or "occupancy" or "signalBus" or "custom")
+                hitCount++;
+        if (hitCount > 1)
+            throw new FormatException($"{layer}: resource 至多含一键（gpu/commandBuffer/memory/occupancy/signalBus/custom 之一），实际命中 {hitCount} 键");
         if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
         if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, $"{layer}.commandBuffer"));
         if (el.TryGetProperty("memory", out var mem))

@@ -22,7 +22,11 @@ public static class EffectScriptContract
     /// <summary>§4 — 反序列化 JSON 文本为 <see cref="EffectScript"/>。非法形状（未知 kind/mode/resource/scope 或字段缺失）⇒ FormatException（fail-fast）。</summary>
     public static EffectScript Parse(string json)
     {
-        var doc = JsonDocument.Parse(json);
+        // R3-L1-01（三轮审计）：JSON 语法错误（AI 最常见产出缺陷）须落契约 FormatException 方言——
+        // 此前漏裸 JsonException，按文档 catch(FormatException) 的调用方必漏接（与 CosmosEffectConfig.cs:21 同型翻译）。
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch (JsonException ex) { throw new FormatException($"JSON 非法: {ex.Message}", ex); }
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("events", out var evArr) || evArr.ValueKind != JsonValueKind.Array)
             throw new FormatException("EFFECT_SCRIPT §4：根须含 'events' 数组");
@@ -146,6 +150,9 @@ public static class EffectScriptContract
     {
         if (el.ValueKind != JsonValueKind.Object)
             throw new FormatException($"{layer}: scope 须为对象");
+        // R3-L1-04（三轮审计）：scope 层补未知键白名单（与根/事件/claim 层同口径）——
+        // 此前 {"scene":"HUD","typ":"method"} 静默降级为 Scene，与写对的事件分裂冲突分组 ⇒ gate(3) 假绿。
+        RejectUnknownKeys(el, layer, "scene", "type");
         // rich-hickey2 R1-F5：零字段 scope 对象 ⇒ 拒绝——resource 侧要求非空身份，scope 侧不许凭空捏匿名者参与冲突分组。
         if (!el.TryGetProperty("scene", out _) && !el.TryGetProperty("type", out _))
             throw new FormatException($"{layer}: scope 须含 scene 或 type（至少一个字段）");
@@ -238,9 +245,15 @@ public static class EffectScriptContract
     static ResourceId ParseResource(JsonElement el, string layer = "resource")
     {
         if (el.ValueKind != JsonValueKind.Object) throw new FormatException($"{layer}: resource 须为对象");
-        if (!el.TryGetProperty("gpu", out var g) && !el.TryGetProperty("commandBuffer", out g) &&
-            !el.TryGetProperty("memory", out g) && !el.TryGetProperty("occupancy", out g) &&
-            !el.TryGetProperty("signalBus", out g) && !el.TryGetProperty("custom", out g))
+        // R3-L1-03（三轮审计，schema maxProperties:1 同界）：多键 resource 此前按固定优先级静默择一，
+        // 其余键被丢弃 ⇒ claim 脱离其预算键/冲突分组（静默改写数据，比报错更危险）。
+        int hitCount = 0;
+        foreach (var prop in el.EnumerateObject())
+            if (prop.Name is "gpu" or "commandBuffer" or "memory" or "occupancy" or "signalBus" or "custom")
+                hitCount++;
+        if (hitCount > 1)
+            throw new FormatException($"{layer}: resource 至多含一键（gpu/commandBuffer/memory/occupancy/signalBus/custom 之一），实际命中 {hitCount} 键");
+        if (hitCount == 0)
             throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus/custom 之一");
         // 修 auditR2/R4 C2：resource 值缺失/类型错 ⇒ fail-fast（原静默兜底 "gpu"/""/0 会静默改写数据，比报错更危险）。
         if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
@@ -281,7 +294,8 @@ public static class EffectScriptContract
         var k when k.StartsWith("gpu:", StringComparison.Ordinal) => new ResourceId.Gpu(new Rid(NonEmptyId(k["gpu:".Length..], key))),
         var k when k.StartsWith("commandBuffer:", StringComparison.Ordinal) => new ResourceId.CommandBuffer(NonEmptyId(k["commandBuffer:".Length..], key)),
         // A1-06（生产审计批1）：memory 段 TryParse 守溢出——20 位以上数字此前抛 OverflowException（ArithmeticException 族），
-        // 漏出 catch(FormatException) 方言；"memory:" 空段保留原 Memory(0) 语义（与 claim 侧 {"memory":0} 可匹配，非幽灵条目）。
+        // 漏出 catch(FormatException) 方言。R3-L1-05（三轮审计）：空段 "memory:" 改为拒绝（与 schema ^memory:\d+$
+        // 及 A1-12 空拒口径同界——"memory:0" 是等价合法拼写；此前空段特例使 Parse 接受官方 schema 拒绝的键）。
         var k when k.StartsWith("memory:", StringComparison.Ordinal) => ParseMemoryKey(k["memory:".Length..], key),
         var k when k.StartsWith("occupancy:", StringComparison.Ordinal) => new ResourceId.Occupancy(NonEmptyId(k["occupancy:".Length..], key)),
         var k when k.StartsWith("signalBus:", StringComparison.Ordinal) => new ResourceId.SignalBus(new StringName(NonEmptyId(k["signalBus:".Length..], key))),
@@ -295,7 +309,8 @@ public static class EffectScriptContract
 
     static ResourceId.Memory ParseMemoryKey(string suffix, string key)
     {
-        if (suffix.Length == 0) return new ResourceId.Memory(0);
+        if (suffix.Length == 0)
+            throw new FormatException($"budget 键 \"{key}\" memory 段不可为空（形如 memory:<n>；\"memory:0\" 是 Memory(0) 的合法拼写）");
         if (!ulong.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var uid))
             throw new FormatException($"budget 键 \"{key}\" memory 段须为非负整数（实际 \"{suffix}\"）");
         return new ResourceId.Memory(uid);

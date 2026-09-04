@@ -36,8 +36,9 @@
             "items": false
           },
           "scope": {
-            "description": "至少含 scene 或 type；缺 type 默认 Scene",
+            "description": "至少含 scene 或 type；缺 type 默认 Scene；未知键拒绝（与 Parse 白名单同界，R3-L1-04）",
             "type": "object",
+            "additionalProperties": false,
             "anyOf": [
               {
                 "required": [
