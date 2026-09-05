@@ -22,16 +22,6 @@ class Cosmos.EffectAlgebra.Runtime.DependencyGraph
   method System.Collections.Immutable.ImmutableArray`1[Cosmos.EffectAlgebra.Runtime.FiberId] TopoSortLeafFirst()
   method System.Void NotifyDependents(Cosmos.EffectAlgebra.Runtime.Fiber)
   method System.Void Register(Cosmos.EffectAlgebra.Runtime.Fiber)
-class Cosmos.EffectAlgebra.Runtime.FakeHost
-  ctor 
-  field System.Boolean AllValid
-  field System.Collections.Generic.List`1[System.Action] Deferred
-  field System.Collections.Generic.List`1[System.ValueTuple`2[Cosmos.EffectAlgebra.Runtime.FiberId,System.Boolean]] ProcessModes
-  method System.Boolean IsInstanceValid(System.Object)
-  method System.Void Defer(System.Action)
-  method System.Void DisableDispatch(Cosmos.EffectAlgebra.Runtime.FiberId)
-  method System.Void EnableDispatch(Cosmos.EffectAlgebra.Runtime.FiberId)
-  method System.Void FlushDeferred()
 class Cosmos.EffectAlgebra.Runtime.Fiber
   ctor Cosmos.EffectAlgebra.Runtime.FiberId, Cosmos.EffectAlgebra.Signature, Cosmos.EffectAlgebra.Runtime.Coeffect, System.Collections.Immutable.ImmutableStack`1[Cosmos.EffectAlgebra.Runtime.InverseClaim]
   prop Cosmos.EffectAlgebra.Runtime.Coeffect Coeffect()

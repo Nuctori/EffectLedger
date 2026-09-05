@@ -121,7 +121,13 @@
   - 机制验证：篡改快照注入假成员 ⇒ 红；还原 ⇒ 绿（双向实证，非纸面钉）。
   - Analyzer/Generator/Tool 程序集不在本机制内：其消费面分别是 Roslyn 诊断（钉于 AnalyzerConsumer
     构建门 + AdvE2E）与 CLI 退出码契约（A4 已冻结钉）——面类型不同，机制不适用，记录于此。
-- [ ] **B2** `FakeHost` 移出公共面（internal 或移入测试工程；现位于 `src/Cosmos.EffectAlgebra.Runtime/GodotShell.cs:83`）。
+- [x] **B2** `FakeHost` 移出公共面 ✅ 2026-09-06
+  - **决策：整体迁入测试工程**（优于 internal+InternalsVisibleTo——发布程序集连 internal 足迹都不留）。
+    使用面核查：仅 Runtime.Tests 两文件使用，生产代码零引用、样例不用。
+    迁移：`src/Cosmos.EffectAlgebra.Runtime/GodotShell.cs` → `tests/Cosmos.EffectAlgebra.Runtime.Tests/FakeHost.cs`
+    （保持命名空间 `Cosmos.EffectAlgebra.Runtime`，既有测试代码零改动）。
+  - 快照走 B1 流程：重生成后 diff 恰为 FakeHost 块 10 行删除（机制首次真实行使）。
+  - 门禁 692 全绿，Runtime 套件零回归。
 - [ ] **B3** Sequence≡Parallel≡Union 四名一实——砍到一名（尚未发布，无需 Obsolete 过渡）。
 - [ ] **B4** C# 超集本体 vs JSON 契约面——公共类型砍到契约面，超集转 internal（诚实边界 #18 随之消失）。
 - [ ] **B5** TFM 分歧消除：net9.0 切片缺 EffectScript（诚实边界 #13）——同包全 API 或拆包，二选一并记录理由。

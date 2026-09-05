@@ -78,19 +78,6 @@ public sealed class GodotShell
     public bool ExitDraining => _exitDraining;
 }
 
-/// <summary>§7 — 测试替身 IHost（记录调用，供断言 ProcessMode 级联 / Defer 合并 / 退出排空）。
-/// A3-12：IHost.EnqueueExitDrain 死成员已移除——GodotShell 自持 _exitDrains，宿主从不接收 drain 注册。</summary>
-public sealed class FakeHost : IHost
-{
-    public readonly List<Action> Deferred = new();
-    public readonly List<(FiberId Id, bool Disabled)> ProcessModes = new();
-    public bool AllValid = true;
+// 【P1-B2】FakeHost（测试替身 IHost）已移出公共面——迁至 tests/Cosmos.EffectAlgebra.Runtime.Tests/FakeHost.cs
+//（同命名空间，测试代码零改动）。公共 API 快照（QedP1B1）已同步收缩。
 
-    public void Defer(Action action) => Deferred.Add(action);
-    /// <summary>测试用：同步执行全部已记录 Defer 闭包（Godot 壳真实宿主由 _Process 帧驱动排空；FakeHost 无帧循环故显式 flush）。</summary>
-    public void FlushDeferred() { foreach (var a in Deferred.ToArray()) a(); Deferred.Clear(); }
-    // R4-RH-09：布尔参拆双方法——记录 (Id, Disabled=true/false)，断言语义不变。
-    public void DisableDispatch(FiberId id) => ProcessModes.Add((id, true));
-    public void EnableDispatch(FiberId id) => ProcessModes.Add((id, false));
-    public bool IsInstanceValid(object handle) => AllValid;
-}
