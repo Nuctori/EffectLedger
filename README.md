@@ -226,5 +226,6 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 17. **Runtime 异常方言表**（R4-RH-05/15）：JSON 契约=`FormatException`；L1 参数违约=`ArgumentException`（含 `ArgumentOutOfRangeException` 子类）；Runtime 装载校验=`LoadValidationException`；Runtime 状态机/装配前置=`InvalidOperationException`。catch 面按表接，跨族混接会漏
 18. **契约面子集**（R4-RH-13）：JSON 契约只认 6 资源（gpu/commandBuffer/memory/occupancy/signalBus/custom）× 4 scope（scene/method/type/global）；C# 超集（Tree/Self/Disk/Physics/… 与 Shell/Loop/…）可审计但 `ToJson` 抛 `FormatException`——审计不受影响，导出前请先归约到契约面
 19. `CrashReports`/`_netAccum` 单实例有界增长（以诚实边界 10 单场景生命周期为前提）；`ResetDiagnostics` 当前**无生产接线**（仅测试调用），长会话宿主须自行定期调用（R4-JD-08）
+20. §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
 
 验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。

@@ -44,7 +44,7 @@ public static class GodotApiWhitelist
     static ResourceId CmdBuf() => new ResourceId.CommandBuffer("gpu");   // §7 裸 command_buffer
     static ResourceId AudioMx() => new ResourceId.AudioMixer(0);          // 通用音频混音通道哨兵
     static ResourceId Occ(string ch) => new ResourceId.Occupancy(ch);    // audio_channel / animation_state
-    static ResourceId Cb() => new ResourceId.Callback("cb");             // §7 Connect callback
+    static ResourceId Cb() => new ResourceId.Callback("cb");             // §7 Connect callback；常量实例保守合并【QED-A7】：跨调用点折叠=已声明盲区（README 诚实边界 #20，钉 QedP0A7AliasFoldingPins），权威判定=运行期 Σnet
     static ResourceId Net(int peer, string m) => new ResourceId.Network(peer, m);
     static ResourceId Inp(string a) => new ResourceId.Input(a);          // §7.8 input
 

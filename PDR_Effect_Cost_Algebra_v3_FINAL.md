@@ -211,6 +211,12 @@ Claim₁ = Claim₂ :⇔ 五元组逐字段相等，其中：
         audio_mixer ⇒ AudioMixer(channelId)   audio_channel ⇒ Occupancy("audio")
         animation_state ⇒ Occupancy("animation")   callback ⇒ Callback("cb")
         network ⇒ Network(peerId, method)   input ⇒ Input(action)   self ⇒ Self(component)   tree ⇒ Tree(path)
+// 常量实例保守合并【QED-A7 定稿，收口 iter55 PO-55-08】：无身份差分资源族（§7 白名单的
+//   Callback("cb")/AudioMixer(0) 哨兵、裸名 memory 映射）跨调用点**刻意折叠到单一实例**——
+//   实例差分（Connect(sigA) vs Disconnect(sigB)）不在静态白名单承载范围内，泄漏掩蔽（net=0）
+//   属已声明盲区，权威判定=运行期 Σnet（§8.1 宪法：静态近似永不豁免运行期权威；README 诚实边界 #20）。
+//   §4 JSON 契约面不受影响：ParseResource 强制显式资源 id 且拒裸名 ⇒ 不同 id 即不同资源，无折叠
+//   （钉 QedP0A7AliasFoldingPins）。参数化 alias（按实参派生身份）为 F 轨候选，冻结前不实施。
 // 后果：∪ 幂等（相同 Claim 合并一次）、resource 去重（同资源多 Claim 可分组）、
 //       并行约束 c₁.resource=c₂.resource 良定义、Deviation Σ 按资源对齐良定义。
 ```

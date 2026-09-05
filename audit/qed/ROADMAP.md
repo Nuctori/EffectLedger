@@ -48,7 +48,15 @@
   - 证据：性质钉已由既有 `ScopeOrderTests` 穷举覆盖（自反 8 标签/反对称 500 随机对含前提守卫/传递
     真链/Global 唯一最大元含单向性显式枚举/跨标签 8×8/Shell 不可比），无重复落钉；PDR §3.1.3b 全文
     引用该钉为单一真源。
-- [ ] **A7** 归一化实例身份（PO-55-08）：memory/callback 常量 uid 折叠掩盖泄漏（Connect(sigA)+Disconnect(sigB) ⇒ net=0）——参数化 alias 映射 or 显式声明保守合并语义，二选一 + 钉。
+- [x] **A7** 归一化实例身份（PO-55-08）✅ 2026-09-06
+  - **决策：常量实例保守合并 = sound-by-design（已声明盲区，代码零行为改动）。** 折叠仅存在于
+    §7 API 白名单层（`Callback("cb")`/`AudioMixer(0)`/裸名哨兵）——该层是静态近似，权威判定=
+    运行期 Σnet（仓库既有宪法）；「Connect(sigA)+Disconnect(sigB) ⇒ net=0」的掩蔽属已声明契约。
+    JSON 契约面（冻结核心）强制显式资源 id（memory 为非负整数 uid、拒裸名）⇒ 不同 id 即不同资源，
+    **无折叠**。参数化 alias（按实参派生身份）归 F 轨候选，与 F1 流敏感化同窗评估——冻结前不实施。
+  - 落点：PDR §3.1.4a【QED-A7】注记 + ApiMapping.Cb() 注释 + README 诚实边界 #20；
+    钉 `QedP0A7AliasFoldingPins` 3 枚（白名单常量实例 net=0 / Connect↔Disconnect 同实例防静默漂移 /
+    契约面显式 id 不折叠 Leak+NegativeDip 并存）。
 - [ ] **A8** 语义文档小项打包（PO-55-04/07/10/11/12 单会话）：⊔ 四元组配对键（代码已对齐，补文档）、ℤ 序与减法（`SignedInterval` 已有，补文档）、Signature(b) 良定义、copy_i scope 标注二选一、纯编辑项（双 ##14/断表/术语表）。
 - [ ] **A9** release-class 清单权威性复核（PO-55-09）：对 godotengine 源码给出函数签名级证据——cancel_free 归类方向、free_children_in_group 存在性；错误归类即修 `ApiMapping`。
 - [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）；吸收 PO-55-13（A1/A2 完备性的程序类前提：事件单触发/异常路径/有界循环豁免的定义或降级 partial-complete）。
