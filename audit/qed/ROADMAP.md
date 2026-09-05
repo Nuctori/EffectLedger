@@ -24,7 +24,13 @@
   - 证据：`tests/Cosmos.EffectAlgebra.Tests/QedP0A1SemanticDecisionTests.cs`（2 钉：time-⊤ Leak /
     双 ⊤ 并置对照）；`EFFECT_SCRIPT.md` §2.1 P0-A1 注记；README 锐边改写；`EffectScript.cs`
     Lifetime 注释「常驻层」误导措辞修正。
-- [ ] **A0**（前置闸门）iter55 PO 账本对账：`PO-55-01..18` 逐项三分——已 discharge（补测试钉 + PDR 行号修正）/ 并入下方既有任务 / 显式「不修」决策；产出 `audit/qed/PO55-TRIAGE.md` 并回写本 ROADMAP。规则依据「任何不修必须记录显式决策」。预判（待 A0 裁定）：PO-55-01/02/04/07 为**文档滞后**——代码语义已闭合（`Signature.Of` 拒重复 Claim 强制走 `Combination.Loop`（P0-4）；ω 经 `Scale` 乘进 size（`DerivedMetrics.cs:85-89`）；`Join` 已用四元组配对键（`Objects.cs:217-231`）；net 已有 `SignedInterval`/`ZStar`），iter55 审的是 PDR 叙事而非 L1 实现。
+- [x] **A0**（前置闸门）iter55 PO 账本对账 ✅ 2026-09-05
+  - **裁定：PO-55-01..18 三分完成——已 discharge 7 / 并入既有任务 11 / 显式不修 0。
+    三个「阻塞级」均非 L1 代码缺口**（01/02：多重性合法载体=事件列表+`Combination.Loop` size×ω，
+    集合边界由 P0-4 重复拒 loud 封死；03：`IncludedIn` 本就单向包含，Shell⊑Shell 由自反覆盖，
+    仅 Loop⊑enclosing 真决策）。交付物：`audit/qed/PO55-TRIAGE.md`（逐项 file:line 证据 + 既有钉引用）。
+  - 后续排序按其裁定执行：A5（01/02 PDR 推导）、A6（03c 决策+文档）、A8（04/07/10/11/12 补文档）、
+    A3（05/06 定稿）、A7（08）、A9（09 源码复核）、A2（13 吸收）。
 - [ ] **A5** 多重性语义定稿（PO-55-01/02 同根）：把「Set<Claim> 刻意幂等 + 重复构造即拒 + 多重性唯一合法路径 = `Combination.Loop` 的 size×ω」写成 PDR 推导（重写 §3.2.1 ∪ 叙事 / §3.2.5 max-over-copies 公式 / AUDIT003 ×20 累加叙事），并落对抗钉：`Loop(body,Of(20))` ⇒ net=20×s；Peak 随 ω 增长；重复 Claim `Signature.Of` 抛。代码预判零改动，以 A0 证据为准。
 - [ ] **A6** ScopeId ⊆* 自洽（PO-55-03）：Shell 入偏序表（代码 `IncludedIn` 已覆盖 Shell⊑Shell，表缺）；`Loop(id) ⊑ enclosing` 二选一定稿（加单向包含矩阵 / 商集-预序改写）；「双向包含违反反对称」叙事修正。落性质测试钉（自反/反对称/传递/Global 最大元）。
 - [ ] **A7** 归一化实例身份（PO-55-08）：memory/callback 常量 uid 折叠掩盖泄漏（Connect(sigA)+Disconnect(sigB) ⇒ net=0）——参数化 alias 映射 or 显式声明保守合并语义，二选一 + 钉。
@@ -77,4 +83,5 @@
 
 ## Blockers
 
-- iter55 PO-55-01/02/03（iter55 裁定「数学层阻塞级」）——**A0 对账前挂起**。预判为 PDR 文档滞后而非 L1 代码缺口（证据见 A0 注），以 A0 产出裁定为准后本条清空或降级。
+（无——原「iter55 PO-55-01/02/03 挂起」已由 A0 裁定解除：对代码层无阻塞，
+文档层归 A5/A6/A8 正常排期，见 `audit/qed/PO55-TRIAGE.md` §0/§3。）
