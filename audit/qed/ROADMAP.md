@@ -175,5 +175,7 @@
 
 ## Blockers
 
-（无——原「iter55 PO-55-01/02/03 挂起」已由 A0 裁定解除：对代码层无阻塞，
-文档层归 A5/A6/A8 正常排期，见 `audit/qed/PO55-TRIAGE.md` §0/§3。）
+- **PUSH-PENDING（2026-09-06）**：B3 提交 `4693490` 已落本地（门禁 689 全绿），push 因机器到
+  github.com 的网络中断（schannel SSL 握手失败，curl 同样不通）暂未上远端，本地 `master [ahead 1]`。
+  下次迭代会话开始时若 git status 显示 ahead：先 `git push origin master` 补推（push 成功后再开工；
+  若远端已被推送则跳过）。推完后本条删除。
