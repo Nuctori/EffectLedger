@@ -165,8 +165,22 @@
 
 ## P2 死特性处置
 
-- [ ] **C1** `cosmos.effect.json`：L2/L3 经 AdditionalFiles 真消费（外部用户自助扩展白名单、库少发版的
-      关键杠杆），或正式砍掉并删 `LoadExtra` API——不许保持「存在但不生效」（诚实边界 #12）。
+- [x] **C1-决策** `cosmos.effect.json` 二选一定稿：**WIRE（真接线 AdditionalFiles）** ✅ 2026-09-06
+  - **理由**：编译期白名单扩展只有 AdditionalFiles 一条路（分析器/生成器在编译期加载，注册表
+    API 无代码可运行——死路）；不接线则每个未映射 API 的用户都产生发版压力，与适配层
+    「库少发版」承诺直接冲突。解析/校验层已就绪（`CosmosEffectConfig.LoadExtraFromJson`
+    → `ImmutableArray<ApiMapping>`，有测试）；缺的只是 L2/L3 消费钩子（「存在但不生效」即 #12）。
+  - 侦察结论：①分析器静态字典消费 `GodotApiWhitelist.All`（EffectAlgebraAnalyzer.cs:111-118），
+    `RegisterCompilationStartAction` 的 `Options.AdditionalFiles` 可达 ⇒ per-compilation 合并视图
+    可行；②生成器目前无 AdditionalTexts 管线 ⇒ 需增量改造（缓存键含配置文本）。
+  - **拆分执行（顺序神圣）**：
+    - [ ] **C1a** L1 增合并视图 helper（`GodotApiWhitelist.MergedWith(extra)`：与基础表合并 +
+          冲突复核 ValidateNoCollisions + 钉）。
+    - [ ] **C1b** L3 分析器消费 AdditionalFiles（静态字典 → per-compilation 合并字典；格式坏
+          配置 ⇒ 新诊断——诊断 ID 属公共契约面，新码须记录并过 E3 复核）。
+    - [ ] **C1c** L2 生成器消费 additionalTextsProvider（缓存键含配置文本；合并白名单参与 emit）。
+    - [ ] **C1d** 文档收口：README ③ 白名单扩展章节改真接线说明、诚实边界 #12 解决标记、
+          templates/effect-script.json 样例核对。
 - [ ] **C2** `ResetDiagnostics` 生产接线（长会话自动调用点）或砍（诚实边界 #19）——二选一。
 
 ## P3 形式化验证（QED 主线）
