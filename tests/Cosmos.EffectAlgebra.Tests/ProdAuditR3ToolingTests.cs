@@ -147,11 +147,17 @@ public sealed class ProdAuditR3ToolingTests
     }
 
     // ── R3-CG-04：Generator 多目标（依赖组覆盖 net8/net9 消费者） ──
+    // ── R3-CG-04（P1-B5 更新）：Generator 多目标与 L1 对齐（net8.0;net10.0）——net9 消费者按
+    //    NuGet 就近原则消费 net8.0 资产（覆盖面不变）；原「net8.0;net9.0;net10.0」随 L1 net9.0
+    //    缩减切片（A2-06 后残迹）一并删除，同包各 TFM 同一公共面（QedP1B1 唯一准绳）。 ──
     [Fact]
     public void GeneratorCsproj_MultiTargets_AllConsumerTfms()
     {
         var csproj = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Cosmos.EffectAlgebra.Generator", "Cosmos.EffectAlgebra.Generator.csproj"));
-        Assert.Contains("net8.0;net9.0;net10.0", csproj); // 修改前：单 net10.0 ⇒ 依赖组仅 net10.0，net8/9 消费者静默丢 L1
+        Assert.Contains("<TargetFrameworks>net8.0;net10.0</TargetFrameworks>", csproj); // 修改前：单 net10.0 ⇒ 依赖组仅 net10.0，net8 消费者静默丢 L1
+        // P1-B5：net9.0 档不再存在于 TFM 列表（注释中的历史记述不算数，只认元素本身）
+        Assert.DoesNotContain("<TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>", csproj);
+        Assert.DoesNotContain("<TargetFrameworks>net9.0", csproj);
     }
 
     // ── R3-CI-01：net8 验证工程入 slnx（否则无门背书） ──

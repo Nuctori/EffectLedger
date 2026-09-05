@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- 多目标：net8.0(Godot 4.x) + net9.0(Roslyn) + net10.0(测试/游戏)，零 Godot 依赖经 IHost -->
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

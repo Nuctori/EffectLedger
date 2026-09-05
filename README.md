@@ -221,7 +221,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 10. Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）
 11. Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威
 12. `cosmos.effect.json` 白名单扩展当前仅提供 L1 加载 API（`CosmosEffectConfig.LoadExtra/AllWithExtra`），L2 生成器/L3 分析器尚未自动消费 `AdditionalFiles`——接线前该文件不生效（勿当作已受保护）
-13. L1 包 net9.0 TFM 仅含代数切片（无 `EffectScript`/DSL 类型，为分析器源内嵌而设）；需要剧本 DSL 请引用 net8.0 或 net10.0 TFM
+13. ~~L1 包 net9.0 TFM 仅含代数切片~~ **已解决（P1-B5）**：net9.0 缩减切片已删除（A2-06 分析器自包含后为残迹），包族（L1/Generator/Runtime）收敛 `net8.0;net10.0`——同包各 TFM 同一公共面（QedP1B1 快照唯一准绳）；net9 消费者按 NuGet 就近原则消费 net8.0 资产。分析器包保持 net9.0（编译器宿主对齐，自包含、非消费 TFM）
 14. L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
 15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）
 16. `O(E·K·log E)` 以「互异 (资源,scope) 组数 D 有界」为前提；逐事件独立 scope/resource 的脚本 gate(1)/(3) 每采样点扫 net/grp 字典 ⇒ 整体 O(S·D) 超线性（实测 4 倍数据 ≈6x，曲线钉 `ProdAuditR4AuditScaleTests`）。`NegativeDip`/`CompatibleConflict` 逐采样点上报在此区间输出可达 O(S·G) 条（R4-JD-05/06）

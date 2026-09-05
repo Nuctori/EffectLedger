@@ -1,9 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- 多目标：net10.0（游戏/测试消费）+ net9.0（供 L3 分析器引用，分析器以 net9.0 为目标，与 SDK 自带 Roslyn 5.0.0.0 同代，根除 CS8032）。
-         两 TFM 共享同一源码；net9.0 仅作为净代数数据/类型层，不触及 Godot。 -->
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <!-- 多目标：net10.0（游戏/测试消费）+ net8.0（最低公共面；net9 消费者按 NuGet 就近原则消费
+         net8.0 资产）。【P1-B5】原 net9.0 缩减切片（无 EffectScript/DSL）已删除——其为分析器
+         源内嵌时代（CS8032）而设，A2-06 分析器自包含（ShareSource 编译 L1 源副本、零程序集引用）
+         后成为残迹；同一包 ID+版本在不同 TFM 暴露不同 API 的分歧类随之消失（ honesty-13 解决，
+         QedP1B1 快照唯一准绳：全 TFM 同一公共面）。 -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -20,16 +23,7 @@
     <PackageTags>effect-algebra;resource;leak;godot;roslyn</PackageTags>
   </PropertyGroup>
 
-  <!-- net9.0 仅编译分析器所需的纯代数切片（Objects + ApiMapping + Algebra + Numeric + SignedNet）；
-       其余文件（EffectScript*/Deviation/DerivedMetrics）依赖 net9.0 缺失或分析器不需要，故排除。
-       System.Collections.Immutable 用 net9.0 自带（in-box），不引 NuGet 包，避免分析器 ALC 解析 NuGet 依赖失败 ⇒ CS8032。 -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <Compile Remove="DerivedMetrics.cs" />
-    <Compile Remove="Deviation.cs" />
-    <Compile Remove="EffectAttributes.cs" />
-    <Compile Remove="EffectScript.cs" />
-    <Compile Remove="EffectScriptContract.cs" />
-  </ItemGroup>
+  <!-- 【P1-B5】原 net9.0 缩减切片 ItemGroup 已随 TFM 删除（残迹，见上注）。全 TFM 同一源码同一公共面。 -->
 
   <!-- P1-B4a：超集本体（非 JSON 契约面的 ResourceId/ScopeId 构造子）转 internal 后，
        仓库内测试与样例工程仍需构造它们（L1 测试 14 文件 / SampleGame 5 文件）——
