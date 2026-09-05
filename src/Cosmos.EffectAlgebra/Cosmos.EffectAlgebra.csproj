@@ -31,4 +31,13 @@
     <Compile Remove="EffectScriptContract.cs" />
   </ItemGroup>
 
+  <!-- P1-B4a：超集本体（非 JSON 契约面的 ResourceId/ScopeId 构造子）转 internal 后，
+       仓库内测试与样例工程仍需构造它们（L1 测试 14 文件 / SampleGame 5 文件）——
+       经 InternalsVisibleTo 授权；这暴露的是测试便利而非公共契约（公共面以 QedP1B1 快照为准）。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cosmos.EffectAlgebra.Tests" />
+    <InternalsVisibleTo Include="Cosmos.EffectAlgebra.Runtime.Tests" />
+    <InternalsVisibleTo Include="SampleGame" />
+  </ItemGroup>
+
 </Project>

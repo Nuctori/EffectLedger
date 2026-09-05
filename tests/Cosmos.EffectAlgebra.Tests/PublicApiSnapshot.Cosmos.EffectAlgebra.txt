@@ -96,25 +96,14 @@ class Cosmos.EffectAlgebra.ResourceId+Tree
   prop Cosmos.EffectAlgebra.NodePathOrUnknown Path()
 class Cosmos.EffectAlgebra.ScopeId
   method System.Boolean IncludedIn(Cosmos.EffectAlgebra.ScopeId)
-class Cosmos.EffectAlgebra.ScopeId+Async
-  ctor System.String
-  prop System.String Id()
-class Cosmos.EffectAlgebra.ScopeId+Conditional
-  ctor System.String
-  prop System.String Branch()
 class Cosmos.EffectAlgebra.ScopeId+Global
   ctor 
-class Cosmos.EffectAlgebra.ScopeId+Loop
-  ctor System.String
-  prop System.String Id()
 class Cosmos.EffectAlgebra.ScopeId+Method
   ctor System.String
   prop System.String Name()
 class Cosmos.EffectAlgebra.ScopeId+Scene
   ctor System.String
   prop System.String Name()
-class Cosmos.EffectAlgebra.ScopeId+Shell
-  ctor 
 class Cosmos.EffectAlgebra.ScopeId+Type
   ctor System.String
   prop System.String Name()

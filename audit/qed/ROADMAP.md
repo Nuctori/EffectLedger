@@ -137,7 +137,18 @@
     Parallel_CreateCreate_Throws 三钉的被钉对象已按本决策删除——删的是死 API 的钉，非活语义的钉；
     gate(3) 的活冲突钉全部保留。快照 diff 恰为两名方法删除（B1 机制第二次行使）。
   - README 诚实边界 #1 标记已解决；PDR §3.2.1 的 QED-A5 幂等注记已先行声明唯一入口。
-- [ ] **B4** C# 超集本体 vs JSON 契约面——公共类型砍到契约面，超集转 internal（诚实边界 #18 随之消失）。
+- [x] **B4a** ScopeId 超集 internal + IVT ✅ 2026-09-06
+  - **决策：`ScopeId.Shell/Loop/Conditional/Async` 转 internal**（非 JSON 契约面：契约 4 scope=
+    scene/method/type/global）。§7 白名单层（同程序集）不受影响；仓库内测试（L1 14 文件 +
+    Runtime.Tests 8 文件）与 SampleGame（5 文件）经 csproj 级 `InternalsVisibleTo` 授权
+    （Tests/Runtime.Tests/SampleGame 三友元）——IVT 暴露的是测试便利而非公共契约（公共面以
+    QedP1B1 快照为准）。快照 diff 恰为 4 类型 11 行删除（B1 机制第三次行使）。
+  - 侦察结论（B4 拆分依据）：①契约面 Gpu(Rid)/SignalBus(StringName) ⇒ Rid/StringName 必须保持
+    public；②生成器 emit 仅引用 Signature.Union/Of ⇒ internal 化不破坏消费方编译；③Runtime
+    程序集零超集使用；④样例 5 文件 + L1 测试 14 文件 + Runtime.Tests 使用超集 ⇒ 需 IVT。
+- [ ] **B4b** ResourceId 超集 internal（Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/
+      Input/NodePathOrUnknown 转 internal；契约面 Gpu/Memory/CommandBuffer/SignalBus/Occupancy/
+      Custom + Rid/StringName 保持 public）；同 B4a 流程（快照重生成 + 诚实边界 #18 消失 + README 更新）。
 - [ ] **B5** TFM 分歧消除：net9.0 切片缺 EffectScript（诚实边界 #13）——同包全 API 或拆包，二选一并记录理由。
 
 ## P2 死特性处置

@@ -93,10 +93,12 @@ public abstract record ScopeId
     public sealed record Type(string Name) : ScopeId; // §3.1.3b 类型作用域
     public sealed record Scene(string Name) : ScopeId; // §3.1.3b 场景作用域
     public sealed record Global : ScopeId;                 // §3.1.3b 最大元
-    public sealed record Shell : ScopeId;                  // §3.1.3b shell 作用域（ST-04 收口：shell_scope ⇒ Shell）
-    public sealed record Loop(string Id) : ScopeId; // §3.1.3b 循环作用域
-    public sealed record Conditional(string Branch) : ScopeId; // §3.1.3b 条件作用域
-    public sealed record Async(string Id) : ScopeId; // §3.1.3b 异步作用域
+    // 以下四个为 C# 超集本体（非 JSON 契约面：契约 4 scope=scene/method/type/global），P1-B4a 转 internal——
+    // §7 白名单层（同程序集）与经 InternalsVisibleTo 授权的仓库测试/样例仍可用，外部消费者不可见。
+    internal sealed record Shell : ScopeId;                  // §3.1.3b shell 作用域（ST-04 收口：shell_scope ⇒ Shell）
+    internal sealed record Loop(string Id) : ScopeId; // §3.1.3b 循环作用域（循环归因经 Combination.Loop 的 loopScope 参数表达，QED-A6）
+    internal sealed record Conditional(string Branch) : ScopeId; // §3.1.3b 条件作用域（L1 无 if/while 记法，QED-A8 Signature(b):=∅）
+    internal sealed record Async(string Id) : ScopeId; // §3.1.3b 异步作用域
 
     /// <summary>§3.1.3b ⊆*：自反（同构造子同字段）、反对称、传递；Global 为最大元（含一切）。</summary>
     public bool IncludedIn(ScopeId other)
