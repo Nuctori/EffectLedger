@@ -20,24 +20,26 @@ public readonly record struct StringName(string Value);
 /// </summary>
 public abstract record ResourceId
 {
-    // §3.1.2 基础构造子
-    public sealed record Tree(NodePathOrUnknown Path) : ResourceId; // §3.1.2 场景树资源
-    public sealed record Self(string Component) : ResourceId; // §3.1.2 自身资源
-    public sealed record Physics(Rid BodyId) : ResourceId; // §3.1.2 物理资源
+    // ── JSON 契约面（§4 六资源，public）：Memory / Gpu / CommandBuffer / SignalBus / Occupancy / Custom ──
     public sealed record Memory(ulong Uid) : ResourceId;           // §7 裸 'memory' ⇒ Memory(uid="mem")
-    public sealed record Disk(string Path) : ResourceId; // §3.1.2 磁盘资源
-    public sealed record Signal(StringName Name) : ResourceId; // §3.1.2 信号资源
     public sealed record Gpu(Rid BufferId) : ResourceId; // §3.1.2 GPU 资源
-    public sealed record AudioMixer(int ChannelId) : ResourceId; // §3.1.2 音频混音资源
     public sealed record Occupancy(string Channel) : ResourceId;   // §7 audio_channel / animation_state
-    public sealed record Callback(string Id) : ResourceId;         // §7 Connect callback
-    public sealed record Network(int PeerId, string Method) : ResourceId; // §3.1.2 网络资源
-    public sealed record Input(string Action) : ResourceId;        // §7.8 input
     public sealed record Custom(string Name) : ResourceId; // §3.1.2 自定义资源
-
-    // §3.1.2b 合成命名空间
     public sealed record CommandBuffer(string Channel) : ResourceId;  // §3.1.2 命令缓冲资源（裸 command_buffer ⇒ §7）
     public sealed record SignalBus(StringName Name) : ResourceId;     // §3.1.2 信号总线（统一 signal_bus / "signal_"+s，§3.1.4a）
+
+    // ── C# 超集本体（P1-B4b 转 internal）：非 JSON 契约面，§7 白名单层（同程序集）与
+    //    InternalsVisibleTo 授权的仓库测试/样例仍可用；外部消费者不可见（诚实边界 #18 的
+    //    「C# 超集可审计但 ToJson 抛」分叉随之消失）。 ──
+    internal sealed record Tree(NodePathOrUnknown Path) : ResourceId; // §3.1.2 场景树资源
+    internal sealed record Self(string Component) : ResourceId; // §3.1.2 自身资源
+    internal sealed record Physics(Rid BodyId) : ResourceId; // §3.1.2 物理资源
+    internal sealed record Disk(string Path) : ResourceId; // §3.1.2 磁盘资源
+    internal sealed record Signal(StringName Name) : ResourceId; // §3.1.2 信号资源（归一垫片：统一入 SignalBus，§3.1.4a）
+    internal sealed record AudioMixer(int ChannelId) : ResourceId; // §3.1.2 音频混音资源
+    internal sealed record Callback(string Id) : ResourceId;         // §7 Connect callback（常量实例保守合并，QED-A7）
+    internal sealed record Network(int PeerId, string Method) : ResourceId; // §3.1.2 网络资源
+    internal sealed record Input(string Action) : ResourceId;        // §7.8 input
 
     /// <summary>
     /// §3.1.4a — 归一化函数（非结构相等）。Two Claims 相等 ⇔ 二者 Resource 经 Normalize 后相等。
@@ -65,8 +67,8 @@ public abstract record ResourceId
     };
 }
 
-/// <summary>§3.1.2 Tree 路径：可为具体 NodePath 或 Unknown（静态不可判定）。</summary>
-public readonly record struct NodePathOrUnknown
+/// <summary>§3.1.2 Tree 路径：可为具体 NodePath 或 Unknown（静态不可判定）。【P1-B4b 转内部：仅被 internal 的 Tree 使用】</summary>
+internal readonly record struct NodePathOrUnknown
 {
     /// <summary>true 表示路径静态不可判定（§3.1.4a Unknown 处理）。</summary>
     public bool IsUnknown { get; }

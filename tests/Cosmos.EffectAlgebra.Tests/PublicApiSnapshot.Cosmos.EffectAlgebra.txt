@@ -48,52 +48,24 @@ class Cosmos.EffectAlgebra.ReleaseClass
   method System.Boolean IsRelease(System.String)
 class Cosmos.EffectAlgebra.ResourceId
   method Cosmos.EffectAlgebra.ResourceId Normalize(Cosmos.EffectAlgebra.ResourceId)
-class Cosmos.EffectAlgebra.ResourceId+AudioMixer
-  ctor System.Int32
-  prop System.Int32 ChannelId()
-class Cosmos.EffectAlgebra.ResourceId+Callback
-  ctor System.String
-  prop System.String Id()
 class Cosmos.EffectAlgebra.ResourceId+CommandBuffer
   ctor System.String
   prop System.String Channel()
 class Cosmos.EffectAlgebra.ResourceId+Custom
   ctor System.String
   prop System.String Name()
-class Cosmos.EffectAlgebra.ResourceId+Disk
-  ctor System.String
-  prop System.String Path()
 class Cosmos.EffectAlgebra.ResourceId+Gpu
   ctor Cosmos.EffectAlgebra.Rid
   prop Cosmos.EffectAlgebra.Rid BufferId()
-class Cosmos.EffectAlgebra.ResourceId+Input
-  ctor System.String
-  prop System.String Action()
 class Cosmos.EffectAlgebra.ResourceId+Memory
   ctor System.UInt64
   prop System.UInt64 Uid()
-class Cosmos.EffectAlgebra.ResourceId+Network
-  ctor System.Int32, System.String
-  prop System.String Method()
-  prop System.Int32 PeerId()
 class Cosmos.EffectAlgebra.ResourceId+Occupancy
   ctor System.String
   prop System.String Channel()
-class Cosmos.EffectAlgebra.ResourceId+Physics
-  ctor Cosmos.EffectAlgebra.Rid
-  prop Cosmos.EffectAlgebra.Rid BodyId()
-class Cosmos.EffectAlgebra.ResourceId+Self
-  ctor System.String
-  prop System.String Component()
-class Cosmos.EffectAlgebra.ResourceId+Signal
-  ctor Cosmos.EffectAlgebra.StringName
-  prop Cosmos.EffectAlgebra.StringName Name()
 class Cosmos.EffectAlgebra.ResourceId+SignalBus
   ctor Cosmos.EffectAlgebra.StringName
   prop Cosmos.EffectAlgebra.StringName Name()
-class Cosmos.EffectAlgebra.ResourceId+Tree
-  ctor Cosmos.EffectAlgebra.NodePathOrUnknown
-  prop Cosmos.EffectAlgebra.NodePathOrUnknown Path()
 class Cosmos.EffectAlgebra.ScopeId
   method System.Boolean IncludedIn(Cosmos.EffectAlgebra.ScopeId)
 class Cosmos.EffectAlgebra.ScopeId+Global
@@ -201,11 +173,6 @@ struct Cosmos.EffectAlgebra.NatStar
   method Cosmos.EffectAlgebra.NatStar op_Multiply(Cosmos.EffectAlgebra.NatStar, Cosmos.EffectAlgebra.NatStar)
   method System.Int32 CompareToFinite(Cosmos.EffectAlgebra.NatStar)
   method System.String ToString()
-struct Cosmos.EffectAlgebra.NodePathOrUnknown
-  field Cosmos.EffectAlgebra.NodePathOrUnknown Unknown
-  prop System.Boolean IsUnknown()
-  prop System.String Path()
-  method Cosmos.EffectAlgebra.NodePathOrUnknown Of(System.String)
 struct Cosmos.EffectAlgebra.Rid
   ctor System.String
   prop System.String Value()

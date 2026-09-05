@@ -146,9 +146,13 @@
   - 侦察结论（B4 拆分依据）：①契约面 Gpu(Rid)/SignalBus(StringName) ⇒ Rid/StringName 必须保持
     public；②生成器 emit 仅引用 Signature.Union/Of ⇒ internal 化不破坏消费方编译；③Runtime
     程序集零超集使用；④样例 5 文件 + L1 测试 14 文件 + Runtime.Tests 使用超集 ⇒ 需 IVT。
-- [ ] **B4b** ResourceId 超集 internal（Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/
-      Input/NodePathOrUnknown 转 internal；契约面 Gpu/Memory/CommandBuffer/SignalBus/Occupancy/
-      Custom + Rid/StringName 保持 public）；同 B4a 流程（快照重生成 + 诚实边界 #18 消失 + README 更新）。
+- [x] **B4b** ResourceId 超集 internal ✅ 2026-09-06
+  - **决策：Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/Input/NodePathOrUnknown 转
+    internal**（非 JSON 契约面）；契约面 6 资源（Memory/Gpu/Occupancy/Custom/CommandBuffer/SignalBus）
+    + Rid/StringName（契约构造子签名可达）保持 public。与 B4a 合并生效后诚实边界 #18 消失
+    （外部消费者只能构造契约面，「超集可审计但 ToJson 抛」分叉不复存在）——README #18 标记已解决。
+  - 快照 diff 恰为 10 类型 33 行删除（B1 机制第四次行使）；公共面收敛至 43 类型。全解构建零错误
+    （IVT 覆盖验证：L1 测试/Runtime.Tests/SampleGame 均正常编译运行）。**B4 全部完成。**
 - [ ] **B5** TFM 分歧消除：net9.0 切片缺 EffectScript（诚实边界 #13）——同包全 API 或拆包，二选一并记录理由。
 
 ## P2 死特性处置

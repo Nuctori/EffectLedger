@@ -226,7 +226,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）
 16. `O(E·K·log E)` 以「互异 (资源,scope) 组数 D 有界」为前提；逐事件独立 scope/resource 的脚本 gate(1)/(3) 每采样点扫 net/grp 字典 ⇒ 整体 O(S·D) 超线性（实测 4 倍数据 ≈6x，曲线钉 `ProdAuditR4AuditScaleTests`）。`NegativeDip`/`CompatibleConflict` 逐采样点上报在此区间输出可达 O(S·G) 条（R4-JD-05/06）
 17. **Runtime 异常方言表**（R4-RH-05/15）：JSON 契约=`FormatException`；L1 参数违约=`ArgumentException`（含 `ArgumentOutOfRangeException` 子类）；Runtime 装载校验=`LoadValidationException`；Runtime 状态机/装配前置=`InvalidOperationException`。catch 面按表接，跨族混接会漏。**【QED-A4 冻结 2026-09-06】**自此刻四族方言为冻结契约（L1 族钉 `QedP0A4ContractFreezePins`，Runtime 族钉 Runtime.Tests 既有套件）；变更=semver major
-18. **契约面子集**（R4-RH-13）：JSON 契约只认 6 资源（gpu/commandBuffer/memory/occupancy/signalBus/custom）× 4 scope（scene/method/type/global）；C# 超集（Tree/Self/Disk/Physics/… 与 Shell/Loop/…）可审计但 `ToJson` 抛 `FormatException`——审计不受影响，导出前请先归约到契约面
+18. ~~契约面子集~~ **已解决（P1-B4a/B4b）**：非契约面的 C# 超集本体（Resource 侧 Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/Input + NodePathOrUnknown；Scope 侧 Shell/Loop/Conditional/Async）已转 internal——外部消费者只能构造契约面（6 资源 × 4 scope），`ToJson` 抛异常的分叉不复存在。超集语义仍供 §7 白名单层内部使用（仓库测试/样例经 InternalsVisibleTo 授权）
 19. `CrashReports`/`_netAccum` 单实例有界增长（以诚实边界 10 单场景生命周期为前提）；`ResetDiagnostics` 当前**无生产接线**（仅测试调用），长会话宿主须自行定期调用（R4-JD-08）
 20. §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
 
