@@ -99,7 +99,14 @@
     P4 自相矛盾措辞「fail-closed 为保守兼容」废止；§14.3 A4 域限定；§8.1「3.3.1 上界」失实叙事修正。
   - 证据：`QedP0A3UnknownSemanticsPins` 3 钉（Unknown 占用 Leak 照报 / 峰值计入 / 端到端无冲突
     警报且 Leak 并存）+ 既有 CompatibleMatrixTests 25 组合矩阵；README 诚实边界 #1 重写为三维契约。
-- [ ] **A4** CLI exit code 2 契约、四族异常方言表——定稿并声明 frozen。
+- [x] **A4** CLI exit code 契约、四族异常方言表——定稿并声明 frozen ✅ 2026-09-06
+  - **决策：冻结（自 2026-09-06，变更=semver major）。** CLI 退出码 0=通过/2=存在违例/1=解析或 IO
+    错误（README ⑤ 契约表）；四族异常方言（README 诚实边界 #17）。补齐最后一枚行为钉——CLI 通过
+    路径 exit 0 此前无钉（R3 仅钉 1/2 与 --out）；L1 两族方言单点冻结快照，Runtime 两族由
+    Runtime.Tests 既有钉承载（跨工程不重复）。
+  - 声明落点：README ⑤ 冻结框 + 诚实边界 #17 冻结标记 + EFFECT_SCRIPT §4 异常方言冻结行。
+  - 证据：`QedP0A4ContractFreezePins` 2 钉（真实子进程 exit 0 + `"passed": true` 载荷 / L1 两族
+    FormatException+ArgumentException 单点表）。**P0 语义定稿阶段（A0–A4、A5–A9）全部完成。**
 
 ## P1 API 面收缩
 

@@ -171,6 +171,7 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 >
 > 契约要点（六轮审计 R6-RB 补记，与 Parse 同界）：
 > - **重复键拒**：任意对象层（根/事件/claim/scope/resource/budget）出现重复键即 `FormatException`——System.Text.Json 默认 last-win 会静默丢前值（根级 `events` 双写可把非空剧本静默当空剧本假绿，R6-RB-04）。
+> - **异常方言冻结【QED-A4】**：本契约所有失败路径统一 `FormatException`（自 2026-09-06 冻结；变更=semver major）。四族方言总表见 README 诚实边界 #17（冻结钉 `QedP0A4ContractFreezePins`）。
 > - **身份串拒控制字符**：claim 侧字符串（kind/mode 值、resource id、scope 名）与 budget 键 id 含 U+0000–U+001F 即拒（NUL 破坏下游日志与原生互操作；R6-RB-06，与 A1-12 空 id 拒绝同口径）。
 > - **整数须十进制字面量**：`loop:1e+19` 拒、`18446744073709551615` 收（System.Text.Json `TryGetUInt64` 方言；R6-RB-05）。
 > - **失败消息全路径可定位**：claim/kind/mode/lifetime/loop 报错均带 `events[N][M]` 级定位（R6-RB-03）。
