@@ -163,7 +163,7 @@ CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（2 非�
 
 ## 已知语义锐边（设计锁死，非 bug；审计/测试/运行闭合中明示）
 
-- `Unknown` 模式 = 最弱兼容 = **fail-open**：未知资源冲突被静默放行（§3.2.3 P4）。
+- `Unknown` 模式三维契约（QED-A3 定稿）：**net/peak 按占用 +size 保守计入**（未映射 API 的泄漏/峰值检测不静默——「Unknown 占用无 release」照常报 Leak）；仅 Compatible 维度 **fail-open**（按 Use 最弱兼容放行——未映射 API 是白名单工具的常态，逐一报冲突=警报洪水，用户会批量 [EffectOverride] 致工具失效）。生命周期冲突（CONFLICT 集）为 A4 权威域；写写数据竞争检测移交 L2 写集分析（F 轨）。钉：`QedP0A3UnknownSemanticsPins` + CompatibleMatrixTests 25 组合矩阵
 - `loop:"⊤"`（population-⊤，种群轴）居民层豁免 gate(1) 守恒——判据是「配对 release **结构性不可枚举**」，非「语义常驻」；gate(2) 峰值仍审计（设有限 cap 即报）。`lifetime:[…,⊤]`（time-⊤，时间轴，ω 有限）是完整事件缺 release ⇒ Leak。两轴结论相反是契约而非矛盾——故意常驻请用 `loop:"⊤"` 声明（QED-P0-A1 定稿，对照钉 `QedP0A1SemanticDecisionTests`）。
 - `Claim.Size` 省略 ≠ 未知：`?? [1,1]`（精确 1，既非未知 ⊤ 也非 0 预算）（§3.1.5a）。
 - `Effects → Audit` 在“全 finite 结束后”走一次性闭包路径（而非端点增量模拟）对 Leak 的认定与“有限闭合”在有限性严整上等价。

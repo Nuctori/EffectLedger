@@ -307,7 +307,13 @@ Compatible(m₁, m₂) :=
 //   (P1) 对称：Compatible(m₁,m₂)=Compatible(m₂,m₁)
 //   (P2) 全函数：16 对全部覆盖，无未定义项
 //   (P3) create+release 配对不再误判冲突（修正 iter23 的良性生命周期误判）
-//   (P4) mode=Unknown 按 use 处理（最弱兼容，fail-closed 为保守兼容，收口 iter21）
+//   (P4) mode=Unknown 按 use 处理（最弱兼容，fail-open）【QED-A3 定稿，收口 iter55 PO-55-05/06；
+//        原「fail-closed 为保守兼容」措辞自相矛盾，废止】。Unknown 的三维契约：
+//        net/peak 按占用 +size 保守计入（§3.3.1——泄漏/峰值检测不静默）；Compatible 按最弱兼容
+//        放行（本节）。fail-closed（Unknown 对任意 mode 报冲突）被否决：白名单工具的未映射 API
+//        是常态，逐一报冲突 = 警报洪水 ⇒ 用户批量 [EffectOverride] ⇒ 工具失效；且 mode 未知时
+//        断言冲突是对未知命题下结论。钉：CompatibleMatrixTests 25 组合矩阵（含全部 (Unknown,*)）
+//        + QedP0A3UnknownSemanticsPins（扫换线端到端：gate(3) 不报、gate(1)/(2) 仍计）。
 ```
 
 **定义 3.2.4（条件组合）**
@@ -352,13 +358,17 @@ Peak(S, scope) = (size-求和形式，见 §3.3.2)；ω=⊤ ⇒ Peak 返回 ⊤�
 **定义 3.3.1（净变化 Net）**【收口 iter27/iter37/iter44：net 漏释放 + 默认规则不产 occupy 致守恒不可证】
 ```
 // 基础定义（全局聚合，保留原语义）：
-net(S) = Σ_{c∈S, c.kind=occupy, c.mode∈{create,move}} c.size
+net(S) = Σ_{c∈S, c.kind=occupy, c.mode∈{create,move,unknown}} c.size
        − Σ_{c∈S, c.kind=occupy, c.mode=release}           c.size
   // size 为 SizeVal（3.1.5），+∞ ⇒ ⊤（不 NaN）；缺省 [1,1]
 
 // 作用域分组（收口 iter37 root 6，依赖 3.1.4a Claim= + 3.1.3b ⊆*）：
-net(S, scope) = Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode∈{create,move}} c.size
+net(S, scope) = Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode∈{create,move,unknown}} c.size
              − Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode=release}           c.size
+// 【QED-A3 定稿 PO-55-06】正部含 mode=Unknown：未映射 API 的占用按 +size 保守计入（实现扫换线/
+//   闭包恒「非 release 为正」；iter55 推断的「贡献恒 0」是本公式旧形 mode∈{create,move} 的遗漏——
+//   修公式而非实现）。改「Unknown ⇒ ⊤ 上界」被否决：有限 cap 下峰值门必爆 = 未映射 API 警报洪水
+//   （同 §3.2.3 QED-A3 注）。钉 QedP0A3UnknownSemanticsPins（Unknown 占用 Leak/Present、冲突不报）。
 // 泄漏判定 DO-9（收口 iter44）：net(S,scope)>0 且 scope 内无对应 release 配对 ⇒ 报警
 //   fail-closed：未知映射（3.1.4a 的 Unknown）在 net 中计为 ⊤ 上界，触发「需人工确认」而非静默漏报/误报
 // 多重性注记【QED-A5】：Σ 作用于「缩放后」签名（§3.2.5 size×ω）或剧本事件序列（审计扫换线逐事件
@@ -752,7 +762,8 @@ public class MovementSystem : ISystem<TimeInput> {
   // 收口 iter44：原默认 { read(unknown,use), write(unknown,use) } 的 kind/mode 硬约束
   // 使 occupy/release 永不可达 ⇒ 释放语义被吞没、net 守恒不可证、DO-9 双误。
   // 改为 mode=Unknown（最弱未知），fail-closed 为「需 [EffectOverride] 标注真实 mode 或人工确认」，
-  // 而非静默漏报/误报。Unknown mode 在 Compatible/net 中按 3.2.3 P4 / 3.3.1 上界处理。
+  // 而非静默漏报/误报。Unknown 的三维契约【QED-A3】：net/peak 按占用 +size 保守计入（§3.3.1——
+  // 非上界、非静默 0）；Compatible 按 Use 最弱兼容放行（§3.2.3 P4，fail-open 防警报洪水）。
 release-class 白名单（强制 emit release/occupy-release，不得落入默认规则）。
   // 【QED-A9 修正 2026-09-06：godotengine 官方文档签名级复核，收口 iter55 PO-55-09。原「2026-08-20
   // 源码实测」清单的三处错误归类在此定稿修正，实现 ApiMapping.ReleaseClass 已同步。】
@@ -1100,6 +1111,12 @@ A1/A2 适用程序类【QED-A2 定稿 PO-55-13；前提不成立 ⇒ 判据降�
         循环同样按上界报警（保守方向，不声称不冤枉——SOUND 一侧由 §3.3.2 上界语义承载）。
 A3 量纲混算 SOUND+COMPLETE：跨 kind 聚合（weight=⊥）⇒ KIND_MIX 编译错误（基于 §3.1.4b 分桶 + §3.3.2 weight）。
 A4 兼容冲突 COMPLETE：同资源冲突 mode 对（CONFLICT 集）⇒ 报警（基于 §3.2.3 全函数）。
+   权威域限定【QED-A3 定稿 PO-55-05】：A4 的 COMPLETE 限**生命周期资源操作**（create/release/move
+   的同类自冲突与互补配对——§7 全表的生命周期 API 即此域）。§7 属性/值写操作映射 write+use 落
+   read/write 量纲（DO-7 量纲隔离），不参与生命周期冲突配对 ⇒ 「写写数据竞争检测」不在 A4 判据内，
+   移交 L2 写集分析（F 轨，与 F2 精化类型同窗）；§6.3 调度器示例（写写冲突自动 [RunAfter]）据此由
+   F 轨承载。「修订 §7 写操作 mode（写≠use）」方案被否决：CONFLICT 三对均为生命周期模式，容纳写写
+   竞争须新增 Exclusive 类 mode = 公共枚举/JSON 契约面/Compatible 表三重公共面变更，且跨语义域。
 A5 未知保守 SOUND：未映射 API 落默认 Unknown 规则 ⇒ 不冤枉，但需人工确认（fail-closed，见 §8.1）。
 ```
 

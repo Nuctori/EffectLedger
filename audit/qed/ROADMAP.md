@@ -87,7 +87,18 @@
     也按上界报警）明示不声称不冤枉。A1 判定谓词同步 QED-A8 口径（闭包 net 不含 0 ⇒ Leak）。
   - 证据：`QedP0A2ProjectionContractTests` 5 钉（At 计 1 与 K∈{1,3,7} 无关 / 同剧本 K=3 峰值门
     cap=2 报·cap=3 放行）；README 诚实边界 #5 重写为正式契约。
-- [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留；吸收 PO-55-06（net 的 Unknown ⊤ fail-closed 分支随之定稿）与 PO-55-05（§7 write 多标 use 掏空 CONFLICT 集：修订 mode 赋值或显式声明冲突检测移交 L2 写集分析）。
+- [x] **A3** `Unknown` 模式 fail-open 定稿 ✅ 2026-09-06
+  - **决策：fail-open 保留（sound-by-design，代码零改动，PDR 四处修正）。** 三维契约——
+    net/peak 按占用 +size 保守计入（未映射 API 的泄漏/峰值检测不静默；iter55 PO-55-06 的
+    「贡献恒 0」是 PDR 旧公式 mode∈{create,move} 遗漏，修公式而非实现；「Unknown⇒⊤ 上界」
+    否决：有限 cap 峰值门必爆=警报洪水）；Compatible 按 Use 最弱兼容放行（fail-closed 否决：
+    未映射 API 是常态，逐一报冲突=警报洪水⇒批量 [EffectOverride]⇒工具失效；且 mode 未知时
+    断言冲突是对未知命题下结论）；生命周期冲突（CONFLICT 集）为 A4 权威域。
+  - PO-55-05 吸收：写写竞争归属显式声明移交 L2 写集分析（F 轨与 F2 同窗）；「修订 §7 写≠use」
+    否决（须新增 Exclusive 类 mode=公共枚举/JSON 契约面/Compatible 表三重变更，跨语义域）。
+    P4 自相矛盾措辞「fail-closed 为保守兼容」废止；§14.3 A4 域限定；§8.1「3.3.1 上界」失实叙事修正。
+  - 证据：`QedP0A3UnknownSemanticsPins` 3 钉（Unknown 占用 Leak 照报 / 峰值计入 / 端到端无冲突
+    警报且 Leak 并存）+ 既有 CompatibleMatrixTests 25 组合矩阵；README 诚实边界 #1 重写为三维契约。
 - [ ] **A4** CLI exit code 2 契约、四族异常方言表——定稿并声明 frozen。
 
 ## P1 API 面收缩
