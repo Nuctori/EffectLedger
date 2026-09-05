@@ -110,7 +110,17 @@
 
 ## P1 API 面收缩
 
-- [ ] **B1** 公共 API 快照测试（快照文件入 tests/，任何公共面新增即红）——永续承诺的执行机制。
+- [x] **B1** 公共 API 快照测试 ✅ 2026-09-06
+  - **机制**：反射枚举 L1 与 Runtime 两个公共程序集的全部导出类型（类型头 + 公共成员块，序数排序
+    确定性渲染），与仓库内冻结快照逐字节比对——任何公共面新增/变更/删除即红，差异信息直出。
+    过滤编译器合成（`<` 名/`CompilerGenerated`/属性访问器行）；枚举值含常量。
+  - 快照：`tests/Cosmos.EffectAlgebra.Tests/PublicApiSnapshot.Cosmos.EffectAlgebra.txt`（L1，217 行）
+    与 `tests/Cosmos.EffectAlgebra.Runtime.Tests/PublicApiSnapshot.Cosmos.EffectAlgebra.Runtime.txt`
+    （Runtime，125 行）。重生成：`QED_REGEN_API_SNAPSHOT=1 dotnet test`（写入后须人工审查 diff）。
+    B2/B4 的公共面收缩将走「有意变更 + 快照同步重生成」流程——这正是本机制的预期用法。
+  - 机制验证：篡改快照注入假成员 ⇒ 红；还原 ⇒ 绿（双向实证，非纸面钉）。
+  - Analyzer/Generator/Tool 程序集不在本机制内：其消费面分别是 Roslyn 诊断（钉于 AnalyzerConsumer
+    构建门 + AdvE2E）与 CLI 退出码契约（A4 已冻结钉）——面类型不同，机制不适用，记录于此。
 - [ ] **B2** `FakeHost` 移出公共面（internal 或移入测试工程；现位于 `src/Cosmos.EffectAlgebra.Runtime/GodotShell.cs:83`）。
 - [ ] **B3** Sequence≡Parallel≡Union 四名一实——砍到一名（尚未发布，无需 Obsolete 过渡）。
 - [ ] **B4** C# 超集本体 vs JSON 契约面——公共类型砍到契约面，超集转 internal（诚实边界 #18 随之消失）。
