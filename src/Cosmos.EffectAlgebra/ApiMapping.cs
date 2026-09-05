@@ -67,6 +67,29 @@ public static class GodotApiWhitelist
         }
     }
 
+    /// <summary>P2-C1a — 合并视图：基础白名单 + 用户扩展（cosmos.effect.json 经 L2/L3 AdditionalFiles 消费，
+    /// 外部用户自助扩展白名单的关键杠杆，诚实边界 #12 的接线本体）。
+    /// internal：消费者仅 L2/L3（ShareSource 源副本天然自带）与仓库测试（IVT）——外部用户只写配置
+    /// 文件不调 API，公共面零增长（QedP1B1 快照不动）。
+    /// 碰撞语义 loud：合并集内任何 Canonical 同键（含扩展 vs 基础表、扩展彼此）⇒ InvalidOperationException——
+    /// 静默覆盖是假绿向量（R3-L1-03 教义：静默改写比报错更危险），配置错误必须在消费方编译期暴露。
+    /// 基础表不被修改（不可变合并视图，返回新数组）。</summary>
+    internal static ImmutableArray<ApiMapping> MergedWith(ImmutableArray<ApiMapping> extra)
+    {
+        if (extra.IsDefaultOrEmpty) return All;
+        var merged = All.AddRange(extra);
+        var seen = new System.Collections.Generic.Dictionary<string, string>();
+        foreach (var m in merged)
+        {
+            var c = Canonical(m.GodotApi);
+            if (seen.TryGetValue(c, out var prev))
+                throw new System.InvalidOperationException(
+                    $"白名单扩展碰撞：'{prev}' 与 '{m.GodotApi}' Canonical 同键 '{c}'（cosmos.effect.json 扩展不得与基础表/彼此同键，QED-C1a）");
+            seen[c] = m.GodotApi;
+        }
+        return merged;
+    }
+
     public static string Canonical(string name) =>
         name.ToLowerInvariant().Replace(".", "").Replace("_", "");
 

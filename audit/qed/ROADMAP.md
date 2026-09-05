@@ -174,8 +174,12 @@
     `RegisterCompilationStartAction` 的 `Options.AdditionalFiles` 可达 ⇒ per-compilation 合并视图
     可行；②生成器目前无 AdditionalTexts 管线 ⇒ 需增量改造（缓存键含配置文本）。
   - **拆分执行（顺序神圣）**：
-    - [ ] **C1a** L1 增合并视图 helper（`GodotApiWhitelist.MergedWith(extra)`：与基础表合并 +
-          冲突复核 ValidateNoCollisions + 钉）。
+    - [x] **C1a** L1 增合并视图 helper ✅ 2026-09-06
+      `GodotApiWhitelist.MergedWith(extra)`（**internal**——消费者仅 L2/L3 ShareSource 源副本与
+      IVT 测试，外部用户只写配置文件不调 API，公共面零增长、QedP1B1 快照不动）：不可变合并视图
+      + 碰撞 loud 语义（合并集内任何 Canonical 同键——扩展 vs 基础表/扩展彼此/精确重名——
+      ⇒ InvalidOperationException，R3-L1-03 教义）。钉 `QedP2C1aMergedWhitelistPins` 4 枚
+      （含基础表不可变验证与三类碰撞）。
     - [ ] **C1b** L3 分析器消费 AdditionalFiles（静态字典 → per-compilation 合并字典；格式坏
           配置 ⇒ 新诊断——诊断 ID 属公共契约面，新码须记录并过 E3 复核）。
     - [ ] **C1c** L2 生成器消费 additionalTextsProvider（缓存键含配置文本；合并白名单参与 emit）。
