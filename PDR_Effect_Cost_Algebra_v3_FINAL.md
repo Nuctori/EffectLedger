@@ -1086,8 +1086,18 @@ S3 DO-2 完备：Domain 项目引用 Godot 命名空间 ⇒ 编译错误（CI �
 ### 14.3 L3 Roslyn Analyzer 判据（iter39）
 
 ```
-A1 泄漏检测 COMPLETE：Instantiate / AddChild 后控制流无 QueueFree / release-class 调用 ⇒ AUDIT002 必报（基于 §3.3.1 net(S,scope)>0 判定）。
+A1 泄漏检测 COMPLETE：Instantiate / AddChild 后控制流无 QueueFree / release-class 调用 ⇒ AUDIT002 必报
+   （判定谓词：§3.3.1 闭包 net 不含 0 ⇒ Leak，QED-A8 口径）。
 A2 峰值检测 COMPLETE：循环体内资源分配（ω=⊤）⇒ AUDIT 峰值报警（基于 §3.2.5 Peak=⊤ 兜底）。
+A1/A2 适用程序类【QED-A2 定稿 PO-55-13；前提不成立 ⇒ 判据降级 PARTIAL-COMPLETE（报「须人工确认」，
+   不得默许 COMPLETE）；「实现层测试全绿方视为已证」条款（§14.4）不变】：
+   (i)  配对判定限于单方法体直线/单出口控制流——try/catch 吞 release、跨方法/跨对象配对不在静态
+        覆盖（构造期泄漏同属盲区，README 诚实边界 ⑨），以运行期 Σnet 为权威（§8.1 宪法）；
+   (ii) 事件单触发——同一方法不重复进入而累积实例；重复进入的界须由 ω 声明（ω=⊤ 走常驻豁免/
+        峰值 ⊤ 兜底，§3.2.5）；事件回调「恰触发一次」（如 fx.Finished += () => fx.QueueFree()）
+        属 (i) 的控制流前提，不满足时 A1 降级；
+   (iii) 循环有界或显式标 ⊤（无界循环不标 ⊤ ⇒ 不在判据适用类）。另注：A2 对「ω 有界且很小」的
+        循环同样按上界报警（保守方向，不声称不冤枉——SOUND 一侧由 §3.3.2 上界语义承载）。
 A3 量纲混算 SOUND+COMPLETE：跨 kind 聚合（weight=⊥）⇒ KIND_MIX 编译错误（基于 §3.1.4b 分桶 + §3.3.2 weight）。
 A4 兼容冲突 COMPLETE：同资源冲突 mode 对（CONFLICT 集）⇒ 报警（基于 §3.2.3 全函数）。
 A5 未知保守 SOUND：未映射 API 落默认 Unknown 规则 ⇒ 不冤枉，但需人工确认（fail-closed，见 §8.1）。

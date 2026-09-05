@@ -78,7 +78,15 @@
     CrossLayerTests（4 项 + IsRelease=false 三断言 + CancelFree 纯 Create 断言）、CrossTableTests
     （计数 4 + 软约束注释）、Round2AdversarialTests（注释收窄说明）。Runtime 反声明标签零影响
     （测试用 tag 均在保留清单内）。
-- [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）；吸收 PO-55-13（A1/A2 完备性的程序类前提：事件单触发/异常路径/有界循环豁免的定义或降级 partial-complete）。
+- [x] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义 ✅ 2026-09-06
+  - **决策：钉死差异契约（sound-by-design，代码零改动）。** At=在场语义（Signature 刻意幂等 ⇒
+    同刻同构事件计 1，K 无关）；Audit=计数语义（net/Peak 逐事件累加）。统一化（Signature→Multiset）
+    已被 P0-4 构造期重复拒结构性封死——契约即「At 在场 / Audit 计数」，核对脚本禁用 At+Peak 对账。
+  - PO-55-13 吸收：PDR §14.3 A1/A2 增「适用程序类」三元前提（单方法体直线控制流 / 事件单触发
+    / 循环有界或显式 ⊤），前提不成立 ⇒ 降级 PARTIAL-COMPLETE 须人工确认；A2 保守侧（有界小循环
+    也按上界报警）明示不声称不冤枉。A1 判定谓词同步 QED-A8 口径（闭包 net 不含 0 ⇒ Leak）。
+  - 证据：`QedP0A2ProjectionContractTests` 5 钉（At 计 1 与 K∈{1,3,7} 无关 / 同剧本 K=3 峰值门
+    cap=2 报·cap=3 放行）；README 诚实边界 #5 重写为正式契约。
 - [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留；吸收 PO-55-06（net 的 Unknown ⊤ fail-closed 分支随之定稿）与 PO-55-05（§7 write 多标 use 掏空 CONFLICT 集：修订 mode 赋值或显式声明冲突检测移交 L2 写集分析）。
 - [ ] **A4** CLI exit code 2 契约、四族异常方言表——定稿并声明 frozen。
 

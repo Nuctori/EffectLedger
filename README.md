@@ -211,7 +211,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 2. `Size ?? Interval.Default` 散布 — `§3.1.5a DO-1` 设计锁，新消费点禁再散布
 3. `Audit` 内联 sweep 与 `NetTable`/`Peak` 两份物理代码 — `D08-001/002` 钉住等价，不做重构
 4. `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI
-5. `At(t)` 是**集合投影**（同刻逐字段相同的重复事件去重计 1）；并发计数/峰值语义以 `Audit` 扫换线为准（逐事件累加）——自建核对脚本请勿用 `At`+`Derived.Peak` 对账峰值
+5. `At(t)` 是**集合投影**（在场语义：同刻逐字段相同的重复事件去重计 1，与事件个数无关）；并发计数/峰值语义以 `Audit` 扫换线为准（计数语义：net/Peak 逐事件累加）——双语义是多重性载体决策（QED-A5：集合刻意幂等 + 重复构造即拒，多重性走事件序列/size×ω）的直接后果而非缺陷：At 回答「t 时刻有哪些 claim 在场」，Audit 回答「各占多少」。自建核对脚本请勿用 `At`+`Derived.Peak` 对账峰值（对照钉 `QedP0A2ProjectionContractTests`）
 6. `NegativeDip`/`CompatibleConflict` 逐采样点上报（时间序列语义），仅 `PeakExceeded` 做问题集去重（每资源首个反例）——三门去重口径不同是显式设计，喂 AI 回修前请自行按 `(Kind,Resource)` 去重
 7. `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据
 8. `EAA0303/0304` 是意图提示而非数学缺陷：哨兵资源上惯用形态（`DrawRect`×2、`MoveAndSlide`+`GetSlideCollisionCount`）会触发，按需 `[EffectOverride("理由")]`（它们不豁免 EAA0901）
