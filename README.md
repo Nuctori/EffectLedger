@@ -164,7 +164,7 @@ CI 接线示例：`cosmos audit x.json || exit 1` 会把违例当失败（2 非�
 ## 已知语义锐边（设计锁死，非 bug；审计/测试/运行闭合中明示）
 
 - `Unknown` 模式 = 最弱兼容 = **fail-open**：未知资源冲突被静默放行（§3.2.3 P4）。
-- `loop:"⊤"` 居民层被**静默豁免**泄漏检测；`lifetime:[1,⊤]`（ω 有限）仍计入 Σnet 且报警——同一"常驻"语义，两种相反行为（MA-002）。
+- `loop:"⊤"`（population-⊤，种群轴）居民层豁免 gate(1) 守恒——判据是「配对 release **结构性不可枚举**」，非「语义常驻」；gate(2) 峰值仍审计（设有限 cap 即报）。`lifetime:[…,⊤]`（time-⊤，时间轴，ω 有限）是完整事件缺 release ⇒ Leak。两轴结论相反是契约而非矛盾——故意常驻请用 `loop:"⊤"` 声明（QED-P0-A1 定稿，对照钉 `QedP0A1SemanticDecisionTests`）。
 - `Claim.Size` 省略 ≠ 未知：`?? [1,1]`（精确 1，既非未知 ⊤ 也非 0 预算）（§3.1.5a）。
 - `Effects → Audit` 在“全 finite 结束后”走一次性闭包路径（而非端点增量模拟）对 Leak 的认定与“有限闭合”在有限性严整上等价。
 

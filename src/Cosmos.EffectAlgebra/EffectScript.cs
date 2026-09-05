@@ -25,7 +25,7 @@ namespace Cosmos.EffectAlgebra;
 /// </summary>
 public readonly record struct EffectEvent
 {
-    /// <summary>§3.1.5 — 存在时间窗 [lo, hi]；hi=⊤ ⇒ 上界开放（常驻层）。</summary>
+    /// <summary>§3.1.5 — 存在时间窗 [lo, hi]；hi=⊤ ⇒ 上界开放（time-⊤ 永占；常驻豁免的依据是 loop:⊤ 而非本字段，见 EFFECT_SCRIPT.md §2.1 P0-A1 注记）。</summary>
     public Interval Lifetime { get; }
 
     /// <summary>§3.1.3b — 该元素的作用域（Scene/Type/Method…）；At/Net/Peak 的 scope 来源（修 OPEN-1）。</summary>

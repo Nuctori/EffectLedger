@@ -59,6 +59,8 @@ public readonly record struct EffectEvent
 语义：`Lifetime ∋ t` ⇔ `Lifetime.Lo ≤ t ∧ t ≤ Lifetime.Hi`（`NatStar.CompareToFinite`，hi=⊤ 视为无上界）。
 `Loop`：ω 有限时 Footprint 经 `Combination.Loop(Footprint, ω, scope)` 缩放（§3.2.5）；ω=⊤ 时上界开放 ⇒ 该元素持续占用 ⇒ 正确标为非守恒（除非本就是常驻背景层）。
 
+> **P0-A1 语义定稿（两个 ⊤ 闭合不同的轴）：** 居民豁免的判据是「配对 release **结构性不可枚举**」（population-⊤，ω=⊤），非「语义常驻」——`loop:"⊤"` 豁免 gate(1) 守恒但 gate(2) 峰值仍审计（设有限 cap 即报）；`lifetime.hi=⊤` + 有限 ω（time-⊤）是**完整事件、release 可表达而缺席** ⇒ 守恒判定 Leak。故意常驻资源请以 `loop:"⊤"` 声明；两侧结论相反是契约而非不一致（旧 MA-002「同一常驻语义」表述不成立；对照钉 `QedP0A1SemanticDecisionTests`）。
+
 > **边界注记（OPEN-B4，来自 iter-effect03_14 审计）：** `Lifetime.Lo` 必须有限。`Interval` 构造子允许退化 `[⊤,⊤]`（Lo=⊤ 且 Hi=⊤），此时 `Lo.CompareToFinite(t)>0` 恒真 ⇒ 该 Event 在任意有限 t 均「不存活」，完全脱离 `At(t)` 与审计（fail-open：未知生命周期诚实不审计）。用户须给出有限起点 `Lo`；`[⊤,⊤]` 视为非法输入而非错误项。
 
 > 类型强制（用户铁律）：5 字段位置记录 ⇒ 构造即全必填，不存在漏字段的 Event。`Lifetime`/`Footprint`/`Loop` 的数学边界由既有类型承载。
