@@ -138,11 +138,11 @@ ScopeId :=
   | Shell          // 收口 ST-04：§7 映射表使用的 shell_scope / global_scope 归一到此；shell_scope ⇒ Shell，global_scope ⇒ Global
 ```
 
-**定义 3.1.3b（ScopeId 偏序 ⊆）**【收口 iter15/iter34：原 §3.2/§3.3 的 `c.scope ⊆ scope` 此前未定义】
-定义偏序 ⊆（宽松包含，读为「c 的作用域被 scope 包含」），用于 Peak/peak/net(S,scope) 的过滤：
+**定义 3.1.3b（ScopeId 偏序 ⊑）**【收口 iter15/iter34：原 §3.2/§3.3 的 `c.scope ⊆ scope` 此前未定义；【QED-A6 定稿：单向包含 + Shell 补表 + Loop 归属决策，收口 iter55 PO-55-03】
+定义偏序 ⊑（宽松包含，读为「c 的作用域被 scope 包含」），用于 Peak/peak/net(S,scope) 的过滤：
 
 ```
-基础偏序（构造子标签相同且字段单调）：
+基础偏序（构造子标签相同且字段单调；自反由结构相等承载）：
   Global      ⊑ Global
   Method(m)   ⊑ Method(m)
   Type(t)     ⊑ Type(t)
@@ -150,14 +150,32 @@ ScopeId :=
   Loop(id)    ⊑ Loop(id)
   Conditional(b) ⊑ Conditional(b)
   Async(id)   ⊑ Async(id)
-包含层次（Global 最宽，含一切；具体作用域互不比较除非同名）：
-  Global      ⊑_any X            // Global 被任何 scope 包含（全局资源出现在所有 scope 的聚合中）
+  Shell       ⊑ Shell
+  // Shell 行【QED-A6 补表】：实现由自反 Equals 覆盖（Shell 无载荷 record），原表缺行致
+  // 「按上表机械查表无未定义项」声明失真（iter55 F4a——§7 全表 scope=Shell，过滤全落未定义对）。
+包含层次（单向——Global 为唯一最大元）：
   X           ⊑_any Global       // 任何具体 scope 被 Global 包含（全局聚合含全部）
-  // 其余跨标签（如 Method(m) 与 Scene(s)，m≠s）不可比较 ⇒ 既不满足 ⊑ 也不满足 ⊆
+  // 【QED-A6 定稿】不设反向 Global ⊑ X。原「Global ⊑_any X 且 X ⊑_any Global」双向包含使
+  // Method(m) ⊑ Global ⊑ Method(m) 而 Global ≠ Method(m)，直接违反本定义声明的反对称（iter55 F4）。
+  // 保留旧行为的唯一出路是取预序商集，届时 Global 与一切具体 scope 同伦、过滤谓词失去区分力——否决。
+  // 实现唯一真源：ScopeId.IncludedIn = Equals ∨ (other is Global)（Objects.cs），钉
+  // ScopeOrderTests（自反 8 标签 / 反对称 500 随机对含前提覆盖守卫 / 传递真链 / Global 唯一
+  // 最大元含「Global ⊄ 任何非 Global」显式枚举 / 跨标签 8×8 不可比 / Shell 与非 Shell 不可比）。
+  // 其余跨标签（如 Method(m) 与 Scene(s)，m≠s）不可比较 ⇒ 既不满足 ⊑ 也不满足 ⊆*。
 嵌套闭包 ⊆*（用于聚合）：
-c.scope ⊆ scope  := (c.scope ⊑ scope) ∨ (scope = Global)
-// 性质：⊑ 自反、反对称、传递 ⇒ ⊆* 为偏序；Global 为最大元。
+c.scope ⊆ scope  := c.scope ⊑ scope
+// 【QED-A6】原第二析取支 (scope = Global) 冗余删除：X ⊑ Global 恒真已覆盖该情形（iter55 附带瑕疵）。
+// 性质：⊑ 自反、反对称、传递 ⇒ ⊆* 为偏序；Global 为唯一最大元。
 // 判定：对任一对 (a,b)，按上表机械查表即可，无未定义项。
+
+Loop(id) 宿主归属【QED-A6 二选一定稿：维持跨标签不可比（sound-by-design）】：
+  Loop(id) ⋢ Method(m)/Type(t)/Scene(s)（宿主链不进入偏序）。理由：
+  (1) 归因点在构造处——Combination.Loop(body, ω, loopScope) 的 loopScope 参数即「循环 claim
+      记入哪个宿主 scope」的显式选择点，宿主信息不丢失（传 Method("m") 即按方法聚合）；
+  (2) 剧本层审计（EffectScript.Audit）无 scope 过滤（逐事件全累加），不受此口径影响；
+  (3) 改「Loop ⊑ 宿主」须给 Loop 记录增加宿主链字段 = 公共类型面变更，与 P1 API 收缩反向——否决；
+  (4) 外层聚合不含 Loop 标注 claim 的口径差已由 README 诚实边界 #11（Runtime ⊆* 闸门）与
+      EFFECT_SCRIPT 契约面（Loop 非契约 scope）声明。
 ```
 
 **定义 3.1.4（Signature）**

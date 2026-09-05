@@ -39,7 +39,15 @@
   - 证据：`tests/Cosmos.EffectAlgebra.Tests/QedP0A5MultiplicityPins.cs` 8 钉（重复拒直连面 /
     Loop(20)⇒net=1280 / Peak 随 ω 线性 {1,2,5,20}→{64,128,320,1280} / 20 同构事件 cap=19 报·cap=20
     放行的逐事件计数）。对账依据 `audit/qed/PO55-TRIAGE.md` §2.1。
-- [ ] **A6** ScopeId ⊆* 自洽（PO-55-03）：Shell 入偏序表（代码 `IncludedIn` 已覆盖 Shell⊑Shell，表缺）；`Loop(id) ⊑ enclosing` 二选一定稿（加单向包含矩阵 / 商集-预序改写）；「双向包含违反反对称」叙事修正。落性质测试钉（自反/反对称/传递/Global 最大元）。
+- [x] **A6** ScopeId ⊆* 自洽（PO-55-03）✅ 2026-09-06
+  - **决策：sound-by-design（代码零改动，PDR §3.1.3b 修正）。** (a) 删「Global ⊑_any X」反向包含——
+    双向包含违反反对称（iter55 F4），商集-预序方案因过滤谓词失去区分力被否决；(b) Shell⊑Shell 补表
+    （实现由自反 Equals 覆盖）；(c) ⊆* 第二析取支冗余删除（X⊑Global 恒真已覆盖）；(d) Loop(id)⊑宿主
+    **二选一定稿：维持跨标签不可比**——归因点在 `Combination.Loop` 的 loopScope 参数（宿主信息不丢失）、
+    剧本层审计无 scope 过滤不受影响、加宿主链字段=公共类型面变更与 P1 收缩反向（否决，记录在案）。
+  - 证据：性质钉已由既有 `ScopeOrderTests` 穷举覆盖（自反 8 标签/反对称 500 随机对含前提守卫/传递
+    真链/Global 唯一最大元含单向性显式枚举/跨标签 8×8/Shell 不可比），无重复落钉；PDR §3.1.3b 全文
+    引用该钉为单一真源。
 - [ ] **A7** 归一化实例身份（PO-55-08）：memory/callback 常量 uid 折叠掩盖泄漏（Connect(sigA)+Disconnect(sigB) ⇒ net=0）——参数化 alias 映射 or 显式声明保守合并语义，二选一 + 钉。
 - [ ] **A8** 语义文档小项打包（PO-55-04/07/10/11/12 单会话）：⊔ 四元组配对键（代码已对齐，补文档）、ℤ 序与减法（`SignedInterval` 已有，补文档）、Signature(b) 良定义、copy_i scope 标注二选一、纯编辑项（双 ##14/断表/术语表）。
 - [ ] **A9** release-class 清单权威性复核（PO-55-09）：对 godotengine 源码给出函数签名级证据——cancel_free 归类方向、free_children_in_group 存在性；错误归类即修 `ApiMapping`。
