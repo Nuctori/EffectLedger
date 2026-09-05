@@ -186,7 +186,4 @@
 
 ## Blockers
 
-- **PUSH-PENDING（2026-09-06）**：B3 提交 `4693490` 已落本地（门禁 689 全绿），push 因机器到
-  github.com 的网络中断（schannel SSL 握手失败，curl 同样不通）暂未上远端，本地 `master [ahead 1]`。
-  下次迭代会话开始时若 git status 显示 ahead：先 `git push origin master` 补推（push 成功后再开工；
-  若远端已被推送则跳过）。推完后本条删除。
+（无——PUSH-PENDING 已于 2026-09-06 网络恢复后清空：B3/B4a 及全部积压提交已上远端。）
