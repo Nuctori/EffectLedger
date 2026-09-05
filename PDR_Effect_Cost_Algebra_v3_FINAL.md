@@ -754,16 +754,20 @@ public class MovementSystem : ISystem<TimeInput> {
   // 改为 mode=Unknown（最弱未知），fail-closed 为「需 [EffectOverride] 标注真实 mode 或人工确认」，
   // 而非静默漏报/误报。Unknown mode 在 Compatible/net 中按 3.2.3 P4 / 3.3.1 上界处理。
 release-class 白名单（强制 emit release/occupy-release，不得落入默认规则）。
-  // 来源：Godot 开源源码核对（godotengine/godot scene/main/node.cpp + Object），2026-08-20 实测枚举：
+  // 【QED-A9 修正 2026-09-06：godotengine 官方文档签名级复核，收口 iter55 PO-55-09。原「2026-08-20
+  // 源码实测」清单的三处错误归类在此定稿修正，实现 ApiMapping.ReleaseClass 已同步。】
+  // 保留 4 项（真实释放操作）：
   //   - queue_free()  / Object.free()  → 释放 Node 自身 + 递归释放其全部 children（NOTIFICATION_PREDELETE 内 memdelete(child)）
   //   - remove_child(Node)              → 释放该 child 的 tree 占用（occupy(tree, child.id, release)）
   //   - disconnect(signal, Callable)    → 释放信号/回调占用（occupy(callback, callable.size, release)）
-  //   - remove_from_group(StringName)  → 释放 group 成员占用（node.cpp EXIT_TREE 内 remove_from_group 可见）
-  //   - cancel_free()                   → 取消挂起的 queue_free（释放 pending 占用）
-  //   - free_children_in_group(String)  → 批量释放组内 child 占用
+  // 修正记录（防回归钉：VerificationMatrixTests/CrossLayerTests/QedP0A7*）：
+  //   - cancel_free 移出：官方语义「Cancels any queue_free() call」=取消释放、节点存活（Godot 4.2+）——
+  //     归入 release-class 会 emit release，恰好掩盖它所取消的那次释放的泄漏路径（方向相反）；
+  //     现以显式白名单条目 CancelFree 按「重新占用」映射（与 QueueFree 逐资源对称，Release↔Create 配对）。
+  //   - remove_from_group 移出：纯组织性操作（组员关系非资源占用，官方文档无任何释放语义），emit release=凭空少计。
+  //   - free_children_in_group 移出：Node 公开 API 不存在该方法（官方文档全文无此项，原「源码实测」不可证）。
   //   - Timer 类：无独立 RemoveTimer 方法；Timer 实例经 queue_free 释放（计时占用随 Node 释放），stop() 仅停计时
-  // 故 release-class 权威清单（修正原占位 QueueFreeNode/RemoveTimer/RemoveSignal 笔误）：
-  release-class = { queue_free, free, remove_child, disconnect, remove_from_group, cancel_free, free_children_in_group }
+  release-class = { queue_free, free, remove_child, disconnect }
   // 核心 100 白名单须包含上述全部；任一 release 类 API 未入白名单 ⇒ 回落默认 Unknown 规则（fail-closed），不静默漏报。
 ```
 

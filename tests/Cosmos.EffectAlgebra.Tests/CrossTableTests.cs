@@ -42,8 +42,8 @@ public class CrossTableTests
             }
             else
             {
-                // 软约束：§7 未逐条列该 API（如 cancel_free / remove_from_group / free_children_in_group /
-                // free 在 §7 白名单无独立条目），释放由 L3 Analyzer 按名匹配（§8.1 IsRelease），非白名单条目。
+                // 软约束：§7 未逐条列该 API（如 free 在 §7 白名单无独立条目；cancel_free 已入白名单【QED-A9】，
+                // remove_from_group/free_children_in_group 已移出 release-class），释放由 L3 Analyzer 按名匹配（§8.1 IsRelease），非白名单条目。
                 missing.Add(name);
                 Assert.True(true); // §7 未逐条列该 API，release 语义由 Analyzer 按名匹配，非白名单条目——不红。
             }
@@ -87,7 +87,7 @@ public class CrossTableTests
     public void NoHardcodedSevenStrings()
     {
         // ReleaseClass.Names 为 §8.1 唯一权威来源；KnownReleaseSemanticsCanon 由该集合 union §7 显式释放方法派生。
-        Assert.Equal(7, ReleaseClass.Names.Count); // §8.1 七个 release-class
+        Assert.Equal(4, ReleaseClass.Names.Count); // §8.1 四项 release-class【QED-A9 修正：官方文档签名级复核（PO-55-09）】
         Assert.Contains(Canonical("queue_free"), ReleaseClassCanon);
         Assert.Contains(Canonical("Audio.Stop"), KnownReleaseSemanticsCanon);
         Assert.Contains(Canonical("Anim.Stop"), KnownReleaseSemanticsCanon);

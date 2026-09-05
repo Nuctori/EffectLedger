@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -37,11 +38,19 @@ public class CrossLayerTests
         Assert.Equal(typeof(bool), m.ReturnType); // 返回 bool
         Assert.Single(m.GetParameters()); // 单参 string
 
-        // §8.1 权威 7 项（与 ApiMapping / PDR 严格一致；数据驱动，不引魔法数）。
-        foreach (var name in new[] { "queue_free", "free", "remove_child", "disconnect", "remove_from_group", "cancel_free", "free_children_in_group" })
+        // §8.1 权威 4 项【QED-A9 修正：godotengine 官方文档签名级复核（PO-55-09）；与 ApiMapping/PDR 严格一致】。
+        foreach (var name in new[] { "queue_free", "free", "remove_child", "disconnect" })
             Assert.Contains(name, ReleaseClass.Names); // 遗漏⇒红
         Assert.True(ReleaseClass.IsRelease("queue_free")); // 正向
         Assert.False(ReleaseClass.IsRelease("AddChild")); // 非 release-class⇒false（§8.1）
+        // QED-A9 防回归：三处错误归类已移出（cancel_free 方向相反/remove_from_group 非资源释放/free_children_in_group 不存在）
+        Assert.False(ReleaseClass.IsRelease("cancel_free"));
+        Assert.False(ReleaseClass.IsRelease("remove_from_group"));
+        Assert.False(ReleaseClass.IsRelease("free_children_in_group"));
+        // QED-A9：cancel_free 以显式白名单条目按「重新占用」映射（与 QueueFree 的 Release 对称）
+        var cancelFree = GodotApiWhitelist.All.Single(m => m.GodotApi == "CancelFree");
+        Assert.Contains(cancelFree.Claims, c => c.Mode == Mode.Create);
+        Assert.DoesNotContain(cancelFree.Claims, c => c.Mode == Mode.Release);
     }
 
     // §3.1.1 / §3.1.4b — Claim 五字段（kind, resource, mode, scope, size）必须存在且为公开属性。

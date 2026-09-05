@@ -92,6 +92,12 @@ public static class GodotApiWhitelist
             Wr(Tree("node.id"), Mode.Release, Shell()),                                              // 与 AddChild 的 Wr(Tree node.id, Create) 对称
             Oc(Tree("node.id"), Mode.Release, Shell(), Interval.Exact(1)),                          // 与 AddChild 的 Oc(Tree node.id, Create, Exact1) 对称
             Oc(Mem(), Mode.Release, Shell(), Interval.Dynamic)));
+        items.Add(M("CancelFree",                                                                          // §7.1【QED-A9 方向修正】取消挂起的 queue_free（Godot 4.2+ 官方语义「Cancels any queue_free() call」）
+                                                                                                           // ⇒ 节点继续存活 = 重新占用；原 release-class 归类方向相反（emit release 会掩盖它所取消的泄漏路径），
+                                                                                                           // 现与 QueueFree 逐资源对称回加（Release↔Create 配对恢复守恒语义）
+            Wr(Tree("node.id"), Mode.Create, Shell()),
+            Oc(Tree("node.id"), Mode.Create, Shell(), Interval.Exact(1)),
+            Oc(Mem(), Mode.Create, Shell(), Interval.Dynamic)));
         items.Add(M("MoveChild", Wr(Tree("node.id"), Mode.Use, Shell())));                            // §7.1 写树
 
         // §7.2 属性访问
@@ -196,15 +202,22 @@ public static class GodotApiWhitelist
 /// <summary>
 /// §8.1 — release-class 白名单（强制 emit release/occupy-release，不落默认 Unknown 规则）。
 /// 来源：Godot 开源源码核对（scene/main/node.cpp + Object），2026-08-20 实测枚举：
-/// queue_free / Object.free 递归释放 children；remove_child 释放 tree 占用；
-/// disconnect 释放信号/回调占用；remove_from_group 释放 group 成员占用；
-/// cancel_free 取消挂起 queue_free；free_children_in_group 批量释放组内 child 占用。
+/// <summary>
+/// §8.1 权威 release-class（【QED-A9 修正 2026-09-06：godotengine 官方文档签名级复核，收口 iter55 PO-55-09】）。
+/// 保留 4 项（真实释放操作）：queue_free / Object.free（释放 Node 自身 + 递归 children，PREDELETE memdelete）、
+/// remove_child（释放该 child 的 tree 占用）、disconnect（释放信号/回调占用）。
+/// 原清单三处错误归类已修正并防回归（钉 VerificationMatrixTests/CrossLayerTests）：
+///   - cancel_free 移出：官方语义「Cancels any queue_free() call」=取消释放、节点存活（Godot 4.2+）——
+///     归入 release-class 会 emit release，恰好掩盖它所取消的那次释放的泄漏路径（方向相反）；
+///     现以显式白名单条目 CancelFree 按「重新占用」映射（与 QueueFree 逐资源对称，见 §7.1）。
+///   - remove_from_group 移出：纯组织性操作，组员关系非资源占用，emit release = 凭空少计。
+///   - free_children_in_group 移出：Node 公开 API 不存在该方法（官方文档全文无此项，原「源码实测」不可证）。
 /// </summary>
 public static class ReleaseClass
 {
-    /// <summary>§8.1 权威 release-class 清单（7 个，与 PDR 严格一致）。</summary>
+    /// <summary>§8.1 权威 release-class 清单（4 项，QED-A9 修正后）。</summary>
     public static ImmutableHashSet<string> Names { get; } = ImmutableHashSet.Create(
-        "queue_free", "free", "remove_child", "disconnect", "remove_from_group", "cancel_free", "free_children_in_group");
+        "queue_free", "free", "remove_child", "disconnect");
 
     /// <summary>§8.1 — 判定 API（小写）是否属于 release-class；是则映射层必须 emit release/occupy-release。</summary>
     public static bool IsRelease(string api) => !string.IsNullOrEmpty(api) && Names.Select(GodotApiWhitelist.Canonical).Contains(GodotApiWhitelist.Canonical(api));

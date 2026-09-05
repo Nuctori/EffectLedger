@@ -142,7 +142,8 @@ public class Sample
 
     // ── BUG D：release-class-only 调用抑制整方法 EAA0901（无关资源泄漏漏报）──────
     // AnalyzeMissingRelease 中：只要方法体内出现过“不在 §7 白名单的 release-class 调用”
-    // （如 RemoveFromGroup/cancel_free/free_children_in_group，均仅释放部分资源），
+    // （如历史上的 RemoveFromGroup/cancel_free/free_children_in_group，均仅释放部分资源；
+    // 【QED-A9】三者已移出 release-class，该抑制面随之收窄，但机制本身的防护钉保留），
     // 就把 hasReleaseClassOnly 置真，进而 return 跳过整个方法的 EAA0901 报告。
     // 这会让“调用了 RemoveFromGroup（只释放组隶属）却仍 AddChild 占用 Tree 却从未释放 Tree”的
     // 真实泄漏被整段静默吞掉（false negative）。

@@ -185,15 +185,16 @@ public class VerificationMatrixTests
             Assert.False(string.IsNullOrEmpty(m.GodotApi));
             Assert.True(m.Claims.Length > 0); // 每条映射须带来源 Claim（§3.1.4a 非空）
         }
-        // §8.1 release-class 7 项权威清单存在且非空
-        Assert.Equal(7, ReleaseClass.Names.Count);
+        // §8.1 release-class 4 项权威清单【QED-A9 修正：godotengine 官方文档签名级复核（PO-55-09）】
+        Assert.Equal(4, ReleaseClass.Names.Count);
         Assert.Contains("queue_free", ReleaseClass.Names);
         Assert.Contains("free", ReleaseClass.Names);
         Assert.Contains("remove_child", ReleaseClass.Names);
         Assert.Contains("disconnect", ReleaseClass.Names);
-        Assert.Contains("remove_from_group", ReleaseClass.Names);
-        Assert.Contains("cancel_free", ReleaseClass.Names);
-        Assert.Contains("free_children_in_group", ReleaseClass.Names);
+        // 三处错误归类已修正且防回归（原 7 项清单把释放方向/存在性搞错）：
+        Assert.DoesNotContain("cancel_free", ReleaseClass.Names);       // 取消释放⇒节点存活，方向相反（现按 CancelFree 重新占用映射，§7.1）
+        Assert.DoesNotContain("remove_from_group", ReleaseClass.Names); // 纯组织性操作，非资源释放
+        Assert.DoesNotContain("free_children_in_group", ReleaseClass.Names); // Node 公开 API 不存在该方法
     }
 
     // A4 注释承载残差：本测试文件无魔法数（阈值均回指 §）；此处仅以确定性随机回指 §9.1 关联断言（可选 A5）

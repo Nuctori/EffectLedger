@@ -65,7 +65,19 @@
     歧义消解）；⑤纯编辑：§8.2 断表缝合（§8.3 移至 ED-008 后）、ED-004 ∞→[1,⊤]、术语表补
     Occupancy/Callback/Input/AudioMixer/Shell 并删裸 signal、双 ##14 修复（文档历史改列 §15 + rA7 行）、
     §3.1.2 双围栏。
-- [ ] **A9** release-class 清单权威性复核（PO-55-09）：对 godotengine 源码给出函数签名级证据——cancel_free 归类方向、free_children_in_group 存在性；错误归类即修 `ApiMapping`。
+- [x] **A9** release-class 清单权威性复核（PO-55-09）✅ 2026-09-06
+  - **裁定：iter55 三处疑点全部坐实，ApiMapping 修正（本任务授权「错误归类即修」）。**
+    godotengine 官方文档签名级证据：①`cancel_free`（4.2+）官方语义「Cancels any queue_free() call」=
+    取消释放、节点存活——归 release-class 方向相反（emit release 掩盖其取消的泄漏路径）；
+    ②`free_children_in_group` Node 公开 API 不存在（官方文档全文无此项，原「源码实测」不可证）；
+    ③`remove_from_group` 纯组织性操作、组员关系非资源占用（emit release=凭空少计）。
+  - 修正：`ReleaseClass.Names` 7→4（queue_free/free/remove_child/disconnect）；新增显式白名单条目
+    `CancelFree` 按「重新占用」映射（与 QueueFree 逐资源对称，Release↔Create 配对恢复守恒语义）；
+    PDR §8.1 块重写 + ApiMapping 注释证据化。
+  - 钉同步（修正错误钉非削弱）：VerificationMatrixTests（4 项 + 三处 DoesNotContain 防回归）、
+    CrossLayerTests（4 项 + IsRelease=false 三断言 + CancelFree 纯 Create 断言）、CrossTableTests
+    （计数 4 + 软约束注释）、Round2AdversarialTests（注释收窄说明）。Runtime 反声明标签零影响
+    （测试用 tag 均在保留清单内）。
 - [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）；吸收 PO-55-13（A1/A2 完备性的程序类前提：事件单触发/异常路径/有界循环豁免的定义或降级 partial-complete）。
 - [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留；吸收 PO-55-06（net 的 Unknown ⊤ fail-closed 分支随之定稿）与 PO-55-05（§7 write 多标 use 掏空 CONFLICT 集：修订 mode 赋值或显式声明冲突检测移交 L2 写集分析）。
 - [ ] **A4** CLI exit code 2 契约、四族异常方言表——定稿并声明 frozen。
