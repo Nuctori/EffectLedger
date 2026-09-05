@@ -110,7 +110,6 @@ ResourceId :=
   | Input(action: String)         // 输入资源（§7.8 的 input 归于此）【收口 iter51 #3/#8】
   | Custom(name: String)
 ```
-```
 
 **定义 3.1.2b（合成资源命名空间）**【收口 iter31】
 为跨系统合成资源，定义两个标准合成 ResourceId 构造子，使 §7.6 GPU、§7.5 信号、§7 命令缓冲等共享资源有唯一标识：
@@ -314,10 +313,16 @@ Compatible(m₁, m₂) :=
 **定义 3.2.4（条件组合）**
 ```
 (if b then S₁ else S₂) = Signature(b) ∪ (S₁ ⊔ S₂)
+  // Signature(b) := ∅【QED-A8 定稿 PO-55-10】：b 为纯 Bool 谓词（无效应求值），条件/循环卫语句
+  //   自身不产生 Claim；带效应的卫语句属 §14 工具层控制流建模，不在 L1 代数记法内（while 同此）。
   ⊔ : Signature × Signature → Signature   // join-semilattice 合并（收口 iter46：原「半环」措辞错误）
-  ⊔ 按 Claim 相等（3.1.4a）配对 S₁/S₂ 中同一 Claim，对二者 size 区间取 merge_I（3.1.5b）：
-    ∀c ∈ (S₁ ∪ S₂)/≈Claim： ⊔ 输出 [min(c₁.lo,c₂.lo), max(c₁.hi,c₂.hi)]
-    仅一处出现的 Claim：size = 其单值区间 [s,s]
+  ⊔ 按**四元组投影键** (kind, resource, mode, scope) 配对 S₁/S₂ 中同键 Claim——size 不参与配对、只参与合并，
+  对同键二者的 size 区间取 merge_I（3.1.5b）：
+    同键 c₁,c₂ ⇒ ⊔ 输出 size = [min(c₁.lo,c₂.lo), max(c₁.hi,c₂.hi)]
+    仅一侧出现的键：size = 其单值区间 [s,s]
+  // 【QED-A8 修正，收口 iter55 PO-55-04】：原「按 Claim 相等（3.1.4a）配对」把 size 卷进配对键 ⇒
+  // 跨分支不同 size 的 Claim 不被配对，merge_I 输入永不存在（自吞定义，iter55 F3 反例
+  // [64,64]⊔[128,128] 产两条独立 Claim）。实现唯一真源 Signature.Join 键即四元组+Merge（Objects.cs）。
   // 性质：⊔ 是 join-semilattice 的 join（幂等/交换/结合），非半环（无第二运算+分配律）
   // 输出类型闭合：区间 size 仍属 SizeVal（3.1.5），可落回 Signature（3.1.4）
 ```
@@ -329,7 +334,9 @@ Compatible(m₁, m₂) :=
 //   max/Σ 逐副本相等使 ω 退化为死变量（iter55 F2）；实现唯一形态即 size×ω 端点乘法，钉
 //   LoopCombinationTests.Loop_FiniteOmega_ScalesPeakByOmega（ω=5 ⇒ 50，错实现必红）】
   //   逐 Claim：size := [lo×ω, hi×ω]（§3.1.5a × 律内嵌 ⊤：ω=⊤ 或 hi=⊤ ⇒ [lo,⊤] 上界开放；lo 恒有限）
-  //   kind/resource/mode/scope 不变——副本不新增身份，计数进 size 量纲（§3.3 的 Σ 对缩放后 size 求和）
+  //   scope := loopScope（**替换语义**【QED-A8 定稿 PO-55-11】：循环 claim 的归属 scope 由调用方在
+  //     Combination.Loop 的 loopScope 参数显式选择——传 Loop("L") 即循环局部、传 Method("m") 即按方法
+  //     聚合；非「叠加注记」读法，iter55 的两种读法歧义由此消解）；kind/resource/mode 不变，计数进 size 量纲（§3.3 的 Σ 对缩放后 size 求和）
   ω=⊤ 时：size := [lo, ⊤]（上界开放），供 Peak/net 以 ⊤ 兜底（见 3.3）
 (while b do S) = Signature(b) ∪ (S × ω)
 // 历史残留的 cardinality 形式 Peak = max_i |{c∈copy_i(S) | c.scope⊆scope ∧ c.mode≠release}|
@@ -356,6 +363,12 @@ net(S, scope) = Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode∈{create,move
 //   fail-closed：未知映射（3.1.4a 的 Unknown）在 net 中计为 ⊤ 上界，触发「需人工确认」而非静默漏报/误报
 // 多重性注记【QED-A5】：Σ 作用于「缩放后」签名（§3.2.5 size×ω）或剧本事件序列（审计扫换线逐事件
 //   累加，release 自带于其 Lo 的负向贡献）；对未缩放集合的重复计数不可表达（§3.1.4 P0-4 构造期拒绝）。
+// 值域与序【QED-A8 定稿 PO-55-07】：「正和−负和」定义在**有符号区间**载体上（实现 SignedNet 单一真源：
+//   ZStar := ℤ ∪ {±⊤}；SignedInterval := [lo,hi]，lo,hi ∈ ZStar）。−[a,b] := [−b,−a]；
+//   [a,b] ⊕ [c,d] := [a+c, b+d]；net 的减法即正部区间与负部区间的带符号相加。
+//   守恒判定：区间**含 0** ⇔ 生命周期闭合（DO-9 的判定谓词，非逐值比较）；负陷判定按 hi<0（扫换线 gate(1)）。
+//   预算比较（如 AUDIT003 的 [1280,1280] 与 [512,512]）按区间上界比较（Peak 聚合即 size.hi 求和，§3.3.2；
+//   实现扫换线 gate(2) 严格大于方报 PeakExceeded）。⊤ 律沿 §3.1.5a（含 ±⊤ 的溢出⇒保守 ⊤，弃哨兵）。
 ```
 
 **定义 3.3.2（峰值 Peak）**【收口 iter49：两个 Peak 定义统一量纲】
@@ -759,6 +772,13 @@ release-class 白名单（强制 emit release/occupy-release，不得落入默�
 | ID | 发现 | 严重程度 | 状态 | 收敛方案 |
 | ---- | ------ | --------- | ------ | --------- |
 | ED-001 | API 效应映射白名单/黑名单 | 中 | 已收敛（修订 A） | 核心 API 白名单（须含完整 release-class 枚举，见 §8.1）+ 默认 Unknown 标记（§8.1）+ 允许 [EffectOverride] 修正（须遵循 §8.3 校验规则） |
+| ED-002 | 属性访问的效应模糊 | 中 | 已收敛 | L2 Generator 分析语法树区分 getter/setter |
+| ED-003 | 回调和委托的效应推导 | 中 | 已收敛 | 信号连接分析右侧方法，动态委托保守估计 |
+| ED-004 | 场景实例化的动态性 | 中 | 已收敛 | 静态累加 .tscn 显式对象，动态 Instantiate 变量场景标记为 [1,⊤]（§3.1.5 口径；【QED-A8】原游离 "∞" 残留同步） |
+| ED-005 | 资源共享的去重 | 中 | 已收敛 | L2 Generator 解析 .tscn 通过 uid 去重 |
+| ED-006 | _Process 调用频率对效应累加 | 中 | 已收敛 | L2 [TargetFrameRate] 属性，静态保守假设 60fps，运行时采样校准 |
+| ED-007 | yield/await 效应时序 | 中 | 已收敛 | AsyncEffect<T> 类型标记，保守假设 async_scope 效应持续到方法结束 |
+| ED-008 | CallDeferred 效应延迟 | 中 | 已收敛 | 保守假设 deferred 效应立即发生（保证峰值安全） |
 
 ### 8.3 [EffectOverride] / [AcceptDeviation] 校验规则【收口 iter50 #62】
 
@@ -784,13 +804,6 @@ release-class 白名单（强制 emit release/occupy-release，不得落入默�
        作用域：标注对象所在 scope（3.1.3b），不跨 scope 传播；
 依赖：  Deviation 公式必须已完成 range 下界保护（§9.1），否则 0.3 对 NaN/∞ 仍恒假失效。
 ```
-| ED-002 | 属性访问的效应模糊 | 中 | 已收敛 | L2 Generator 分析语法树区分 getter/setter |
-| ED-003 | 回调和委托的效应推导 | 中 | 已收敛 | 信号连接分析右侧方法，动态委托保守估计 |
-| ED-004 | 场景实例化的动态性 | 中 | 已收敛 | 静态累加 .tscn 显式对象，动态 Instantiate 变量场景标记为 ∞ |
-| ED-005 | 资源共享的去重 | 中 | 已收敛 | L2 Generator 解析 .tscn 通过 uid 去重 |
-| ED-006 | _Process 调用频率对效应累加 | 中 | 已收敛 | L2 [TargetFrameRate] 属性，静态保守假设 60fps，运行时采样校准 |
-| ED-007 | yield/await 效应时序 | 中 | 已收敛 | AsyncEffect<T> 类型标记，保守假设 async_scope 效应持续到方法结束 |
-| ED-008 | CallDeferred 效应延迟 | 中 | 已收敛 | 保守假设 deferred 效应立即发生（保证峰值安全） |
 
 ---
 
@@ -1020,8 +1033,8 @@ Enemy.cs(3,5): warning AUDIT003:
 | ------ | ------ |
 | **Claim** | 资源声明：(kind, resource, mode, scope, size?)；相等/归一规则见 §3.1.4a |
 | **Signature** | 效应签名：Claim 的不可变集合，按 kind 分桶（§3.1.4b）实现 DO-7 量纲隔离 |
-| **ResourceId** | 资源标识：tree, self, physics, memory, disk, signal, gpu, audio, network, custom, CommandBuffer, SignalBus（§3.1.2/3.1.2b）|
-| **ScopeId** | 作用域标识：method, type, scene, global, loop, conditional, async；偏序 ⊆ 见 §3.1.3b |
+| **ResourceId** | 资源标识：Tree, Self, Physics, Memory, Disk, Gpu, CommandBuffer, SignalBus, Occupancy, Callback, Network, Input, AudioMixer, Custom（§3.1.2/3.1.2b；裸 "signal" 已归一 SignalBus）【QED-A8 同步：补 rA4 新增的 Occupancy/Callback/Input/AudioMixer】|
+| **ScopeId** | 作用域标识：Method, Type, Scene, Global, Loop, Conditional, Async, Shell；偏序 ⊑ 见 §3.1.3b【QED-A8 同步：补 ST-04 新增的 Shell】|
 | **Entity** | 纯数据实体：(EntityId, ImmutableDictionary<Type, IComponent>) |
 | **Component** | 纯数据组件：readonly record struct，无引用类型 |
 | **Archetype** | 实体类型：ComponentType 的集合 |
@@ -1125,7 +1138,9 @@ A5 未知保守 SOUND：未映射 API 落默认 Unknown 规则 ⇒ 不冤枉，�
 
 ---
 
-## 14. 文档历史
+## 15. 文档历史
+
+> 【QED-A8】原列 `## 14` 与「编译期工具层完备性规范」编号冲突（iter55 PO-55-12），本文档历史改列 §15；历史行内提及的旧编号描述其写作时刻状态，不改写。
 
 | 版本 | 日期 | 变更 |
 | ------ | ------ | ------ |
@@ -1140,3 +1155,4 @@ A5 未知保守 SOUND：未映射 API 落默认 Unknown 规则 ⇒ 不冤枉，�
 | v3.0-FINAL-rA4 | 2026-08-20 | **复审计收口（收口 iter51 的 8 open）**：①删 `## 15.文档历史` 重复标题（章节倒挂）；②补 §3.1.5c DeviationVal 定义体（原 rA2 仅改引用未补体，幽灵定义已落地）；③§3.1.2 扩 Occupancy/Callback/Input 构造子 + §3.1.4a 裸资源名→构造子缩写映射表（audio_channel/animation_state/callback/memory/... 全部可机械归一）；④§9.1 代码 `deviation>0.2f` 改 `deviation is double d && d>0.2`（先判 ⊤ 再比数值）；⑤术语表 PDR 重复行由格式化合并；⑥§3.2.5 历史 cardinality 形式 Peak 标注为废弃、以 §3.3.2 size-求和为准；⑦§3.1.5b merge_I 显式套用 §3.1.5a ⊤ 律。**iter51 的 8 open 全部文档内闭合；仅剩实现类缺口（godot-csharp 工程落地 §14 测试矩阵）为 out-of-scope** |
 | v3.0-FINAL-rA5 | 2026-08-20 | **iter52 复核 + 落盘修正**：iter52 报告 #1（双标题）未落盘——实为 rA4 的 `edit` 因 markdownlint 重排回滚；rA5 用 ctx_edit 真正删除 `## 15.文档历史`（L1087），现仅剩 `## 14.文档历史`。iter52 的 #5（术语表 PDR 重复）与 #N1（rA4 虚假收敛）经 ctx_grep 复核为**误报**：术语表现在仅一行 `**PDR**`（格式化已合并），rA4 历史陈述属实。当前全文 `## 15` 零命中、术语表无重复。**结论：iter51 的 8 open 在 rA4/rA5 全部真实闭合；iter52 3 项实为 1 真实（已修）+2 误报（已证伪）** |
 | v3.0-FINAL-rA6 | 2026-08-20 | **iter53 复核修正（rA5 误判证伪）**：iter53 用 read 实证术语表 `**PDR**` 重复行（L996/L997）真实存活，rA5 的「误报」自述不实（rA5 的 ctx_grep `**PDR**` 因 `**` 被当正则零命中，为假阴性）；rA6 用 ctx_edit 删除 L997 重复行，术语表现确仅一行。全文 `## 15` 零命中、双标题已删、§3.1.5c/§3.1.2/§3.1.4a/§9.1/§3.2.5/§8.1/§14 全部闭合。**iter51 的 8 open + iter52/iter53 复核项现已全部真实闭合；仅剩 godot-csharp 工程落地 §14 测试矩阵为 out-of-scope 实现类缺口** |
+| v3.0-FINAL-rA7 | 2026-09-06 | **QED 迭代 A1–A8 收口**（路线与对账：`audit/qed/ROADMAP.md` + `audit/qed/PO55-TRIAGE.md`，iter55 PO-55-01..18 全部三分闭合）：①§2.1/EFFECT_SCRIPT 双⊤两轴分辨（population-⊤ 豁免 / time-⊤ Leak，MA-002 旧表述废止）；②§3.1.4/§3.2.1/§3.2.5/§3.3 多重性载体推导（Set 刻意幂等 + P0-4 重复拒 + size×ω；弃 max-over-copies）；③§3.1.3b 单向包含定稿（Global 唯一最大元、Shell 补表、Loop 归属决策）；④§3.1.4a 常量实例保守合并（PO-55-08 已声明盲区）；⑤§3.2.4 ⊔ 四元组配对键 + Signature(b):=∅；⑥§3.3.1 有符号区间值域与序；⑦§8.2 断表缝合 + ED-004 ∞→[1,⊤] + 术语表同步；⑧双 ##14 编号修复（文档历史改列 §15）。全部决策附测试钉（QedP0A1/A5/A7*Tests + 既有 ScopeOrderTests 等） |

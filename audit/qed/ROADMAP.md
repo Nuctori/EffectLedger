@@ -57,7 +57,14 @@
   - 落点：PDR §3.1.4a【QED-A7】注记 + ApiMapping.Cb() 注释 + README 诚实边界 #20；
     钉 `QedP0A7AliasFoldingPins` 3 枚（白名单常量实例 net=0 / Connect↔Disconnect 同实例防静默漂移 /
     契约面显式 id 不折叠 Leak+NegativeDip 并存）。
-- [ ] **A8** 语义文档小项打包（PO-55-04/07/10/11/12 单会话）：⊔ 四元组配对键（代码已对齐，补文档）、ℤ 序与减法（`SignedInterval` 已有，补文档）、Signature(b) 良定义、copy_i scope 标注二选一、纯编辑项（双 ##14/断表/术语表）。
+- [x] **A8** 语义文档小项打包（PO-55-04/07/10/11/12）✅ 2026-09-06
+  - **纯 PDR 编辑（代码零改动）。** ①§3.2.4 ⊔ 配对键改四元组投影（size 只参与 merge；修正自吞定义，
+    实现真源 Signature.Join）；②§3.3.1 有符号区间值域与序（ZStar/SignedNet 单一真源：含 0⇔守恒、
+    负陷按 hi<0、预算按上界）；③§3.2.4 Signature(b):=∅（纯谓词）；④§3.2.5 scope **替换语义**定稿
+    （loopScope 参数显式选择——修正 A5 初稿「scope 不变」与代码 rescope 实况不符，PO-55-11 两读法
+    歧义消解）；⑤纯编辑：§8.2 断表缝合（§8.3 移至 ED-008 后）、ED-004 ∞→[1,⊤]、术语表补
+    Occupancy/Callback/Input/AudioMixer/Shell 并删裸 signal、双 ##14 修复（文档历史改列 §15 + rA7 行）、
+    §3.1.2 双围栏。
 - [ ] **A9** release-class 清单权威性复核（PO-55-09）：对 godotengine 源码给出函数签名级证据——cancel_free 归类方向、free_children_in_group 存在性；错误归类即修 `ApiMapping`。
 - [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）；吸收 PO-55-13（A1/A2 完备性的程序类前提：事件单触发/异常路径/有界循环豁免的定义或降级 partial-complete）。
 - [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留；吸收 PO-55-06（net 的 Unknown ⊤ fail-closed 分支随之定稿）与 PO-55-05（§7 write 多标 use 掏空 CONFLICT 集：修订 mode 赋值或显式声明冲突检测移交 L2 写集分析）。
