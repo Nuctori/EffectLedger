@@ -24,8 +24,14 @@
   - 证据：`tests/Cosmos.EffectAlgebra.Tests/QedP0A1SemanticDecisionTests.cs`（2 钉：time-⊤ Leak /
     双 ⊤ 并置对照）；`EFFECT_SCRIPT.md` §2.1 P0-A1 注记；README 锐边改写；`EffectScript.cs`
     Lifetime 注释「常驻层」误导措辞修正。
-- [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）。
-- [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留。
+- [ ] **A0**（前置闸门）iter55 PO 账本对账：`PO-55-01..18` 逐项三分——已 discharge（补测试钉 + PDR 行号修正）/ 并入下方既有任务 / 显式「不修」决策；产出 `audit/qed/PO55-TRIAGE.md` 并回写本 ROADMAP。规则依据「任何不修必须记录显式决策」。预判（待 A0 裁定）：PO-55-01/02/04/07 为**文档滞后**——代码语义已闭合（`Signature.Of` 拒重复 Claim 强制走 `Combination.Loop`（P0-4）；ω 经 `Scale` 乘进 size（`DerivedMetrics.cs:85-89`）；`Join` 已用四元组配对键（`Objects.cs:217-231`）；net 已有 `SignedInterval`/`ZStar`），iter55 审的是 PDR 叙事而非 L1 实现。
+- [ ] **A5** 多重性语义定稿（PO-55-01/02 同根）：把「Set<Claim> 刻意幂等 + 重复构造即拒 + 多重性唯一合法路径 = `Combination.Loop` 的 size×ω」写成 PDR 推导（重写 §3.2.1 ∪ 叙事 / §3.2.5 max-over-copies 公式 / AUDIT003 ×20 累加叙事），并落对抗钉：`Loop(body,Of(20))` ⇒ net=20×s；Peak 随 ω 增长；重复 Claim `Signature.Of` 抛。代码预判零改动，以 A0 证据为准。
+- [ ] **A6** ScopeId ⊆* 自洽（PO-55-03）：Shell 入偏序表（代码 `IncludedIn` 已覆盖 Shell⊑Shell，表缺）；`Loop(id) ⊑ enclosing` 二选一定稿（加单向包含矩阵 / 商集-预序改写）；「双向包含违反反对称」叙事修正。落性质测试钉（自反/反对称/传递/Global 最大元）。
+- [ ] **A7** 归一化实例身份（PO-55-08）：memory/callback 常量 uid 折叠掩盖泄漏（Connect(sigA)+Disconnect(sigB) ⇒ net=0）——参数化 alias 映射 or 显式声明保守合并语义，二选一 + 钉。
+- [ ] **A8** 语义文档小项打包（PO-55-04/07/10/11/12 单会话）：⊔ 四元组配对键（代码已对齐，补文档）、ℤ 序与减法（`SignedInterval` 已有，补文档）、Signature(b) 良定义、copy_i scope 标注二选一、纯编辑项（双 ##14/断表/术语表）。
+- [ ] **A9** release-class 清单权威性复核（PO-55-09）：对 godotengine 源码给出函数签名级证据——cancel_free 归类方向、free_children_in_group 存在性；错误归类即修 `ApiMapping`。
+- [ ] **A2** `At(t)` 集合投影 vs `Audit` 扫换线双计数语义——统一，或钉死差异契约（文档 + 性质测试）；吸收 PO-55-13（A1/A2 完备性的程序类前提：事件单触发/异常路径/有界循环豁免的定义或降级 partial-complete）。
+- [ ] **A3** `Unknown` 模式 fail-open——改 fail-closed 默认 + 显式 opt-in，或 PDR 论证保留；吸收 PO-55-06（net 的 Unknown ⊤ fail-closed 分支随之定稿）与 PO-55-05（§7 write 多标 use 掏空 CONFLICT 集：修订 mode 赋值或显式声明冲突检测移交 L2 写集分析）。
 - [ ] **A4** CLI exit code 2 契约、四族异常方言表——定稿并声明 frozen。
 
 ## P1 API 面收缩
@@ -58,10 +64,17 @@
 - [ ] **E3** README 诚实边界逐条复核：已解决的删除、保留的附测试证据。
 - [ ] **E4** `PUBLISH-CHECKLIST.md` 就绪后【停】——发布动作留给人类。
 
+## Feature 挂起轨（QED 主线之外，禁止插入 P0→P4）
+
+> 依据「语义先于 API」：特性在语义冻结（P0 完）+ API 快照（B1）落地前不排期、不实现；挂起即显式决策。
+
+- [ ] **F1** EAA0901 流敏感化：逐值状态机（Unacquired→Acquired→Released；二次 release / 用后即用报错），缩小自认静态盲区（跨方法仍需过程间分析，分两步）。触发：P4 E4 后。
+- [ ] **F2** 可选精化类型（检查式·方案 A）：封闭谓词词表（数据非 lambda，保 L1 纯数据可审计）/ ⊤ 不可被标注收窄（非常量 ⇒ Runtime 谓词断言面兜底）/ 禁豁免 EAA0901 禁触 DO-9 / 附着点限 Normalize 后键空间 / fail 方向逐边界显式声明。前置依赖：B4 公共面收缩先行（先收缩再冻结，避免精化标注冻结在超集面上）。触发：P4 E4 后。
+
 ## 维护模式（P4 完成后）
 
 每晚对抗模糊测试（随机剧本 fuzz + 变异门 + 性能曲线钉 `ProdAuditR4AuditScaleTests`），回归即修。
 
 ## Blockers
 
-（无）
+- iter55 PO-55-01/02/03（iter55 裁定「数学层阻塞级」）——**A0 对账前挂起**。预判为 PDR 文档滞后而非 L1 代码缺口（证据见 A0 注），以 A0 产出裁定为准后本条清空或降级。
