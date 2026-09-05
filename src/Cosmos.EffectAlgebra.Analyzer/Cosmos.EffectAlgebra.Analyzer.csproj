@@ -38,6 +38,10 @@
     <ShareSource Include="..\Cosmos.EffectAlgebra\Algebra.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\Numeric.cs" />
     <ShareSource Include="..\Cosmos.EffectAlgebra\SignedNet.cs" />
+    <!-- QED-C1b：cosmos.effect.json 白名单扩展真接线——分析器经 AdditionalFiles 消费该配置，
+         严格解析（LoadExtraFromJson）+ MergedWith 合并视图须与分析器同程序集（隔离 ALC 自包含）。
+         System.Text.Json 为 net9.0 BCL 内箱（宿主前提不变：仅 dotnet build 的 Roslyn 宿主，README R2B-02）。 -->
+    <ShareSource Include="..\Cosmos.EffectAlgebra\CosmosEffectConfig.cs" />
   </ItemGroup>
 
   <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Analyzer.Shared[.X]，

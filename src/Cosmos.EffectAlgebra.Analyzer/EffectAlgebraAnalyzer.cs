@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using Cosmos.EffectAlgebra.Analyzer.Shared;
 
 namespace Cosmos.EffectAlgebra.Analyzer;
@@ -38,6 +40,11 @@ namespace Cosmos.EffectAlgebra.Analyzer;
 ///   重复同模式（如 Load 含两次 Occupy(Mem,Create)）；这些**单条 API 内部**的多态是 PDR 白名单有意设计，非用户混用。
 ///   故 A3/A4 仅检测**跨调用（不同 InvocationExpression 站点）同归一资源**的 kind 多样性 / mode 冲突，不针对单条 API 内部。
 ///   数学已由 L1 类型保护（§3.1.4b 三桶隔离、§3.2.3 Compatible 全函数）；EAA0303/EAA0304 仅提示意图清晰度，非数学缺。
+///
+/// QED-C1b（2026-09-06）：白名单扩展真接线——Options.AdditionalFiles 中名为 cosmos.effect.json 的文件经
+///   L1 <see cref="Cosmos.EffectAlgebra.Analyzer.Shared.CosmosEffectConfig"/>（源副本）严格解析 + GodotApiWhitelist.MergedWith
+///   合并，构建 per-compilation 查找表（静态字典退役）。配置错误（解析/schema/Canonical 碰撞）⇒ EAA0701
+///   （该文件扩展整体弃用、基础白名单不受影响、绝不静默）；碰撞 ⇒ 合并集整体回退基础表（无部分生效）。
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
@@ -98,42 +105,143 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         description: "§14.3 A4 and §3.2.3 Compatible total function: mode pairs in CONFLICT set {(Create,Create),(Move,Move),(Release,Release)} on the same normalized resource are reported; conflict semantics defined by L1 Compatible (§3.2.3). Cross-invocation only (single API's internal repeated claims excluded).");
 
+    // ── QED-C1b：cosmos.effect.json 白名单扩展配置错误（§7 扩展通道的 loud 失败面）──
+    // 诊断 id EAA0701（"07"=§7 白名单，"01"=扩展通道第 1 条规则；id 属公共契约面，2026-09-06 登记）。
+    // 消费语义：配置错误 ⇒ 该文件扩展整体弃用（基础白名单不受影响），绝不静默忽略（静默无保护=假绿向量）。
+    private static readonly DiagnosticDescriptor ConfigInvalid = new(
+        id: "EAA0701",
+        title: "cosmos.effect.json 白名单扩展配置错误（该文件扩展未生效）",
+        messageFormat: "cosmos.effect.json 白名单扩展未生效：{0}。该文件的扩展映射已整体忽略，基础白名单不受影响；修复配置后重新编译。配置错误静默忽略 = 扩展 API 静默无保护，故 loud 报告（QED-C1b）。",
+        category: "EffectAlgebra",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "QED-C1b: the cosmos.effect.json whitelist extension is consumed per-compilation via AdditionalFiles; parse/schema/canonical-collision errors invalidate that file's extensions entirely (loud), leaving the base whitelist unaffected.");
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
         ImmutableArray.Create(MissingReleaseForAcquire, KindMixOnSameResource, CompatConflictOnSameResource,
-            OverrideReasonRequired, AcceptDeviationRange);
+            OverrideReasonRequired, AcceptDeviationRange, ConfigInvalid);
 
     // §3.3.1 DO-9 / §14.3 A3 / §14.3 A4：以方法声明为分析单元（控制流近似：仅方法内调用可见性）。
     // §3.3.1 / §14.3 — 白名单键归一化单一真源（R2 #3）：统一走 L1 GodotApiWhitelist.Canonical，避免与 Generator 各写一份漂移。
     private static string Canonical(string name) => GodotApiWhitelist.Canonical(name);
 
-    // A2-07（生产审计批5）：白名单 canonical 键预计算（静态只读 ⇒ 线程安全，进程内一次）——
-    // 此前每调用点对全白名单逐条重新 Canonical（小写+2×Replace 字符串分配 ×2 轮扫描），O(调用点×白名单)。
-    // ByFullCanon 键唯一性由 GodotApiWhitelist.All 的启动期 ValidateNoCollisions 保证；
-    // ByMethodCanon 同键碰撞取首个（与旧线性扫描的返回序一致）。
-    private static readonly ImmutableDictionary<string, ApiMapping> ByFullCanon =
-        GodotApiWhitelist.All.ToImmutableDictionary(m => GodotApiWhitelist.Canonical(m.GodotApi));
-    private static readonly ImmutableDictionary<string, ApiMapping> ByMethodCanon =
-        GodotApiWhitelist.All
-            .GroupBy(m => GodotApiWhitelist.Canonical(m.GodotApi.Split('.').Last()))
-            .ToImmutableDictionary(g => g.Key, g => g.First());
-
-    // A2-07：廉价语法预检——裸方法名/全名 canonical 不在任何白名单键集 ⇒ 不付 GetSymbolInfo 语义查询成本。
-    // 绝大多数调用（ToString/LINQ/业务方法）与白名单无关，此项把大方案上的分析时延从 O(调用点×语义查询) 压回 O(调用点×字符串)。
-    private static bool MaybeWhitelisted(InvocationExpressionSyntax inv)
+    // QED-C1b：白名单扩展真接线——静态字典退役，改为 per-compilation 合并快照
+    // （Options.AdditionalFiles 中的 cosmos.effect.json ⇒ MergedWith 合并视图 ⇒ 本次编译的查找表）。
+    // Initialize → OnCompilationStart：解析/合并失败（FormatException/InvalidOperationException/IOException）
+    // ⇒ EAA0701（该文件扩展整体弃用，基础白名单不受影响）；碰撞 ⇒ 合并集整体回退基础表（无部分生效）。
+    private static void OnCompilationStart(CompilationStartAnalysisContext ctx)
     {
-        if (ByMethodCanon.ContainsKey(Canonical(MethodName(inv)))) return true;
-        return ByFullCanon.ContainsKey(Canonical(RawName(inv)));
+        var merged = GodotApiWhitelist.All;
+        var configDiags = new List<Diagnostic>();
+        var extras = new List<ApiMapping>();
+        string? firstConfigPath = null;
+
+        foreach (var file in ctx.Options.AdditionalFiles)
+        {
+            if (!IsConfigFile(file.Path)) continue;
+            firstConfigPath ??= file.Path;
+            try
+            {
+                var text = file.GetText(ctx.CancellationToken)?.ToString();
+                if (text is null)
+                {
+                    configDiags.Add(ConfigDiagnostic(file.Path, "文件不可读"));
+                    continue;
+                }
+                var entries = CosmosEffectConfig.LoadExtraFromJson(text);
+                if (!entries.IsDefaultOrEmpty) extras.AddRange(entries);
+            }
+            catch (Exception ex) when (ex is FormatException or InvalidOperationException or IOException)
+            {
+                configDiags.Add(ConfigDiagnostic(file.Path, ex.Message));
+            }
+        }
+
+        if (extras.Count > 0)
+        {
+            try
+            {
+                merged = GodotApiWhitelist.MergedWith(extras.ToImmutableArray());
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 碰撞（vs 基础表/跨文件）＝扩展集整体弃用（回基础表，无部分生效）；诊断定位首个配置文件，
+                // 消息自含碰撞双方 API 名（MergedWith loud 语义透传，QED-C1a）。
+                merged = GodotApiWhitelist.All;
+                configDiags.Add(ConfigDiagnostic(firstConfigPath ?? "cosmos.effect.json", ex.Message));
+            }
+        }
+
+        var lookup = WhitelistLookup.Build(merged);
+        ctx.RegisterSyntaxNodeAction(nodeCtx => AnalyzeMethod(nodeCtx, lookup), SyntaxKind.MethodDeclaration);
+
+        if (configDiags.Count > 0)
+            ctx.RegisterCompilationEndAction(endCtx =>
+            {
+                foreach (var d in configDiags) endCtx.ReportDiagnostic(d);
+            });
     }
+
+    // 配置文件契约名：仅认文件名 cosmos.effect.json（大小写不敏感，跨 OS 稳定）；目录深度不限。
+    private static bool IsConfigFile(string path) =>
+        string.Equals(Path.GetFileName(path), "cosmos.effect.json", StringComparison.OrdinalIgnoreCase);
+
+    private static Diagnostic ConfigDiagnostic(string path, string message) =>
+        Diagnostic.Create(ConfigInvalid,
+            Location.Create(path, new TextSpan(0, 0), new LinePositionSpan(LinePosition.Zero, LinePosition.Zero)),
+            message);
 
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
         // §3.3.1 DO-9 / §14.3 A3 / §14.3 A4：以方法声明为分析单元（控制流近似：仅方法内调用可见性）。
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.MethodDeclaration);
+        // 注册经 CompilationStart：per-compilation 合并白名单（AdditionalFiles 快照）被捕获进闭包。
+        context.RegisterCompilationStartAction(OnCompilationStart);
     }
 
-    private static void AnalyzeMethod(SyntaxNodeAnalysisContext context)
+    // QED-C1b：per-compilation 白名单查找表（A2-07 预计算结构保留：canonical 键预计算、线程安全）。
+    // merged 已由 GodotApiWhitelist.All（启动期 ValidateNoCollisions）+ MergedWith（合并集 Canonical 唯一）
+    // 双重保证无同键 ⇒ ByFullCanon 用 ToImmutableDictionary 安全；ByMethodCanon 同键碰撞取首个（与旧一致）。
+    private readonly struct WhitelistLookup
+    {
+        private readonly ImmutableDictionary<string, ApiMapping> _byFullCanon;
+        private readonly ImmutableDictionary<string, ApiMapping> _byMethodCanon;
+
+        private WhitelistLookup(ImmutableDictionary<string, ApiMapping> byFull, ImmutableDictionary<string, ApiMapping> byMethod)
+        {
+            _byFullCanon = byFull;
+            _byMethodCanon = byMethod;
+        }
+
+        internal static WhitelistLookup Build(ImmutableArray<ApiMapping> whitelist) => new(
+            whitelist.ToImmutableDictionary(m => GodotApiWhitelist.Canonical(m.GodotApi)),
+            whitelist
+                .GroupBy(m => GodotApiWhitelist.Canonical(m.GodotApi.Split('.').Last()))
+                .ToImmutableDictionary(g => g.Key, g => g.First()));
+
+        // A2-07：廉价语法预检——裸方法名/全名 canonical 不在任何白名单键集 ⇒ 不付 GetSymbolInfo 语义查询成本。
+        // 绝大多数调用（ToString/LINQ/业务方法）与白名单无关，此项把分析时延从 O(调用点×语义查询) 压回 O(调用点×字符串)。
+        internal bool MaybeWhitelisted(InvocationExpressionSyntax inv)
+        {
+            if (_byMethodCanon.ContainsKey(Canonical(MethodName(inv)))) return true;
+            return _byFullCanon.ContainsKey(Canonical(RawName(inv)));
+        }
+
+        internal ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv, SemanticModel model)
+        {
+            // P0-2：门控前置——裸标识符调用的 RawName 即方法名，若不先过 Godot 类型门，
+            // 用户自有同名方法会经「全名」路径被定罪（hickey-x3 F3 的实际触发形态）。
+            // 符号不可解析（无引用的裸语法编译）⇒ IsGodotTypedInvocation 返回 true，保留旧回退行为（召回优先）。
+            if (!IsGodotTypedInvocation(inv, model)) return null;
+
+            return _byFullCanon.TryGetValue(Canonical(RawName(inv)), out var fullMatch) ? fullMatch
+                : _byMethodCanon.TryGetValue(Canonical(MethodName(inv)), out var methodMatch) ? methodMatch
+                : null;
+        }
+    }
+
+    private static void AnalyzeMethod(SyntaxNodeAnalysisContext context, WhitelistLookup lookup)
     {
         var method = (MethodDeclarationSyntax)context.Node;
 
@@ -176,15 +284,15 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 
         // EAA0901：永不豁免（§8.3.1(3)；R2 对抗修复——全标 override 即零报警 = 静默泄漏通道，不得重开）。
         // P0-1（hickey-x3 F2）按「改文档」方向对齐：诊断消息与 README 已改为如实说明 [EffectOverride] 仅豁免 A3/A4。
-        AnalyzeMissingRelease(context, method, invocations);
-        if (!hasValidOverride) AnalyzeKindMixAndCompat(context, method, invocations);  // EAA0303/4：仅合法逃逸豁免意图提示
+        AnalyzeMissingRelease(context, method, invocations, lookup);
+        if (!hasValidOverride) AnalyzeKindMixAndCompat(context, method, invocations, lookup);  // EAA0303/4：仅合法逃逸豁免意图提示
     }
 
     // ── §3.3.1 DO-9 近似：按归一资源聚合「acquire>release」⇒ 疑似泄漏（运行期 net 为权威，见类注释）──
     // R8 对抗审计改进：逐资源计数，可捕获「跨资源错配释放」「部分释放（acquire 多于 release）」，
     // 而非旧版仅全局布尔（会漏报跨类型/部分释放）。§8.1 release-class-only 泛型释放（如 free）作兜底，避免误报。
     private static void AnalyzeMissingRelease(SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method,
-        InvocationExpressionSyntax[] invocations)
+        InvocationExpressionSyntax[] invocations, WhitelistLookup lookup)
     {
         var acquire = new Dictionary<ResourceId, int>();
         var release = new Dictionary<ResourceId, int>();
@@ -192,9 +300,9 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
 
         foreach (var inv in invocations)
         {
-            if (!MaybeWhitelisted(inv)) continue; // A2-07：语法预检未命中 ⇒ 跳过语义查询
+            if (!lookup.MaybeWhitelisted(inv)) continue; // A2-07：语法预检未命中 ⇒ 跳过语义查询
             var canon = Canonical(RawName(inv));
-            var m = FindWhitelistEntry(inv, context.SemanticModel);
+            var m = lookup.FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null)
             {
                 // §8.1 release-class 但不在 §7 白名单：无对应资源映射，本近似不处理（运行期 net 为权威）。
@@ -235,7 +343,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     // 单条 API 内部的多态 Claim（如 AddChild 含 Write+Occupy、Load 含两次 Occupy(Create)）不报（见类注释护栏）。
     // 实现：记录每条 (归一资源, 调用序号) → 该调用的 (kind,mode) 集合；仅当"跨调用"出现 kind 多样 / mode 冲突才报告。
     private static void AnalyzeKindMixAndCompat(SyntaxNodeAnalysisContext context, MethodDeclarationSyntax method,
-        InvocationExpressionSyntax[] invocations)
+        InvocationExpressionSyntax[] invocations, WhitelistLookup lookup)
     {
         // 归一资源 → (调用序号 → 该调用的 (kind,mode) 集合)
         var byResource = new Dictionary<ResourceId, Dictionary<int, List<(Kind Kind, Mode Mode)>>>();
@@ -246,8 +354,8 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         int invIndex = 0;
         foreach (var inv in invocations)
         {
-            if (!MaybeWhitelisted(inv)) { invIndex++; continue; } // A2-07：语法预检未命中 ⇒ 跳过语义查询
-            var m = FindWhitelistEntry(inv, context.SemanticModel);
+            if (!lookup.MaybeWhitelisted(inv)) { invIndex++; continue; } // A2-07：语法预检未命中 ⇒ 跳过语义查询
+            var m = lookup.FindWhitelistEntry(inv, context.SemanticModel);
             if (m is null) { invIndex++; continue; }
             apiBySite[invIndex] = m.Value.GodotApi; // R3-CG-02
 
@@ -343,27 +451,10 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    // 调用 canonical 名 → §7 白名单条目（null 表示不在白名单，本近似不处理）。
-    // 匹配键既看全名（Audio.Play ⇒ audioplay）也看方法名（去接收者：node.QueueFree ⇒ queuefree），
-    // 以修复「带接收者的 Godot 主流写法」被静默漏报的 false negative（见 R6/R7 对抗审计）。
-    //
+    // 调用 canonical 名 → §7 白名单条目的匹配语义（Godot 类型门 / 全名-方法名双键）已并入 WhitelistLookup。
     // P0-2（hickey-x3 F3）：方法名回退匹配要求接收者类型可判定为 Godot 类型——
-    // 用户自有 Load()/Connect() 等撞名方法不再被裸名定罪。判定规则：
-    //   符号可解析 ⇒ 命名空间为 "Godot" 或 "Godot." 前缀才允许回退（真 Godot = namespace Godot；仓内 stub = Godot.Shapes）；
-    //   符号不可解析（无引用的裸语法编译）⇒ 保留旧回退行为（召回优先，诚实记录启发式边界）。
-    // A2-07（生产审计批5）：canonical 匹配走预计算字典（键唯一性由白名单启动期 ValidateNoCollisions 保证；
-    // ByMethodCanon 同键碰撞取首个，与旧线性扫描返回序一致）。
-    private static ApiMapping? FindWhitelistEntry(InvocationExpressionSyntax inv, SemanticModel model)
-    {
-        // P0-2：门控前置——裸标识符调用的 RawName 即方法名，若不先过 Godot 类型门，
-        // 用户自有同名方法会经「全名」路径被定罪（hickey-x3 F3 的实际触发形态）。
-        // 符号不可解析（无引用的裸语法编译）⇒ IsGodotTypedInvocation 返回 true，保留旧回退行为（召回优先）。
-        if (!IsGodotTypedInvocation(inv, model)) return null;
-
-        return ByFullCanon.TryGetValue(Canonical(RawName(inv)), out var fullMatch) ? fullMatch
-            : ByMethodCanon.TryGetValue(Canonical(MethodName(inv)), out var methodMatch) ? methodMatch
-            : null;
-    }
+    // 用户自有 Load()/Connect() 等撞名方法不再被裸名定罪。A2-09（生产审计批4）：namespace 精确匹配
+    // "Godot" 或 "Godot."（前缀命名空间不误放行）；符号不可解析保留旧回退（召回优先）。
 
     // P0-2 — 接收者类型是否可判定为 Godot 类型。
     // A2-09（生产审计批4）：精确匹配 namespace "Godot" 或 "Godot.*"——此前 StartsWith("Godot") 会放行用户自有的

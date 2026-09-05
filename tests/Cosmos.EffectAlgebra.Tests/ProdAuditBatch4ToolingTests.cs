@@ -174,6 +174,20 @@ public class Consumer
         Assert.True(code == 0, $"配对 fixture 构建应绿：\n{output}");
     }
 
+    // ── QED-C1b：白名单扩展真接线门禁存在性——cosmos.effect.json 经 AdditionalFiles 进入编译，
+    // 扩展 API（CustomSpawn）参与 L3 分析 ⇒ ExtLeaky 构建红（EAA0901=error）。
+    // AdditionalFiles 接线被拔（csproj ItemGroup）或分析器回退静态字典 ⇒ 扩展静默 ⇒ 本钉红（mutation 门）。
+    // TreatWarningsAsErrors 兜底：有效配置不得产生 EAA0701（坏配置在此工程直接红）。 ──
+    [Fact]
+    public void GateFixture_ExtendedWhitelist_BuildFails_WithEAA0901()
+    {
+        var (code, output) = DotnetBuild(Path.Combine(RepoRoot(), "tests", "GateFixture", "ExtendedWhitelist"));
+        Assert.True(code != 0, $"扩展白名单 fixture 构建应为红（CustomSpawn 经 cosmos.effect.json 扩展后 EAA0901=error 未被行使）：\n{output}");
+        Assert.Contains("EAA0901", output);
+        Assert.Contains("CustomSpawn", output);
+        Assert.DoesNotContain("EAA0701", output);
+    }
+
     private static (int code, string output) DotnetBuild(string projectDir)
     {
         var psi = new ProcessStartInfo("dotnet", $"build \"{projectDir}\" -c Release --nologo")

@@ -15,7 +15,7 @@
 | **峰值预算**    | `EffectScript.Budget.Caps`（按归一化资源键）                                     | `Peak ≤ cap`，`IsPeakChecked`/`CapsChecked` 报告门是否实际运行（R1-HIGH-3, R5）                                                         | 值语义 `Budget: ImmutableDictionary` 归一底座（Self→SignalBus 等，R6 S06-002）与 `peakReported` 问题集语义（同资源只报首个）                         |
 | **互斥冲突**    | `gate(3) Compatible`                                                    | `CompatibleConflict`（跨 scope×mode×归一化 ResourceId；CONFLICT 集见 §3.2.3）                                                                | `Compatible.IsCompatible` 对角律单一真源（CONFLICT 集 §3.2.3）                                                               |
 | **声明式剧本**   | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载                                                                                                      | fail-fast 白名单（根/事件/claim 层未知键拒，대 小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
-| **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界） | 对抗测试族 co-driven（`samples/GodotIntegration/AdvE2E_*`：逃逸/豁免/误报对抗形状），白名单 §7 单点                                                |
+| **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单；cosmos.effect.json 扩展经 AdditionalFiles 真接线，QED-C1b）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界 / EAA0701 白名单扩展配置错误） | 对抗测试族 co-driven（`samples/GodotIntegration/AdvE2E_*`：逃逸/豁免/误报对抗形状），白名单 §7 单点                                                |
 
 
 ---
@@ -68,6 +68,7 @@ dotnet_diagnostic.EAA0303.severity = error   # 同资源量纲混用
 dotnet_diagnostic.EAA0304.severity = error   # 同资源并发冲突模式
 dotnet_diagnostic.EAA0801.severity = error   # [EffectOverride] reason 必填
 dotnet_diagnostic.EAA0802.severity = error   # [AcceptDeviation] epsilon 越界
+dotnet_diagnostic.EAA0701.severity = error   # cosmos.effect.json 白名单扩展配置错误（扩展未生效，QED-C1b）
 ```
 
 ### ③ 写一个含 acquire/release 的方法（无需任何特性、无需 partial 类、无需改游戏代码）
@@ -85,7 +86,7 @@ void SpawnEnemy()
 
 `[EffectOverride("证据")]` **不豁免** EAA0901——它仅豁免 A3/A4 意图提示；DO-9 静态泄漏近似永不抑制（防止全标 override 静默泄漏）。
 
-> 注意：仅当 API 在 `ApiMapping.cs` 白名单（§7）中才有保护；自定义资源操作需扩展白名单并重建（见该文件注释）。未命中白名单的 API **静默无保护、无警告**。
+> 注意：仅当 API 在 §7 白名单中才有保护；未命中白名单的 API **静默无保护、无警告**。自有/未映射 API 可经 `cosmos.effect.json` 扩展白名单（QED-C1b，L3 已真接线）：放在消费工程并在 `.csproj` 加 `<AdditionalFiles Include="cosmos.effect.json" />`，扩展 API 即参与 L3 泄漏/冲突分析；格式/schema/Canonical 碰撞错误报 **EAA0701**（扩展整体弃用、基础白名单不受影响、绝不静默；碰撞时合并集回退基础表）。L2 生成器尚未消费该文件（C1c 前 emit 不含扩展 API）。
 >
 > **触发前提（R6-P）**：调用的接收者须绑定 `Godot`/`Godot.*` 命名空间的类型（真实 Godot 工程天然满足；符号不可解析的裸语法编译保留回退判定）。自有类的同名方法（非 Godot 命名空间）按设计**零诊断**（A2-09 防同名误报）——包装层/非 Godot 工程不触发不是缺陷，但也没有保护。
 
@@ -220,7 +221,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 9. L3 仅分析**方法体**：构造函数、属性访问器、`using var` 形态不在注册范围；`Position.get/set` 等属性形态白名单条目对 L3 无效——构造期泄漏不在静态覆盖内
 10. Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）
 11. Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威
-12. `cosmos.effect.json` 白名单扩展当前仅提供 L1 加载 API（`CosmosEffectConfig.LoadExtra/AllWithExtra`），L2 生成器/L3 分析器尚未自动消费 `AdditionalFiles`——接线前该文件不生效（勿当作已受保护）
+12. `cosmos.effect.json` 白名单扩展 **L3 分析器已真接线（QED-C1b）**：`<AdditionalFiles Include="cosmos.effect.json" />` 后扩展 API 参与 L3 泄漏/冲突分析；解析/schema/Canonical 碰撞错误报 **EAA0701**（该文件扩展整体弃用 + 基础白名单不受影响，绝不静默；碰撞时合并集回退基础表；诊断 ID 公共契约面，2026-09-06 登记）。钉：`QedP2C1bAdditionalFilesPins`（5 枚）+ `tests/GateFixture/ExtendedWhitelist` 真实构建门。**L2 生成器尚未消费**（C1c）——扩展 API 的每方法 Signature emit 仍缺，勿当作全链路已受保护
 13. ~~L1 包 net9.0 TFM 仅含代数切片~~ **已解决（P1-B5）**：net9.0 缩减切片已删除（A2-06 分析器自包含后为残迹），包族（L1/Generator/Runtime）收敛 `net8.0;net10.0`——同包各 TFM 同一公共面（QedP1B1 快照唯一准绳）；net9 消费者按 NuGet 就近原则消费 net8.0 资产。分析器包保持 net9.0（编译器宿主对齐，自包含、非消费 TFM）
 14. L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
 15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）

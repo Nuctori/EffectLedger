@@ -180,8 +180,23 @@
       + 碰撞 loud 语义（合并集内任何 Canonical 同键——扩展 vs 基础表/扩展彼此/精确重名——
       ⇒ InvalidOperationException，R3-L1-03 教义）。钉 `QedP2C1aMergedWhitelistPins` 4 枚
       （含基础表不可变验证与三类碰撞）。
-    - [ ] **C1b** L3 分析器消费 AdditionalFiles（静态字典 → per-compilation 合并字典；格式坏
-          配置 ⇒ 新诊断——诊断 ID 属公共契约面，新码须记录并过 E3 复核）。
+    - [x] **C1b** L3 分析器消费 AdditionalFiles ✅ 2026-09-06
+      **决策：per-compilation 合并快照 + 配置错误 loud（新诊断 EAA0701，id 属公共契约面，2026-09-06 登记）。**
+      静态字典（A2-07 ByFullCanon/ByMethodCanon）退役——Initialize 改走 CompilationStartAction：
+      Options.AdditionalFiles 中文件名为 `cosmos.effect.json` 的文件（精确名、大小写不敏感、目录不限、可多份——
+      解决方案多消费工程各贡献一份的真实形态）经共享 CosmosEffectConfig.LoadExtraFromJson 严格解析 →
+      GodotApiWhitelist.MergedWith 合并 → 本次编译查找表；无文件时回基础表，与旧静态路径行为一致（全量门为证）。
+      失败语义：解析/schema 错误 ⇒ EAA0701 定位该文件、该文件扩展整体弃用（基础表不受影响，宁缺勿假）；
+      Canonical 碰撞（vs 基础表/跨文件）⇒ 合并集整体回退基础表（无部分生效），诊断定位首个配置文件，
+      消息自含碰撞双方 API 名（MergedWith loud 语义透传，QED-C1a）。System.Text.Json 为 net9.0 BCL 内箱
+      （宿主前提不变 R2B-02，真实构建门实证解析）；共享副本 LoadExtra/AllWithExtra（进程内文件 IO，
+      分析器不调用）按 RS1035 精确范围禁用，解析/校验成员保持守护。
+      证据：`QedP2C1bAdditionalFilesPins` 5 钉（扩展 API 报漏与基础表并存 / 无文件不读盘+扩展静默契约 /
+      坏 JSON loud+扩展弃用+基础照报 / vs 基础表碰撞回退 / 跨文件碰撞归属首文件）+
+      `tests/GateFixture/ExtendedWhitelist` 真实构建门（AdditionalFiles 真接线 mutation 门：接线被拔即红；
+      扩展 API EAA0901=error 构建红 + ExtPaired 不误报 + 有效配置零 EAA0701）。门禁 699 全绿（+6），
+      pack 五包走查通过。EAA0701 已登记 README ② severity 六行/能力表/③ 扩展说明/诚实边界 #12
+      （L3 半边接线）+ templates/README；文档全量收口（③ 真接线章节重写 + #12 关闭）按拆分归 C1d。
     - [ ] **C1c** L2 生成器消费 additionalTextsProvider（缓存键含配置文本；合并白名单参与 emit）。
     - [ ] **C1d** 文档收口：README ③ 白名单扩展章节改真接线说明、诚实边界 #12 解决标记、
           templates/effect-script.json 样例核对。

@@ -11,17 +11,22 @@ dotnet add package Cosmos.EffectAlgebra.Analyzer
 dotnet add package Cosmos.EffectAlgebra.Runtime
 ```
 
-**门禁须自行接线**（NuGet 包不含 severity 策略，诊断默认 warning）：把主 README §② 的五行 `dotnet_diagnostic.EAA*.severity = error` 复制进你的 `.editorconfig`，build 即门禁。不接线时泄漏只出 warning——别把"有告警"当"已拦截"。
+**门禁须自行接线**（NuGet 包不含 severity 策略，诊断默认 warning）：把主 README §② 的六行 `dotnet_diagnostic.EAA*.severity = error` 复制进你的 `.editorconfig`，build 即门禁。不接线时泄漏只出 warning——别把"有告警"当"已拦截"。
 
 ## 白名单扩展
 
-`cosmos.effect.json` 放在项目根：
+`cosmos.effect.json` 放在消费工程并接入 AdditionalFiles：
 
 ```json
 { "extraMappings": [{ "api": "MyPool.Spawn", "claims": [{ "kind": "occupy", "resource": { "memory": 1 }, "mode": "create", "scope": { "scene": "Battle" } }] }] }
 ```
 
-> **诚实边界（当前未自动生效）**：该文件目前仅有 L1 加载 API（`CosmosEffectConfig.LoadExtra / AllWithExtra`）；L2 生成器与 L3 分析器**尚未**自动消费它——不写接线代码时自定义 API 不会进白名单，也就是"静默无保护"。自写 CI 严格门时请在调用方传 `LoadExtra(path, strict: true)` / `AllWithExtra(...)`（cosmos audit CLI 本身不消费该文件，也无 strict 开关）。
+```xml
+<!-- .csproj：AdditionalFiles 是 L3 分析器消费本文件的唯一通道 -->
+<AdditionalFiles Include="cosmos.effect.json" />
+```
+
+> **接线状态（QED-C1b）**：L3 分析器已自动消费该文件——经 AdditionalFiles 接入即生效（扩展 API 参与 EAA* 诊断，触发前提仍是接收者绑定 Godot 命名空间，见主 README ③）；解析/schema/Canonical 碰撞错误编译期报 **EAA0701**（扩展整体弃用、基础白名单不受影响）。**L2 生成器尚未消费**（emit 不含扩展 API）；自写 CI 严格门时请在调用方传 `LoadExtra(path, strict: true)` / `AllWithExtra(...)`（cosmos audit CLI 本身不消费该文件，也无 strict 开关）。
 
 ## AI 闭环
 

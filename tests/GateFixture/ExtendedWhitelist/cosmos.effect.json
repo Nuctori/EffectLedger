@@ -1,0 +1,6 @@
+{
+  "extraMappings": [
+    { "api": "CustomSpawn",   "claims": [ { "kind": "occupy", "resource": { "memory": 7 }, "mode": "create",  "scope": { "scene": "Battle" } } ] },
+    { "api": "CustomDespawn", "claims": [ { "kind": "occupy", "resource": { "memory": 7 }, "mode": "release", "scope": { "scene": "Battle" } } ] }
+  ]
+}

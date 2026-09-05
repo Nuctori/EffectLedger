@@ -57,6 +57,10 @@ public static class CosmosEffectConfig
     /// <summary>从文件加载 extraMappings；文件不存在 ⇒ 空（回落）。IO/解析异常在严格模式抛；
     /// 非 strict 回落时必须留一条可观测告警（A4-14，生产审计批2）——静默吞配置错误 = "静默无保护"，
     /// 与本项目 fail-fast 立库原则冲突；stderr 告警不改变回落语义，仅消灭无声失败。</summary>
+    // RS1035：本两成员为进程内文件加载路径（CLI/CI 严格门用），分析器共享副本（QED-C1b）不调用它们——
+    // 分析器侧一律经 AdditionalText.GetText 拿文本再走 LoadExtraFromJson（编译器供给文本，零直接 IO）。
+    // 精确范围禁用而非项目级 NoWarn：解析/校验成员保持 RS1035 守护。
+#pragma warning disable RS1035
     public static ImmutableArray<ApiMapping> LoadExtra(string path = "cosmos.effect.json", bool strict = false)
     {
         if (!File.Exists(path)) return ImmutableArray<ApiMapping>.Empty;
@@ -83,6 +87,7 @@ public static class CosmosEffectConfig
         var merged = new List<ApiMapping>(dict.Values);
         return merged.ToImmutableArray();
     }
+#pragma warning restore RS1035
 
     // ── Claim 解析（复用 EffectScriptContract 扁平形态子集：kind/resource/mode/scope/size）──
     // R3-L1-02（三轮审计）：ParseClaim 曾把整个 claim 对象当值传给三参 ReqStr（应先 Require 取属性值），

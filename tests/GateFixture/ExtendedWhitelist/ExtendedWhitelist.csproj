@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- QED-C1b：白名单扩展真接线——AdditionalFiles 是 L3 消费 cosmos.effect.json 的唯一通道；
+         本 ItemGroup 被拔掉 ⇒ CustomSpawn 静默 ⇒ EAA0901 不再触发 ⇒ 门禁测试红（mutation 门）。 -->
+    <AdditionalFiles Include="cosmos.effect.json" />
+  </ItemGroup>
+</Project>
