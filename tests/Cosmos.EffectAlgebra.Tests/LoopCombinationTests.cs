@@ -57,37 +57,8 @@ public class LoopCombinationTests
     }
 
     // §3.2.1 — 序列组合 := ∪：Sequence(a,b) 与 Signature.Union(a,b) 三桶结构相等。
-    // §3.2.1 — 序列组合 := ∪：Sequence(a,b) 与 Signature.Union(a,b) 三桶结构相等。
-    [Fact]
-    public void Sequence_EqualsUnion() // §3.2.1 — Sequence 已废弃为 Union 别名（仅保留兼容，验证等价性）
-    {
-        var a = Signature.Of(new Claim(Kind.Occupy, X, Mode.Use, M, Interval.Exact(1)));
-        var b = Signature.Of(new Claim(Kind.Read, new ResourceId.Memory(1), Mode.Use, M, Interval.Exact(1)));
-
-#pragma warning disable CS0618
-        var seq = Combination.Sequence(a, b);
-#pragma warning restore CS0618
-        var uni = Signature.Union(a, b);
-
-        Assert.True(seq.ReadClaims.SetEquals(uni.ReadClaims));
-        Assert.True(seq.WriteClaims.SetEquals(uni.WriteClaims));
-        Assert.True(seq.OccupyClaims.SetEquals(uni.OccupyClaims));
-    }
-
-    // §3.2.2 — 并行组合 := ∪：Parallel(a,b) 与 Signature.Union(a,b) 三桶结构相等。
-    [Fact]
-    public void Parallel_EqualsUnion() // §3.2.2
-    {
-        var a = Signature.Of(new Claim(Kind.Occupy, X, Mode.Use, M, Interval.Exact(1)));
-        var b = Signature.Of(new Claim(Kind.Write, new ResourceId.Self("t"), Mode.Use, M, Interval.Exact(1)));
-
-        var par = Combination.Parallel(a, b);
-        var uni = Signature.Union(a, b);
-
-        Assert.True(par.ReadClaims.SetEquals(uni.ReadClaims));
-        Assert.True(par.WriteClaims.SetEquals(uni.WriteClaims));
-        Assert.True(par.OccupyClaims.SetEquals(uni.OccupyClaims));
-    }
+    // 【P1-B3】Sequence_EqualsUnion / Parallel_EqualsUnion 两钉随被钉别名一并删除
+    //（组合唯一入口 = Signature.Union；被钉对象已按 B3 决策移除）。
 
     // §3.2.5 — 嵌套等价：Loop(Loop(body,ω1),ω2) 与 Loop(body, ω1×ω2) 在 Peak 上一致。
     // 实现：内层 Scale×ω1 再 rescope，外层对结果再 Scale×ω2 ⇒ 总缩放 ω1×ω2（与直接 ω1×ω2 同）。

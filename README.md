@@ -209,7 +209,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 
 ## 诚实边界（故意留债 · 测试守住不漂移）
 
-1. `Sequence≡Parallel≡Union` 四名一实 — L1 无时序语义，`R5 V5-001` 已在 `Join` 置顶 `L1 警告`，生成器锁死
+1. ~~`Sequence≡Parallel≡Union` 四名一实~~ **已解决（P1-B3）**：Sequence/Parallel 别名已从 `Combination` 删除，组合唯一入口 `Signature.Union`（幂等并，无时序/并行语义）；原 Parallel 的 PARA_CONFLICT 前置守卫随删——冲突检测权威 = `Audit` gate(3)；时序语义若未来需要归 F 轨
 2. `Size ?? Interval.Default` 散布 — `§3.1.5a DO-1` 设计锁，新消费点禁再散布
 3. `Audit` 内联 sweep 与 `NetTable`/`Peak` 两份物理代码 — `D08-001/002` 钉住等价，不做重构
 4. `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI

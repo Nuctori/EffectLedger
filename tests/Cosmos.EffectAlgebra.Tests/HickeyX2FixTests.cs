@@ -68,16 +68,9 @@ public class HickeyX2FixTests
         Assert.Equal(long.MaxValue / 2.0 + long.MaxValue / 2.0, mid); // 原 -1
     }
 
-    // ── R4-F4：Parallel 冲突抛 PARA_CONFLICT，不静默吞并 ──
-    [Fact]
-    public void Parallel_CreateCreate_Throws()
-    {
-        var r = new ResourceId.Memory(7);
-        var a = Signature.Of(new Claim(Kind.Occupy, r, Mode.Create, G, Interval.Exact(5)));
-        var b = Signature.Of(new Claim(Kind.Occupy, r, Mode.Create, G, Interval.Exact(3)));
-        var ex = Assert.Throws<InvalidOperationException>(() => Combination.Parallel(a, b));
-        Assert.Contains("PARA_CONFLICT", ex.Message);
-    }
+    // 【P1-B3】Parallel_CreateCreate_Throws 随被钉的 Combination.Parallel 一并删除
+    //（PARA_CONFLICT 前置守卫随别名移除；冲突检测权威 = Audit gate(3)，其create×create 冲突
+    // 已由 CompatibleMatrixTests 25 组合矩阵 + 扫换线 gate(3) 端到端钉承载）。
 
     // ── R10-F1：Audit(default(Budget)) 不再 NRE ──
     [Fact]

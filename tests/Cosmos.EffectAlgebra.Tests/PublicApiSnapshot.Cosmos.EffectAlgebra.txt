@@ -3,8 +3,6 @@ class Cosmos.EffectAlgebra.AcceptDeviationAttribute
   prop System.Double Epsilon()
 class Cosmos.EffectAlgebra.Combination
   method Cosmos.EffectAlgebra.Signature Loop(Cosmos.EffectAlgebra.Signature, Cosmos.EffectAlgebra.LoopCount, Cosmos.EffectAlgebra.ScopeId)
-  method Cosmos.EffectAlgebra.Signature Parallel(Cosmos.EffectAlgebra.Signature, Cosmos.EffectAlgebra.Signature)
-  method Cosmos.EffectAlgebra.Signature Sequence(Cosmos.EffectAlgebra.Signature, Cosmos.EffectAlgebra.Signature)
 class Cosmos.EffectAlgebra.Compatible
   method System.Boolean IsCompatible(Cosmos.EffectAlgebra.Mode, Cosmos.EffectAlgebra.Mode)
 class Cosmos.EffectAlgebra.CosmosEffectConfig

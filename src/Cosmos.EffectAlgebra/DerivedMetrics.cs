@@ -58,26 +58,10 @@ public static class Combination
         return result;
     }
 
-    /// <summary>§3.2.1 — 序列组合 (S₁ ; S₂) := S₁ ∪ S₂。
-    /// **L1 警告**（rich-hickey2 R5 V5-001）：本方法不承载时序区分，与 <see cref="Signature.Union"/> 完全等价。
-    /// 已废弃：请用 <see cref="Signature.Union"/>。</summary>
-    [Obsolete("Sequence 仅为 Signature.Union 别名，不承载时序。请用 Signature.Union。")]
-    public static Signature Sequence(Signature a, Signature b) => Signature.Union(a, b);
-
-    /// <summary>§3.2.2 — 并行组合 (S₁ ∥ S₂) := S₁ ∪ S₂。
-    /// R4-F4：跨分支同归一化资源做 Compatible 前置守卫——CONFLICT 对（如 create×create）抛 PARA_CONFLICT，
-    /// 不再静默 Union 吞掉冲突证据（L3 分析器看不到直接调用，前置条件必须在函数内执行）。
-    /// **L1 警告**（rich-hickey2 R5 V5-001）：本方法不承载并行区分，并行性由前置 Compatible 检查 + L3 跨调用点补；与 Union 等价（差异在守卫抛 PARA_CONFLICT）。</summary>
-    public static Signature Parallel(Signature a, Signature b)
-    {
-        foreach (var ca in a.OccupyClaims)
-            foreach (var cb in b.OccupyClaims)
-                if (ResourceId.Normalize(ca.Resource).Equals(ResourceId.Normalize(cb.Resource))
-                    && !Compatible.IsCompatible(ca.Mode, cb.Mode))
-                    throw new InvalidOperationException(
-                        $"PARA_CONFLICT: 并行分支对资源 {ca.Resource} 的 mode {ca.Mode}×{cb.Mode} 冲突（CONFLICT 集，§3.2.3）");
-        return Signature.Union(a, b);
-    }
+    // 【P1-B3】Sequence / Parallel 两名别名已删除（四名一实收口：组合唯一入口 = Signature.Union，
+    // 幂等并、无时序/并行语义）。原 Parallel 的 PARA_CONFLICT 前置守卫随删——冲突检测权威 =
+    // EffectScript.Audit gate(3)（25 组合矩阵 + 扫换线集成钉），直连别名上的冗余守卫不再保留。
+    // 时序/并行真语义若未来需要，归 F 轨（F2 精化类型同窗评估），不得再以别名形态复活。
 
     // R4-RH-03（Hickey 视角）：UnionChecked 与 Parallel 完全等价的别名已删（零消费；揭示语义见 Parallel 的 XML doc）。
     // §3.2.5 × ω 的 size 缩放：ω=⊤ ⇒ 上界开放（[lo, ⊤]）；否则区间端点按 §3.1.5a 乘法缩放。

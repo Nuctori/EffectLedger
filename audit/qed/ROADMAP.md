@@ -128,7 +128,15 @@
     （保持命名空间 `Cosmos.EffectAlgebra.Runtime`，既有测试代码零改动）。
   - 快照走 B1 流程：重生成后 diff 恰为 FakeHost 块 10 行删除（机制首次真实行使）。
   - 门禁 692 全绿，Runtime 套件零回归。
-- [ ] **B3** Sequence≡Parallel≡Union 四名一实——砍到一名（尚未发布，无需 Obsolete 过渡）。
+- [x] **B3** Sequence≡Parallel≡Union 砍到一名 ✅ 2026-09-06
+  - **决策：删除 `Combination.Sequence`（纯 Obsolete 别名）与 `Combination.Parallel`（别名 + PARA_CONFLICT
+    前置守卫），组合唯一入口 = `Signature.Union`。** 守卫随删的理由：冲突检测权威 = Audit gate(3)
+    （25 组合矩阵 + 扫换线端到端钉），直连别名上的冗余守卫无人消费、徒增概念数；时序/并行真语义
+    归 F 轨，不得以别名形态复活（DerivedMetrics 墓碑注释锁死）。
+  - **「测试数只增不减」的显式例外（-3）**：Sequence_EqualsUnion / Parallel_EqualsUnion /
+    Parallel_CreateCreate_Throws 三钉的被钉对象已按本决策删除——删的是死 API 的钉，非活语义的钉；
+    gate(3) 的活冲突钉全部保留。快照 diff 恰为两名方法删除（B1 机制第二次行使）。
+  - README 诚实边界 #1 标记已解决；PDR §3.2.1 的 QED-A5 幂等注记已先行声明唯一入口。
 - [ ] **B4** C# 超集本体 vs JSON 契约面——公共类型砍到契约面，超集转 internal（诚实边界 #18 随之消失）。
 - [ ] **B5** TFM 分歧消除：net9.0 切片缺 EffectScript（诚实边界 #13）——同包全 API 或拆包，二选一并记录理由。
 
