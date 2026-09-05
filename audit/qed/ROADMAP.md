@@ -31,7 +31,14 @@
     仅 Loop⊑enclosing 真决策）。交付物：`audit/qed/PO55-TRIAGE.md`（逐项 file:line 证据 + 既有钉引用）。
   - 后续排序按其裁定执行：A5（01/02 PDR 推导）、A6（03c 决策+文档）、A8（04/07/10/11/12 补文档）、
     A3（05/06 定稿）、A7（08）、A9（09 源码复核）、A2（13 吸收）。
-- [ ] **A5** 多重性语义定稿（PO-55-01/02 同根）：把「Set<Claim> 刻意幂等 + 重复构造即拒 + 多重性唯一合法路径 = `Combination.Loop` 的 size×ω」写成 PDR 推导（重写 §3.2.1 ∪ 叙事 / §3.2.5 max-over-copies 公式 / AUDIT003 ×20 累加叙事），并落对抗钉：`Loop(body,Of(20))` ⇒ net=20×s；Peak 随 ω 增长；重复 Claim `Signature.Of` 抛。代码预判零改动，以 A0 证据为准。
+- [x] **A5** 多重性语义定稿（PO-55-01/02 同根）✅ 2026-09-05
+  - **决策：sound-by-design（代码零改动，PDR 推导重写）。** 「Set<Claim> 刻意幂等 + 重复构造即拒
+    （P0-4）+ 多重性唯一合法路径 = 事件序列逐条累加 / `Combination.Loop` size×ω」已写入 PDR：
+    §3.1.4 多重性载体注记、§3.2.1 幂等注记、§3.2.5 弃 Σ-copies/max-over-copies 改 Scale(S,ω)、
+    §3.3.1 Σ 作用域注记、§3.3.2 Peak 公式改缩放后逐条求和、AUDIT003 ×20 载体澄清。
+  - 证据：`tests/Cosmos.EffectAlgebra.Tests/QedP0A5MultiplicityPins.cs` 8 钉（重复拒直连面 /
+    Loop(20)⇒net=1280 / Peak 随 ω 线性 {1,2,5,20}→{64,128,320,1280} / 20 同构事件 cap=19 报·cap=20
+    放行的逐事件计数）。对账依据 `audit/qed/PO55-TRIAGE.md` §2.1。
 - [ ] **A6** ScopeId ⊆* 自洽（PO-55-03）：Shell 入偏序表（代码 `IncludedIn` 已覆盖 Shell⊑Shell，表缺）；`Loop(id) ⊑ enclosing` 二选一定稿（加单向包含矩阵 / 商集-预序改写）；「双向包含违反反对称」叙事修正。落性质测试钉（自反/反对称/传递/Global 最大元）。
 - [ ] **A7** 归一化实例身份（PO-55-08）：memory/callback 常量 uid 折叠掩盖泄漏（Connect(sigA)+Disconnect(sigB) ⇒ net=0）——参数化 alias 映射 or 显式声明保守合并语义，二选一 + 钉。
 - [ ] **A8** 语义文档小项打包（PO-55-04/07/10/11/12 单会话）：⊔ 四元组配对键（代码已对齐，补文档）、ℤ 序与减法（`SignedInterval` 已有，补文档）、Signature(b) 良定义、copy_i scope 标注二选一、纯编辑项（双 ##14/断表/术语表）。

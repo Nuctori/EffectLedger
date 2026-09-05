@@ -164,6 +164,12 @@ c.scope ⊆ scope  := (c.scope ⊑ scope) ∨ (scope = Global)
 
 ```
 Signature := ImmutableHashSet<Claim>   // 集合语义，幂等由 3.1.4a Claim 相等保证
+
+// 多重性载体（PO-55-01 定稿【QED-A5】）：幂等是刻意性质——集合从不承载计数，且该性质由构造期
+// 守卫闭环：归一化后逐字段相同的重复 Claim 在 Signature.Of 处 loud 拒绝（P0-4），
+// 「20 次 ∪ 静默坍缩为 1 条 ⇒ net=64」的路径不可表达。多重性仅有两条合法载体：
+//   (a) 剧本层：EffectScript.Events 为序列（ImmutableArray），同刻 N 个同构事件 = 审计扫换线 N 次逐条累加（§3.3）；
+//   (b) 签名层：Combination.Loop(S, ω) 把 ω 乘进每条 Claim 的 size 端点（§3.2.5），§3.3 的 Σ 在 size×ω 上进行。
 ```
 
 **定义 3.1.4a（Claim 相等 / 归一化）**【收口 iter01/iter32：原 ∪ 幂等、resource 去重、Deviation 对齐、net(scope) 分组此前依赖未定义的 Claim=】
@@ -253,6 +259,8 @@ DeviationVal := double ∪ { ⊤ }
 ```
 (S₁ ; S₂) = S₁ ∪ S₂
   // ∪ 为集合并，幂等由 3.1.4a Claim 相等保证（相同 Claim 合并一次，无重复项）
+  // 多重性注记【QED-A5】：幂等刻意而非缺陷——组合算子不引入计数语义；计数走 §3.2.5 (S×ω) 的
+  // size×ω 或剧本层多事件（§3.1.4 载体注记）。重复 Claim 无法经 ∪ 进入（Signature.Of 构造期拒绝）。
 ```
 
 **定义 3.2.2（并行组合）**
@@ -293,8 +301,12 @@ Compatible(m₁, m₂) :=
 **定义 3.2.5（循环组合）**【收口 iter18/iter35：ω 载体 + S×ω 算子】
 ```
 ω ∈ ℕ ∪ { ⊤ }     // 循环次数；静态未知 ⇒ ⊤（上界标记，非发散）
-(S × ω) := Σ_{i=1..ω} copy_i(S)   // copy_i 为 S 的副本，scope 标注为所在 Loop(id) 或 Global
-  ω=⊤ 时：(S × ⊤) 返回「上界开放的重复副本集合」，供 Peak/net 以 ⊤ 兜底（见 3.3）
+(S × ω) := Scale(S, ω)   // 【PO-55-02 定稿 QED-A5，弃 Σ-copies/max-over-copies 叙事：同构副本的
+//   max/Σ 逐副本相等使 ω 退化为死变量（iter55 F2）；实现唯一形态即 size×ω 端点乘法，钉
+//   LoopCombinationTests.Loop_FiniteOmega_ScalesPeakByOmega（ω=5 ⇒ 50，错实现必红）】
+  //   逐 Claim：size := [lo×ω, hi×ω]（§3.1.5a × 律内嵌 ⊤：ω=⊤ 或 hi=⊤ ⇒ [lo,⊤] 上界开放；lo 恒有限）
+  //   kind/resource/mode/scope 不变——副本不新增身份，计数进 size 量纲（§3.3 的 Σ 对缩放后 size 求和）
+  ω=⊤ 时：size := [lo, ⊤]（上界开放），供 Peak/net 以 ⊤ 兜底（见 3.3）
 (while b do S) = Signature(b) ∪ (S × ω)
 // 历史残留的 cardinality 形式 Peak = max_i |{c∈copy_i(S) | c.scope⊆scope ∧ c.mode≠release}|
 //   （仅计 claim 数、不含 size 求和）属早期定义，已被 §3.3.2 的 size-求和 Peak 取代；以 §3.3.2 为准【收口 iter51 #6】
@@ -318,15 +330,18 @@ net(S, scope) = Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode∈{create,move
              − Σ_{c∈S, c.scope⊆scope, c.kind=occupy, c.mode=release}           c.size
 // 泄漏判定 DO-9（收口 iter44）：net(S,scope)>0 且 scope 内无对应 release 配对 ⇒ 报警
 //   fail-closed：未知映射（3.1.4a 的 Unknown）在 net 中计为 ⊤ 上界，触发「需人工确认」而非静默漏报/误报
+// 多重性注记【QED-A5】：Σ 作用于「缩放后」签名（§3.2.5 size×ω）或剧本事件序列（审计扫换线逐事件
+//   累加，release 自带于其 Lo 的负向贡献）；对未缩放集合的重复计数不可表达（§3.1.4 P0-4 构造期拒绝）。
 ```
 
 **定义 3.3.2（峰值 Peak）**【收口 iter49：两个 Peak 定义统一量纲】
 ```
 // 原 §3.2.5 的 Peak(循环副本计数) 与 原 §3.3.2 的 peak(作用域 size 求和) 统一为单一概念：
-Peak(S, scope) := 在 scope 内所有循环副本 i 上，取「并发占用 size 之和」的最大值：
-  Peak(S, scope) = max_{i∈1..ω} Σ_{c ∈ copy_i(S), c.scope⊆scope, c.mode≠release} c.size
-  // 即：循环组合数 (ω) × 作用域过滤 (⊆*) × size 求和，三者合并；原 peak 为 ω=1 特例
-  // size 为 SizeVal；ω=⊤ ⇒ 返回 ⊤；任意 size 含 ⊤ ⇒ 该项和返回 ⊤（不发散/不 NaN）
+Peak(S, scope) := scope 过滤后对「§3.2.5 缩放后」签名的并发占用 size 上界逐条求和：
+  Peak(S, scope) = Σ_{c ∈ S, c.scope⊆scope, c.mode≠release} c.size.hi
+  // 【QED-A5】ω 已在 §3.2.5 Scale 乘进 size 端点（[lo×ω,hi×ω]）：ω 份同构副本并发共存 ⇒ 计数
+  // 自然入账（ω×s），无需 copy_i 索引（max-over-copies 公式因其 max 退化已废，见 §3.2.5 定稿注）
+  // size 为 SizeVal；ω=⊤ ⇒ Scale 产 [lo,⊤] ⇒ 该项 ⊤；任意 size 含 ⊤ ⇒ 该项和返回 ⊤（不发散/不 NaN）
 
 // weight 函数（收口 iter47 MA-007，原「已解决」依赖的未定义函数，现显式定义）：
 weight : Kind × Kind → ℝ ∪ { ⊥ }
@@ -334,7 +349,8 @@ weight : Kind × Kind → ℝ ∪ { ⊥ }
   weight(k₁,k₂)=⊥   ∀k₁≠k₂           // 跨 kind 禁止混算（DO-7 计算性落地）
   // 若日后需跨 kind 统一预算（如 occupy{memory MB} 折算 read{bandwidth}），须在此显式扩展特定对并文档化查表
 // 聚合公式（含 weight）：
-Peak(S, scope) = max_{i∈1..ω} Σ_{c∈copy_i(S), c.scope⊆scope, c.mode≠release} weight(c.kind,c.kind)·c.size
+Peak(S, scope) = Σ_{c∈S, c.scope⊆scope, c.mode≠release} weight(c.kind,c.kind)·c.size.hi
+  // 同 QED-A5：S 为 §3.2.5 缩放后签名（ω 已在 size 内），故 Σ 无 copy_i 索引
   // 同 kind ⇒ ×1；跨 kind ⇒ ×⊥ ⇒ 编译期 KIND_MIX 报错（配合 3.1.4b 分桶）
 ```
 
@@ -933,7 +949,9 @@ public class GodotAuditAnalyzer : DiagnosticAnalyzer {
 
     // 4. 自动估算资源（统一 SizeVal 口径，收口 iter50 #61：禁止游离字面量，全部源自 §3.1.5）
     //    Texture2D 字段 → 默认 occupy{memory, [64,64]}（精确 size 区间，单位 MB；原游离 "64MB" 现归一到 SizeVal）
-    //    场景中 20 个 Enemy → 累加 occupy{memory, [64,64]}×20 = [1280,1280] ⇒ 与 GlobalBudget [512,512] 比较
+    //    场景中 20 个 Enemy → 20 条同构事件（或 Loop(body,20)）逐副本计数 ⇒ occupy{memory,[64,64]}
+    //    累加为 [1280,1280]（=20×64；多重性载体见 §3.1.4 注记【QED-A5】：事件序列逐条累加 / size×ω 缩放，
+    //    非集合重复——重复 Claim 在 Signature.Of 构造期拒绝）⇒ 与 GlobalBudget [512,512] 比较
     //    所有 size 一律走 §3.1.5 的 SizeVal（单值/精确/动态⊤），与 net/peak/Deviation 同一载体，可机械对账。
 }
 ```
