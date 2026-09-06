@@ -216,7 +216,16 @@
           templates/README 白名单扩展节同步全链路状态；新增 templates/cosmos.effect.json 可复制样板。
           **C1 全部完成（决策 WIRE + C1a/C1b/C1c/C1d）。**
 - [x] **C1** `cosmos.effect.json` 真接线 ✅ 2026-09-06（见 C1-决策 + C1a–C1d）。
-- [ ] **C2** `ResetDiagnostics` 生产接线（长会话自动调用点）或砍（诚实边界 #19）——二选一。
+- [x] **C2** `ResetDiagnostics` 生产接线或砍 ✅ 2026-09-06
+  - **决策：第三条路——结构性有界（两端否决）。** 自动接线（排空完成点自动清诊断）否决：摧毁宿主
+    「卸载后轮询 LastCrashReport」观测契约（自动清 = 删除未读证据）；砍除否决：长会话宿主对
+    _netAccum 跨批次增长彻底无解。落地：①`CrashReports` 环形上限恒保留最近 64 条（last 语义不变，
+    5 个 Add 点收口单点 helper）；②`_netAccum` 在 DrainTeardownBatch/SynchronousExitDrain 完成
+    点自动剪除非 Active Fiber 条目（零语义损失：Active 过滤器永久跳过 + 同 FiberId 不可重注册）；
+    ③`ResetDiagnostics` 降级为宿主可选显式整体清空出口（XML doc 同步），非内存安全义务。
+  - internal 观测口 NetAccumEntries/MaxCrashReports（Runtime.Tests IVT，公共快照不含）。
+  - 钉 `QedP2C2DiagnosticsBoundPins` 3 枚（66 崩溃恒 64 条 + last 语义 / 排空剪除死 Fiber 条目 /
+    剪除不影响 Active 泄漏判定）。README 诚实边界 #19 关闭。**P2 死特性处置全部完成。**
 
 ## P3 形式化验证（QED 主线）
 

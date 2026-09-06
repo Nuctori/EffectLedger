@@ -41,6 +41,16 @@ public sealed class PluginRuntime
     public ImmutableArray<CrashReport> CrashReports { get; private set; } = ImmutableArray<CrashReport>.Empty;
     /// <summary>§6（reviewer #190 F1）— 最近一次崩溃报告（CrashReports 末条）便捷访问；保留 last 语义，供宿主轮询观测（运行时无头不自动上抛/日志）。</summary>
     public CrashReport? LastCrashReport => CrashReports.IsEmpty ? null : CrashReports[^1];
+    /// <summary>【QED-C2】崩溃报告环形上限（保留最近 64 条）：结构性内存安全不依赖宿主自觉调用
+    /// ResetDiagnostics（诚实边界 19 的根源消除）；64 条足够覆盖单批次多 Fiber 失败的观测窗口，
+    /// 更早历史由宿主自行轮询消费（last 语义不变：LastCrashReport 恒为最新）。internal 观测口
+    /// （Runtime.Tests IVT）供上限钉断言，公共快照（QedP1B1）不含。</summary>
+    internal const int MaxCrashReports = 64;
+    private void AddCrash(CrashReport report)
+    {
+        var added = CrashReports.Add(report);
+        CrashReports = added.Length > MaxCrashReports ? added.RemoveRange(0, added.Length - MaxCrashReports) : added;
+    }
     /// <summary>§3 step4（reviewer #190 F3）— 装载期检出的软环（降级 warning，不中止装载）；可观测出口，供调度器记录/上报（§10 软环不实落地问题）。运行时无头不自动上抛/日志，须由宿主轮询消费。</summary>
     public ImmutableArray<FiberId> SoftCycles { get; private set; } = ImmutableArray<FiberId>.Empty;
     /// <summary>§7（reviewer #190 F4）— provider 通知 dependent 进入 Suspending 时的钩子（Godot 壳据此禁用 ProcessMode）。集成缝合点，默认 null 无操作。</summary>
@@ -65,6 +75,19 @@ public sealed class PluginRuntime
 
     /// <summary>§10（reviewer #193 #6）— 清空周期快照网积累表（跨批次/场景重载复位，避免无界增长与跨批次泄漏观测）。</summary>
     public void ResetNetAccum() => _netAccum = ImmutableDictionary<FiberId, long>.Empty;
+    /// <summary>【QED-C2】internal 观测口（Runtime.Tests IVT）：_netAccum 条目数——批次排空剪除行为的可断言面（公共快照不含 internal）。</summary>
+    internal int NetAccumEntries => _netAccum.Count;
+
+    /// <summary>【QED-C2】批次卸载/退出排空完成后的结构性内存卫生：剪除 _netAccum 中非 Active Fiber 的条目。
+    /// 零语义损失——这些条目被 CheckPermanentFiberLeak 的 Active 过滤器永久跳过，且同 FiberId 不可重注册
+    /// （诚实边界 10）⇒ 永不复活；不剪则跨批次无界增长（诚实边界 19 的根源）。CrashReports 不在此自动
+    /// 清空——宿主「卸载后轮询 LastCrashReport」的观测契约优先（自动清 = 删除未读证据），其内存安全由
+    /// AddCrash 的环形上限承载；ResetDiagnostics 保留为宿主显式整体清空的可选出口（非内存安全义务）。</summary>
+    private void PruneDeadFiberAccumulations()
+    {
+        var active = new HashSet<FiberId>(_fibers.Values.Where(f => f.State == FiberState.Active).Select(f => f.Id));
+        _netAccum = _netAccum.RemoveRange(_netAccum.Keys.Where(k => !active.Contains(k)));
+    }
 
     /// <summary>§3 — 注册 Fiber（装载期）。返回 Fiber 供后续 Load/Unload。</summary>
     public Fiber Register(FiberSpec spec)
@@ -191,7 +214,7 @@ public sealed class PluginRuntime
             //（回放 per-fiber 独立，与旧自愈内联等价）并保留崩溃报告可观测。原「跳过+另行回收」在自愈改
             // 入队后永不收敛（重入队→再跳过），救援路径断裂（reviewer #187 跳过语义 + A3-01b 自愈的组合修复）。
             if (cyclic.Contains(providerId))
-                CrashReports = CrashReports.Add(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集无有效拓扑序，已按入队序兜底回放（环 {string.Join(" -> ", cycle.HardCycle)}）——硬环本身须宿主修复（LoadAll 拒载静态硬环）"), cycle.HardCycle));
+                AddCrash(new CrashReport(providerId, new InvalidOperationException($"动态硬环子集无有效拓扑序，已按入队序兜底回放（环 {string.Join(" -> ", cycle.HardCycle)}）——硬环本身须宿主修复（LoadAll 拒载静态硬环）"), cycle.HardCycle));
             // REG-01（复审计）：陈旧任务防御——排空中同批兄弟的逆 Action 重入 TickWatchdog 会把
             // 尚未回放的 batch-mate 二次入队；其陈旧任务随后由外层快照执行至 Dead。下一批若再执行
             // 会对 Dead fiber 回放抛异常 ⇒ 假 CrashReport 污染 §6 诊断 + 冗余 OnSuspending。丢弃之。
@@ -202,14 +225,15 @@ public sealed class PluginRuntime
                 // §6（reviewer #188 F2）：回放部分失败（AllCompleted=false）即升级崩溃级联——不再被 ReplayAndDead 静默 MarkDead 掩盖。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
                     // A3-08（生产审计批3）：原始逆异常作 InnerException 传递——根因类型/堆栈不得在重新合成时丢失。
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
+                    AddCrash(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
             }
             catch (Exception ex) // 整任务抛异常（R4-6 外层）→ 升级到 ProviderCrashCascade.Handle（§6 reviewer #187）
             {
                 if (_fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, ex));
+                    AddCrash(ProviderCrashCascade.Handle(this, pf, ex));
             }
         }
+        PruneDeadFiberAccumulations(); // 【QED-C2】批次排空完成 ⇒ 剪除非 Active Fiber 的累积条目（零语义损失，防跨批次无界增长）
     }
 
     /// <summary>§3 R5-7 / §8（reviewer #191 F4）— 重拓扑（N2 守卫：关路径硬拒绝，非关路径延迟执行）。
@@ -261,18 +285,19 @@ public sealed class PluginRuntime
                 // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
                 if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
                     // A3-08：退出路径同样保留原始异常（与 DrainTeardownBatch 对称）。
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
+                    AddCrash(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
             }
             catch (Exception ex)
             {
                 if (_fibers.TryGetValue(providerId, out var pf))
-                    CrashReports = CrashReports.Add(ProviderCrashCascade.Handle(this, pf, ex));
+                    AddCrash(ProviderCrashCascade.Handle(this, pf, ex));
             }
         }
+        PruneDeadFiberAccumulations(); // 【QED-C2】退出排空完成 ⇒ 剪除非 Active Fiber 的累积条目（零语义损失，防跨批次无界增长）
         IsShuttingDown = false; // §3（reviewer #191 F5）：关路径标志仅限本次排空，复位为防御性默认（README 诚实边界 10：实例仍为单场景生命周期——场景重载请新建 PluginRuntime，勿复用）
     }
 
-    /// <summary>§6/§7（reviewer #191 F3 / #194 LOW）— 清空累积诊断（CrashReports/SoftCycles/_netAccum 永久 Fiber 周期快照表）。跨批次/场景重载时由宿主定期调用，避免无界增长与跨批次泄漏观测；一并 ResetNetAccum 防止旧 FiberId 在永久 Fiber 表中残留。</summary>
+    /// <summary>§6/§7（reviewer #191 F3 / #194 LOW）— 清空累积诊断（CrashReports/SoftCycles/_netAccum 永久 Fiber 周期快照表）。【QED-C2 后为可选出口而非内存安全义务】跨批次/场景重载时宿主可显式整体清空诊断观测（CrashReports 环形上限与 _netAccum 死 Fiber 剪除已在结构上兜住无界增长）；一并 ResetNetAccum 清周期快照表。</summary>
     public void ResetDiagnostics()
     {
         CrashReports = ImmutableArray<CrashReport>.Empty;
