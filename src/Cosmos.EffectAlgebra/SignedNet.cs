@@ -1,5 +1,11 @@
 // SignedNet.cs — PDR §3.3.1 实现：有符号网值 ZStar/SignedInterval（create 正、release 负、区间含 0 即守恒）。LANDING_PLAN §3.3：类型边界载体。
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 /// <summary>
 /// §3.3.1 — 有符号网值 ZStar = ℤ ∪ {⊤}。net = Σcreate c.size − Σrelease c.size 是有符号量，可为负，

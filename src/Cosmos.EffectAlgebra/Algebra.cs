@@ -2,7 +2,13 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 /// <summary>
 /// §3.2.3 — Compatible：16 对全函数 + 对称。无未覆盖对（P2）。

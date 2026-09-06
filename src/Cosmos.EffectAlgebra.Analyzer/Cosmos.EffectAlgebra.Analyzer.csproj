@@ -46,11 +46,15 @@
 
   <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Analyzer.Shared[.X]，
        写入 IntermediateOutputPath\AnalyzerShared\，作为分析器自包含编译单元（不触碰 L1 本体）。 -->
+  <!-- 【QED-C1b 修复】WriteLinesToFile 管道走 MSBuild 字符串通道，Linux 上对非 ASCII（⊤）有损——
+       ⊤ 在注释里 historically 无害，进字符串字面量（CosmosEffectConfig.ParseNat 的 "⊤" 别名）即语法错误（CI 连红根因）。
+       改为 Copy 字节级副本 + 条件命名空间（#if ANALYZER_SHARED），全平台无损、确定性。 -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);ANALYZER_SHARED</DefineConstants>
+  </PropertyGroup>
   <Target Name="PrepareAnalyzerSharedSources" BeforeTargets="CoreCompile" Inputs="@(ShareSource)" Outputs="@(ShareSource->'$(IntermediateOutputPath)AnalyzerShared\%(Filename).cs')">
     <MakeDir Directories="$(IntermediateOutputPath)AnalyzerShared" />
-    <WriteLinesToFile File="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs"
-                      Lines="$([System.IO.File]::ReadAllText('%(ShareSource.FullPath)').Replace('namespace Cosmos.EffectAlgebra', 'namespace Cosmos.EffectAlgebra.Analyzer.Shared'))"
-                      Overwrite="true" />
+    <Copy SourceFiles="%(ShareSource.FullPath)" DestinationFiles="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs" />
     <ItemGroup>
       <Compile Remove="@(ShareSource)" />
       <Compile Include="$(IntermediateOutputPath)AnalyzerShared\%(ShareSource.Filename).cs" />

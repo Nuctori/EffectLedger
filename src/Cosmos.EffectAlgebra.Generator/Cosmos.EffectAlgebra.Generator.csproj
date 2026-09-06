@@ -46,11 +46,13 @@
 
   <!-- 构建期从 L1 派生命名空间改写副本：namespace Cosmos.EffectAlgebra[.X] -> Cosmos.EffectAlgebra.Generator.Shared[.X]，
        写入 IntermediateOutputPath\GeneratorShared\，作为生成器自包含编译单元（不触碰 L1 本体；L1 仍是唯一事实来源）。 -->
+  <!-- 【QED-C1b 修复】同 Analyzer 侧：WriteLinesToFile 对非 ASCII 有损 ⇒ Copy 字节级副本 + #if GENERATOR_SHARED。 -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);GENERATOR_SHARED</DefineConstants>
+  </PropertyGroup>
   <Target Name="PrepareGeneratorSharedSources" BeforeTargets="CoreCompile" Inputs="@(ShareSource)" Outputs="@(ShareSource->'$(IntermediateOutputPath)GeneratorShared\%(Filename).cs')">
     <MakeDir Directories="$(IntermediateOutputPath)GeneratorShared" />
-    <WriteLinesToFile File="$(IntermediateOutputPath)GeneratorShared\%(ShareSource.Filename).cs"
-                      Lines="$([System.IO.File]::ReadAllText('%(ShareSource.FullPath)').Replace('namespace Cosmos.EffectAlgebra', 'namespace Cosmos.EffectAlgebra.Generator.Shared'))"
-                      Overwrite="true" />
+    <Copy SourceFiles="%(ShareSource.FullPath)" DestinationFiles="$(IntermediateOutputPath)GeneratorShared\%(ShareSource.Filename).cs" />
     <ItemGroup>
       <Compile Remove="@(ShareSource)" />
       <Compile Include="$(IntermediateOutputPath)GeneratorShared\%(ShareSource.Filename).cs" />

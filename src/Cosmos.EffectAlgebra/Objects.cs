@@ -2,7 +2,13 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 // L1 纯代数核心：Godot 类型（Rid/StringName）以内部原语别名替代，保持零 Godot 依赖。
 // 映射层（§7）负责在 Godot 实际类型与这些原语间转换（见 LANDING_PLAN §3.11）。

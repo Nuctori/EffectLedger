@@ -2,7 +2,13 @@
 using System.Collections.Immutable;
 using System.Linq;
 
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 // 迭代03：§7 Godot API ↔ Claim 白名单 + §8.1 release-class 数据层。
 // L1 零 Godot 依赖：API 名用字符串、resource 用 ResourceId 构造子、scope 用 ScopeId.Shell()/Global() 表示

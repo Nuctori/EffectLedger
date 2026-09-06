@@ -1,5 +1,11 @@
 // Numeric.cs — PDR §3.1.5a/§3.1.5b/§3.1.5c 实现：ℕ*/区间/DeviationVal 的 ⊤-闭环代数载体。LANDING_PLAN §3.1：L1 纯代数核心（零 Godot 依赖）。
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 /// <summary>
 /// §3.1.5a — 扩展自然数 ℕ* = ℕ ∪ {⊤}。⊤ 为上界标记（非 IEEE ∞，永不崩溃、永不 NaN/发散）。

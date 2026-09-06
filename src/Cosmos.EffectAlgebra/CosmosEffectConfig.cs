@@ -7,7 +7,13 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Text.Json;
 
+#if ANALYZER_SHARED
+namespace Cosmos.EffectAlgebra.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace Cosmos.EffectAlgebra.Generator.Shared;
+#else
 namespace Cosmos.EffectAlgebra;
+#endif
 
 /// <summary>cosmos.effect.json 可扩展白名单（P2）。文件不存在 ⇒ 回落内置 All。</summary>
 public static class CosmosEffectConfig
