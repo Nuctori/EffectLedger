@@ -197,7 +197,20 @@
       扩展 API EAA0901=error 构建红 + ExtPaired 不误报 + 有效配置零 EAA0701）。门禁 699 全绿（+6），
       pack 五包走查通过。EAA0701 已登记 README ② severity 六行/能力表/③ 扩展说明/诚实边界 #12
       （L3 半边接线）+ templates/README；文档全量收口（③ 真接线章节重写 + #12 关闭）按拆分归 C1d。
-    - [ ] **C1c** L2 生成器消费 additionalTextsProvider（缓存键含配置文本；合并白名单参与 emit）。
+    - [x] **C1c** L2 生成器消费 additionalTextsProvider ✅ 2026-09-06
+      管线：additionalTextsProvider（文件名 cosmos.effect.json）→ 文本 Collect → 与标注方法 Combine
+      （缓存键含配置文本，文本变更⇒重跑）；解析/碰撞失败（FormatException / MergedWith
+      InvalidOperationException）⇒ EAA0701（generator 侧同契约 ID 描述符，与 L3 侧 QED-C1b 同语义：
+      该文件扩展整体弃用、基础白名单不受影响、绝不静默）且扩展-only 方法回落基础路径。
+      扩展-only 方法 emit 字面量 Claims（配置解析限契约面 6 资源 × 4 scope，全 public 类型消费方可
+      构造；运行期枚举的 All 不含扩展项，字面量内嵌是唯一正确形态）；基础表命中方法维持运行期
+      枚举 body（零变化）。
+      实现坑（记录）：①生成器工程经 ProjectReference 可见真实 L1，其命名空间是本文件命名空间的
+      父级 ⇒ L1 来源类型必须以 Cosmos.EffectAlgebra.Generator.Shared. 前缀完全限定（父命名空间解析
+      优先于 using，裸名会静默绑定真实 L1 类型）；②ShareSource 增量缓存需清 obj 才刷新；
+      ③RS2008 随分析器侧同款 NoWarn；④ApiMapping 为 struct ⇒ TryGetValue 后用 bool 标记非空。
+      钉 QedP2C1cGeneratorAdditionalFilesPins 3 枚（扩展-only 字面量 emit + 基础不受影响 /
+      坏配置 EAA0701 loud + 基础路径保留 / 无配置零诊断原行为）。门禁 702 全绿（+3）。
     - [ ] **C1d** 文档收口：README ③ 白名单扩展章节改真接线说明、诚实边界 #12 解决标记、
           templates/effect-script.json 样例核对。
 - [ ] **C2** `ResetDiagnostics` 生产接线（长会话自动调用点）或砍（诚实边界 #19）——二选一。
