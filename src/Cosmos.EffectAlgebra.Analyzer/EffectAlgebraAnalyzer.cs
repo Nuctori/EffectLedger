@@ -183,8 +183,10 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
     }
 
     // 配置文件契约名：仅认文件名 cosmos.effect.json（大小写不敏感，跨 OS 稳定）；目录深度不限。
+    // 【跨平台】Linux 上 \ 是合法文件名字符（非分隔符）——统一归一为 / 后再取文件名；
+    // AdditionalFiles 的路径分隔符随宿主工程书写习惯（Win 工程 \、Linux 工程 /），两侧都要能匹配。
     private static bool IsConfigFile(string path) =>
-        string.Equals(Path.GetFileName(path), "cosmos.effect.json", StringComparison.OrdinalIgnoreCase);
+        string.Equals(Path.GetFileName(path.Replace('\\', '/')), "cosmos.effect.json", StringComparison.OrdinalIgnoreCase);
 
     private static Diagnostic ConfigDiagnostic(string path, string message) =>
         Diagnostic.Create(ConfigInvalid,

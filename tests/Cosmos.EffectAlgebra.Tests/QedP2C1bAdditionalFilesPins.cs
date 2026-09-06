@@ -115,13 +115,15 @@ public sealed class QedP2C1bAdditionalFilesPins
               ]
             }
             """;
-        var diags = await RunAnalyzer(Source,
-            Config(dup, @"a\proj1\cosmos.effect.json"), Config(dup, @"b\proj2\cosmos.effect.json"));
+        // 路径用 Path.Combine 构造（平台正确：Linux 上 \ 不是分隔符，GetFileName 会失效）
+        var path1 = System.IO.Path.Combine("a", "proj1", "cosmos.effect.json");
+        var path2 = System.IO.Path.Combine("b", "proj2", "cosmos.effect.json");
+        var diags = await RunAnalyzer(Source, Config(dup, path1), Config(dup, path2));
 
         var configDiag = Assert.Single(diags.Where(d => d.Id == "EAA0701"));
         Assert.Contains("白名单扩展碰撞", configDiag.GetMessage());
         Assert.Contains("My_A", configDiag.GetMessage());
-        Assert.Equal(@"a\proj1\cosmos.effect.json", configDiag.Location.GetLineSpan().Path);
+        Assert.Equal(path1, configDiag.Location.GetLineSpan().Path); // 碰撞归属首个配置文件
     }
 
     // ── 测试基建（与 ProdAuditBatch4ToolingTests 同型拷贝 + AnalyzerOptions 通道，保持测试文件自包含）──
