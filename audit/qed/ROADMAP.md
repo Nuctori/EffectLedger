@@ -229,8 +229,18 @@
 
 ## P3 形式化验证（QED 主线）
 
-- [ ] **D1** 选型 Dafny 或 Lean4；验证最小切片：NatStar ⊤ 闭包 + 溢出⇒⊤；Interval 不变量
-      （lo≤hi / Default[1,1] / Merge join-semilattice）。
+- [x] **D1** 选型 + 最小切片验证 ✅ 2026-09-07
+  - **选型：Dafny 4.11**（dotnet tool 安装）。理由：语义贴近 C#（纯函数 + 前置/后置条件），
+    ulong 溢出⇒⊤ 的保守闭合作数学模型可直接表达；Lean4 表达力更强但与 C# 无直接通道、建模范式
+    成本高一个量级。求解器 Z3 4.12.1（GitHub release，置于 ~/.dotnet/tools/z3/bin/）。
+  - **形式规约**：`formal/CosmosEffectAlgebra.dfy`（被验证的可执行规约，D5 的 oracle）。
+    NatStar：⊤ 闭合（Add/Mul absorbing）、交换律（含溢出分支）、溢出⇒⊤ 直接形态；
+    全序（自反/反对称/传递/total）；Interval：lo≤hi 不变量、Default[1,1] 合法、
+    Merge 保持 Valid、Merge 幂等/交换/结合（join-semilattice）。
+  - **证据**：`dafny verify --solver-path ~/.dotnet/tools/z3/bin/z3-4.12.1.exe formal/CosmosEffectAlgebra.dfy`
+    ⇒ **23 verified, 0 errors**。工具环境：dafny 4.11（dotnet tool）+ z3 4.12.1（非 dotnet tool 捆绑，
+    需手动放置，`--solver-path` 显式指定最稳）。
+  - CI 接线（dafny verify 入 ci.sh）按拆分归 D5。
 - [ ] **D2** ScopeId ⊆* 偏序 + Compatible 全函数 + 对称律。
 - [ ] **D3** SignedNet 守恒律（区间含 0 ⇔ 守恒）。
 - [ ] **D4** 扫换线 == 暴力扫描等价性——把现有随机等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）升级为定理。
