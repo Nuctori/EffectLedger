@@ -308,4 +308,251 @@ module CosmosEffectAlgebra
     ensures InConflict(a, b) <==> (a == b && a != Use && a != Unknown)
   {
   }
+
+  // ═══ QED-P3-D3 — SignedNet 守恒律（区间含 0 ⇔ 守恒）═══
+  // 被建模对象：SignedNet.cs 的 ZStar（ℤ* = ℤ ∪ {⊤}，溢出⇒⊤ 保守闭合 R4-F1）与
+  // SignedInterval（[lo,hi]、ContainsZero fail-closed、Add 真求和），以及
+  // Algebra.cs NetTable 的 release 取负 [-hi,-lo] 与 IsConserved（Missing/⊤ fail-closed）。
+  // 无符号 size 复用 D1 的 NatStar/Interval 模型（create/move 贡献正号、release 贡献负号）。
+
+  // C# long 值域（ZStar.Value:long 的数学边界）
+  const LONG_MAX: int := 9223372036854775807
+  const LONG_MIN: int := -9223372036854775808
+
+  predicate ZInRange(v: int)
+  {
+    LONG_MIN <= v <= LONG_MAX
+  }
+
+  // §3.3.1 — ZStar：ℤ ∪ {⊤}。FinZ 承载可负有符号值；TopZ 为未知（R4-F1：溢出/超域不静默回卷）
+  datatype ZStar = FinZ(n: int) | TopZ
+
+  // C# 可构造态：TopZ 或值域内 FinZ（private 构造子 + long 字段保证）
+  predicate ZLegal(v: ZStar)
+  {
+    v.TopZ? || ZInRange(v.n)
+  }
+
+  // §3.3.1 加法律：任一 ⊤ ⇒ ⊤；有限+有限 越值域 ⇒ ⊤（保守，实现以同号符号翻转检测等价判定）
+  function ZAdd(a: ZStar, b: ZStar): ZStar
+  {
+    if a.TopZ? || b.TopZ? then TopZ
+    else if ZInRange(a.n + b.n) then FinZ(a.n + b.n)
+    else TopZ
+  }
+
+  // §3.3.1 — 有符号 net 区间 [lo, hi]（构造子不变量：仅两端有限时校验 lo ≤ hi）
+  datatype SignedInterval = SI(lo: ZStar, hi: ZStar)
+  {
+    predicate Valid()
+    {
+      (!lo.TopZ? && !hi.TopZ?) ==> lo.n <= hi.n
+    }
+
+    // §3.3.1/DO-9 — 区间含 0：任一端 ⊤ ⇒ false（fail-closed，需人工界定）；否则 lo ≤ 0 ≤ hi
+    predicate ContainsZero()
+    {
+      !lo.TopZ? && !hi.TopZ? && lo.n <= 0 && 0 <= hi.n
+    }
+
+    // §3.3.1 — net 真求和：逐端 ZAdd（同资源 create(+) 与 release(−) 自然抵消；⊤/溢出 ⇒ ⊤）
+    function AddZ(o: SignedInterval): SignedInterval
+    {
+      SI(ZAdd(lo, o.lo), ZAdd(hi, o.hi))
+    }
+  }
+
+  // §3.3.1 — 零区间 [0,0]（缺省净效应，含 0）
+  const ZeroSI := SI(FinZ(0), FinZ(0))
+
+  // Algebra.NetTable.ToSigned 的模型：端 ⊤ 或超 long 域 ⇒ ZStar.TopZ（R4-F1 禁 (long) 静默强转）
+  function ConvZ(v: NatStar): ZStar
+  {
+    if v.Top? || v.n > LONG_MAX then TopZ else FinZ(v.n)
+  }
+
+  // Algebra.NetTable.Negate 的端点变换：-v（v ≤ LONG_MAX ⇒ -v ≥ LONG_MIN 恒在域内）
+  // 实现注意：v.n 为 nat，须显式放宽为 int 再取负（Dafny 4 对 nat 一元负号仍按 nat 子类型检查）
+  function ConvNeg(v: NatStar): ZStar
+  {
+    if v.Top? || v.n > LONG_MAX then TopZ else FinZ(0 - (v.n as int))
+  }
+
+  // create/move 的正号贡献 [lo, hi]
+  function ToSigned(lo: NatStar, hi: NatStar): SignedInterval
+  {
+    SI(ConvZ(lo), ConvZ(hi))
+  }
+
+  // release 的负号贡献 [-hi, -lo]
+  function NegSigned(lo: NatStar, hi: NatStar): SignedInterval
+  {
+    SI(ConvNeg(hi), ConvNeg(lo))
+  }
+
+  // §3.3.1 — net 记录：某资源无净效应记录（Missing）或有符号区间（Entry）。
+  // IsConserved 的 fail-closed 双闸在此显式化：Missing ⇒ false；ContainsZero 内嵌 ⊤ ⇒ false。
+  datatype NetEntry = Missing | Entry(s: SignedInterval)
+
+  function IsConserved(e: NetEntry): bool
+  {
+    e.Entry? && e.s.ContainsZero()
+  }
+
+  // ── ℤ* 加法律（net 与 claim 枚举序无关的代数前提——NetTable.Compute 依赖之）──
+  lemma ZAddTopAbsorbing(a: ZStar)
+    ensures ZAdd(a, TopZ) == TopZ && ZAdd(TopZ, a) == TopZ
+  {
+  }
+
+  // R4-F1 直接形态：越域 ⇒ ⊤（不静默回卷翻转符号）
+  lemma ZAddOverflowYieldsTop(x: int, y: int)
+    requires ZInRange(x) && ZInRange(y) && !ZInRange(x + y)
+    ensures ZAdd(FinZ(x), FinZ(y)) == TopZ
+  {
+  }
+
+  // 加法不产出非法态（no-silent-wraparound 的类型面）
+  lemma ZAddPreservesLegal(a: ZStar, b: ZStar)
+    requires ZLegal(a) && ZLegal(b)
+    ensures ZLegal(ZAdd(a, b))
+  {
+  }
+
+  lemma ZAddCommutative(a: ZStar, b: ZStar)
+    ensures ZAdd(a, b) == ZAdd(b, a)
+  {
+  }
+
+  // 结合律只在无溢出域内成立——溢出保守代数中朴素结合律为假
+  // （反例：ZAdd(ZAdd(MAX,MAX),−MAX)=⊤ 而 ZAdd(MAX,ZAdd(MAX,−MAX))=FinZ(MAX)，
+  //   全部输入合法；中途溢出的折叠序产生保守 ⊤，另一序得精确有限和——二者分歧方向恒为
+  //   「⊤ 是 fail-closed」，可靠性由 FoldZSound/FoldZTopOnTotalOverflow 承载）
+  lemma ZAddAssociativeNoOverflow(a: ZStar, b: ZStar, c: ZStar)
+    requires a.FinZ? && b.FinZ? && c.FinZ?
+         && ZInRange(a.n + b.n) && ZInRange(b.n + c.n) && ZInRange(a.n + b.n + c.n)
+    ensures ZAdd(ZAdd(a, b), c) == ZAdd(a, ZAdd(b, c))
+  {
+  }
+
+  lemma ZAddIdentity(a: ZStar)
+    requires ZLegal(a)
+    ensures ZAdd(a, FinZ(0)) == a
+  {
+  }
+
+  // ── net 折叠的可靠性（NetTable.Compute 按 AllClaims 迭代序累加的正当性）──
+  // 溢出⇒⊤ 使朴素结合律失效 ⇒ 序无关性不取「任意序同结果」强形态，而取可靠形态：
+  // 有限折叠结果恒等于精确数学和（真⇒可信）；真和越域 ⇒ 任何折叠序都得 ⊤（fail-closed 恒检出）。
+
+  // 全端有限且在值域内（合法 claim size 序列的形态）
+  predicate AllInRange(s: seq<ZStar>)
+  {
+    forall i | 0 <= i < |s| :: !s[i].TopZ? && ZInRange(s[i].n)
+  }
+
+  function SumZ(s: seq<ZStar>): int
+  {
+    if |s| == 0 then 0
+    else SumZ(s[..|s|-1]) + (if s[|s|-1].TopZ? then 0 else s[|s|-1].n)
+  }
+
+  function FoldZ(s: seq<ZStar>): ZStar
+  {
+    if |s| == 0 then FinZ(0)
+    else ZAdd(FoldZ(s[..|s|-1]), s[|s|-1])
+  }
+
+  // 可靠性主定理：折叠结果要么 ⊤（保守报警），要么恰为精确数学和（有限结果可信）
+  lemma FoldZSound(s: seq<ZStar>)
+    requires AllInRange(s)
+    ensures FoldZ(s) == TopZ || FoldZ(s) == FinZ(SumZ(s))
+  {
+    if |s| > 0
+    {
+      AllInRangeBounded(s, |s| - 1);
+      FoldZSound(s[..|s|-1]);
+    }
+  }
+
+  // 真和越值域 ⇒ 任何折叠序都检出（R4-F1 不静默回卷的全称形态）。
+  // 前缀和可在域内而总和越域（末步溢出）——正确性不靠同前提前缀递归，靠 FoldZSound 分支分析。
+  lemma FoldZTopOnTotalOverflow(s: seq<ZStar>)
+    requires AllInRange(s) && !ZInRange(SumZ(s))
+    ensures FoldZ(s) == TopZ
+  {
+    if |s| > 0
+    {
+      AllInRangeBounded(s, |s| - 1);
+      FoldZSound(s[..|s|-1]);
+      assert SumZ(s) == SumZ(s[..|s|-1]) + s[|s|-1].n;
+    }
+  }
+
+  // AllInRange 对有界前缀封闭（引理递归的前置搬运；k ≤ |s| 显式约束防空序列负界）
+  lemma AllInRangeBounded(s: seq<ZStar>, k: nat)
+    requires AllInRange(s) && k <= |s|
+    ensures AllInRange(s[..k])
+  {
+  }
+
+  // 区间级加法交换（NetTable.Compute 按 AllClaims 迭代序累加，结果必须与序无关）
+  lemma AddZCommutative(x: SignedInterval, y: SignedInterval)
+    ensures x.AddZ(y) == y.AddZ(x)
+  {
+    ZAddCommutative(x.lo, y.lo);
+    ZAddCommutative(x.hi, y.hi);
+  }
+
+  // ── ContainsZero 契约面：「区间含 0 ⇔ 守恒」的判定⇔ 与 fail-closed 闸 ──
+  lemma ContainsZeroIff(s: SignedInterval)
+    ensures s.ContainsZero() <==> (!s.lo.TopZ? && !s.hi.TopZ? && s.lo.n <= 0 && 0 <= s.hi.n)
+  {
+  }
+
+  lemma TopEndFailsClosed(s: SignedInterval)
+    requires s.lo.TopZ? || s.hi.TopZ?
+    ensures !s.ContainsZero()
+  {
+  }
+
+  lemma ZeroSIContainsZero()
+    ensures ZeroSI.ContainsZero()
+  {
+  }
+
+  // ── 转换保持合法性（有限端单调；超域端 ⇒ TopZ，构造子不比较 ⊤ 端）──
+  lemma ToSignedValid(lo: NatStar, hi: NatStar)
+    requires lo.Le(hi)
+    ensures (ToSigned(lo, hi)).Valid()
+  {
+  }
+
+  lemma NegSignedValid(lo: NatStar, hi: NatStar)
+    requires lo.Le(hi)
+    ensures (NegSigned(lo, hi)).Valid()
+  {
+  }
+
+  // ── 守恒律本体：create/release 精确配对 ⇒ net 区间含 0（DO-9 不报警的数学根据）──
+  // net = [a−b, b−a]，a ≤ b ⇒ 含 0（配对同 size 时进一步坍缩为 [0,0]）
+  lemma ExactPairingContainsZero(a: NatStar, b: NatStar)
+    requires !a.Top? && !b.Top? && a.n <= b.n && b.n <= LONG_MAX
+    ensures (ToSigned(a, b)).AddZ(NegSigned(a, b)).ContainsZero()
+  {
+  }
+
+  lemma ExactPairingNetsZero(a: NatStar)
+    requires !a.Top? && a.n <= LONG_MAX
+    ensures (ToSigned(a, a)).AddZ(NegSigned(a, a)) == ZeroSI
+  {
+  }
+
+  // 「区间含 0 ⇔ 守恒」全 ⇔（含 Missing / ⊤ 端 fail-closed 双闸的显式化）
+  lemma ConservationIff(e: NetEntry)
+    ensures IsConserved(e) <==>
+      (e.Entry? && !e.s.lo.TopZ? && !e.s.hi.TopZ? && e.s.lo.n <= 0 && 0 <= e.s.hi.n)
+    ensures !IsConserved(Missing)
+  {
+  }
 }

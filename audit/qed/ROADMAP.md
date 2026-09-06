@@ -259,7 +259,31 @@
   - C# 对应钉（不重复落钉）：`ScopeOrderTests`（8 标签穷举）/ `CompatibleMatrixTests`
     （25 组合矩阵）/ `QedP0A3UnknownSemanticsPins`——采样钉守实现漂移，定理守全称律；
     二者合流于 D5 的逐条对照。
-- [ ] **D3** SignedNet 守恒律（区间含 0 ⇔ 守恒）。
+- [x] **D3** SignedNet 守恒律（区间含 0 ⇔ 守恒）✅ 2026-09-07
+  - **形式规约**（`formal/CosmosEffectAlgebra.dfy` D3 段，C# 零改动）：
+    ①ZStar = ℤ ∪ {⊤}（long 值域显式入模 LONG_MIN/MAX）：⊤ 吸收、溢出⇒⊤ 直接形态（R4-F1）、
+    ZAddPreservesLegal（加法不产出非法态）、交换律、单位元；
+    ②SignedInterval：lo≤hi 不变量、ContainsZero ⇔（两端有限 ∧ lo≤0≤hi）、⊤ 端 fail-closed、
+    AddZ 真求和 + 区间级交换；
+    ③NetTable.ToSigned/Negate 转换模型（端 ⊤/超 long 域 ⇒ TopZ）+ 转换保合法；
+    ④守恒律本体：create/release 精确配对 ⇒ net 含 0（ExactPairingContainsZero）、同 size
+    配对坍缩 [0,0]（ExactPairingNetsZero）、「区间含 0 ⇔ 守恒」全 ⇔ 含 Missing/⊤ 双
+    fail-closed 闸（ConservationIff）。
+  - **发现（形式化即审计）：朴素结合律在溢出保守代数中为假**——全合法输入反例
+    `ZAdd(ZAdd(MAX,MAX),−MAX)=⊤` 而 `ZAdd(MAX,ZAdd(MAX,−MAX))=FinZ(MAX)`（一序中途溢出
+    得保守 ⊤，另一序得精确有限和）。以可靠形态定理替代：FoldZSound（折叠结果要么 ⊤ 要么
+    恰为精确数学和 ⇒ ContainsZero 判定在任意 AllClaims 迭代序下可信）+ FoldZTopOnTotalOverflow
+    （真和越 long 域 ⇒ 任何折叠序都得 ⊤ ⇒ fail-closed 恒检出）+ ZAddAssociativeNoOverflow
+    （无溢出域内结合律成立）。净效应：NetTable.Compute 的迭代序无关性取「判定可靠性」形态
+    而非「同值」形态——行为 sound（有限⇒精确、越域⇒报警、无静默回卷），无需改代码；
+    序间分歧仅现于求和超 ±2^63 的非现实规模。工具注记：Dafny 4 对 nat 一元负号仍按子类型
+    检查（`FinZ(-v.n)` 编译期红），规约侧以 `0-(v.n as int)` 显式放宽。
+  - **证据**：`dafny verify` ⇒ **67 verified, 0 errors**（D2 基线 33 + D3 新增 34 义务），
+    连续三次全新进程运行稳定（背靠背连跑曾现驻留进程计数伪影 76，以干净进程数为准）。
+    变异检查：ConvNeg 去掉取负（release 记正号）⇒ NegSignedValid / ExactPairingContainsZero /
+    ExactPairingNetsZero 等 4 义务如期红，回滚 ⇒ 复绿。
+  - C# 对应钉（不重复落钉）：`NetTableSignedTests` / `CrossTableTests`——采样钉守实现漂移，
+    定理守全称律；合流于 D5。
 - [ ] **D4** 扫换线 == 暴力扫描等价性——把现有随机等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）升级为定理。
 - [ ] **D5** C# 实现与形式规约逐条对照的性质测试（反例 shrink）；证明产物纳入 CI 门禁。
 
