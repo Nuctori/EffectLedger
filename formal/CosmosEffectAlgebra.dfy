@@ -195,4 +195,117 @@ module CosmosEffectAlgebra
     MinNAssoc(a.lo, b.lo, c.lo);
     MaxNAssoc(a.hi, b.hi, c.hi);
   }
+
+  // ═══ QED-P3-D2 — ScopeId ⊆* 偏序 + Compatible 全函数 + 对称律 ═══
+  // 被建模对象：Objects.cs 的 ScopeId（8 构造子 + IncludedIn，§3.1.3b 单一真源）
+  // 与 Algebra.cs 的 Compatible.IsCompatible（§3.2.3 全函数）。
+  // C# 侧性质钉（ScopeOrderTests 8 标签穷举 / CompatibleMatrixTests 25 组合矩阵）在此
+  // 升级为全称定理——随机采样钉覆盖有限实例，定理覆盖全域。
+
+  // §3.1.3b — ScopeId 判别联合：契约面 4（Method/Type/Scene/Global）+ C# 超集 4
+  // （Shell/Loop/Conditional/Async，P1-B4a 后 internal，模型不区分可见性——偏序律与可见性正交）。
+  // datatype 自带结构相等 =「同构造子同字段」，即 C# record Equals 的数学对应物。
+  datatype ScopeId = Method(name: string) | Type(name: string) | Scene(name: string)
+                   | Global | Loop(id: string) | Conditional(branch: string)
+                   | Async(id: string) | Shell
+  {
+    // §3.1.3b ⊑（ScopeId.IncludedIn 单一真源）：结构相等（自反）∨ other 为 Global。
+    // 【QED-A6 单向包含定稿】无「Global ⊑ X」反向析取支；跨标签/同标签异名 ⇒ false（不可比较）。
+    predicate Leq(other: ScopeId)
+    {
+      this == other || other.Global?
+    }
+  }
+
+  // ── 偏序三律 + Global 唯一最大元（ScopeOrderTests 的全称升级）──
+  lemma LeqReflexive(a: ScopeId)
+    ensures a.Leq(a)
+  {
+  }
+
+  lemma LeqAntisymmetric(a: ScopeId, b: ScopeId)
+    requires a.Leq(b) && b.Leq(a)
+    ensures a == b
+  {
+  }
+
+  lemma LeqTransitive(a: ScopeId, b: ScopeId, c: ScopeId)
+    requires a.Leq(b) && b.Leq(c)
+    ensures a.Leq(c)
+  {
+  }
+
+  // Global 唯一最大元：一切 X ⊑ Global；且 Global ⊑ X ⇒ X = Global
+  // （反向不存在 = QED-A6 对 iter55 F4 双向包含违反反对称的收口）
+  lemma GlobalUniqueMaximum(a: ScopeId)
+    ensures a.Leq(Global) && (Global.Leq(a) ==> a == Global)
+  {
+  }
+
+  // ⊑ 的可比对恰为 {(x,x)} ∪ {(x,Global)}——「按上表机械查表无未定义项、跨标签不可比」的全称形态
+  lemma LeqExactlyReflexiveOrTop(a: ScopeId, b: ScopeId)
+    ensures a.Leq(b) <==> (a == b || b.Global?)
+  {
+  }
+
+  // §3.1.1/§3.2.3 — Mode 五值（C# enum Mode 的数学对应物；datatype 构造子穷举无未定义值）
+  datatype Mode = Use | Create | Release | Move | Unknown
+
+  // §3.2.3 P4【QED-A3 定稿】— Unknown 解析为 Use（最弱兼容，fail-open；
+  // Algebra.cs Compatible.Resolve 单一真源）
+  function Resolve(m: Mode): Mode
+  {
+    if m == Unknown then Use else m
+  }
+
+  // §3.2.3 — CONFLICT 集闭合式：解析后同为非 Use 的同一 mode
+  // （= {(Create,Create),(Move,Move),(Release,Release)}；Use 对角与 Unknown→Use 不冲突）
+  predicate InConflict(a: Mode, b: Mode)
+  {
+    var aa := Resolve(a);
+    var bb := Resolve(b);
+    aa == bb && aa != Use
+  }
+
+  // §3.2.3 — Compatible 全函数（正枚举形态，与 Algebra.cs IsCompatible 逐条对应；
+  // Dafny 函数天然全定义 = P2「16+9 对全覆盖无未定义项」的构造事实）
+  function IsCompatible(a: Mode, b: Mode): bool
+  {
+    var aa := Resolve(a);
+    var bb := Resolve(b);
+    aa == Use || bb == Use
+    || (aa == Create && bb == Release) || (aa == Release && bb == Create)
+    || (aa == Create && bb == Move)    || (aa == Move && bb == Create)
+    || (aa == Release && bb == Move)   || (aa == Move && bb == Release)
+  }
+
+  // (P2) 闭包式：Compatible ⟺ ¬CONFLICT——PDR「闭合性可机械验证」的机器证明
+  lemma CompatibleClosedForm(a: Mode, b: Mode)
+    ensures IsCompatible(a, b) <==> !InConflict(a, b)
+  {
+  }
+
+  // (P1) 对称律
+  lemma CompatibleSymmetric(a: Mode, b: Mode)
+    ensures IsCompatible(a, b) == IsCompatible(b, a)
+  {
+  }
+
+  // (P4) Unknown ≡ Use（QED-A3 定稿的 Compatible 维契约；CompatibleMatrixTests 全 (Unknown,*) 行）
+  lemma UnknownEqualsUse(a: Mode)
+    ensures IsCompatible(Unknown, a) == IsCompatible(Use, a)
+  {
+  }
+
+  // (P3) 良性生命周期配对：create+release 不误判冲突（iter23 修正的机器证明）
+  lemma BenignLifecyclePairs()
+    ensures IsCompatible(Create, Release) && IsCompatible(Release, Create)
+  {
+  }
+
+  // CONFLICT 集恰为非 Use/Unknown 的对角三对（CompatibleMatrixTests 25 组合矩阵的全称升级）
+  lemma ConflictIsDiagonal(a: Mode, b: Mode)
+    ensures InConflict(a, b) <==> (a == b && a != Use && a != Unknown)
+  {
+  }
 }

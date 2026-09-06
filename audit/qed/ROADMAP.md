@@ -241,7 +241,24 @@
     ⇒ **23 verified, 0 errors**。工具环境：dafny 4.11（dotnet tool）+ z3 4.12.1（非 dotnet tool 捆绑，
     需手动放置，`--solver-path` 显式指定最稳）。
   - CI 接线（dafny verify 入 ci.sh）按拆分归 D5。
-- [ ] **D2** ScopeId ⊆* 偏序 + Compatible 全函数 + 对称律。
+- [x] **D2** ScopeId ⊆* 偏序 + Compatible 全函数 + 对称律 ✅ 2026-09-07
+  - **形式规约**（`formal/CosmosEffectAlgebra.dfy` D2 段，C# 零改动——既有钉已覆盖的行为升级为全称定理）：
+    ①ScopeId 8 构造子（契约面 4 + 超集 4，可见性与偏序律正交不入模）datatype 结构相等 =
+    C# record Equals；`Leq` = `this == other || other.Global?`（Objects.cs IncludedIn 逐字对应，
+    QED-A6 单向包含定稿的机器形态）。定理：自反 / 反对称 / 传递 / Global 唯一最大元
+    （`Global ⊑ X ⇒ X = Global`——iter55 F4 双向包含违反反对称的收口）/ 可比对恰为
+    `{(x,x),(x,Global)}`（「机械查表无未定义项、跨标签不可比」的全称形态）。
+    ②Mode 五值 datatype + `Resolve(Unknown)=Use`（QED-A3）+ `InConflict` 闭合式
+    （解析后同非 Use 对角）+ `IsCompatible` 正枚举（Algebra.cs 逐条对应；Dafny 函数天然全定义
+    = P2「25 对全覆盖无未定义项」的构造事实）。定理：闭包式 `Compatible ⟺ ¬CONFLICT`
+    （PDR §3.2.3「闭合性可机械验证」的机器证明）/ 对称律 / Unknown ≡ Use /
+    create+release 良性配对 / CONFLICT 恰为非 Use/Unknown 对角三对。
+  - **证据**：`dafny verify` ⇒ **33 verified, 0 errors**（D1 基线 23 + D2 新增 10）。
+    变异检查（防纸面绿）：`InConflict` 去掉 `!= Use` 守卫 ⇒ 31 verified 2 errors
+    （ClosedForm/ConflictIsDiagonal 如期红），回滚 ⇒ 33 verified 0 errors。
+  - C# 对应钉（不重复落钉）：`ScopeOrderTests`（8 标签穷举）/ `CompatibleMatrixTests`
+    （25 组合矩阵）/ `QedP0A3UnknownSemanticsPins`——采样钉守实现漂移，定理守全称律；
+    二者合流于 D5 的逐条对照。
 - [ ] **D3** SignedNet 守恒律（区间含 0 ⇔ 守恒）。
 - [ ] **D4** 扫换线 == 暴力扫描等价性——把现有随机等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）升级为定理。
 - [ ] **D5** C# 实现与形式规约逐条对照的性质测试（反例 shrink）；证明产物纳入 CI 门禁。
