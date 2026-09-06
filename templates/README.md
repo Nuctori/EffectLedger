@@ -15,18 +15,18 @@ dotnet add package Cosmos.EffectAlgebra.Runtime
 
 ## 白名单扩展
 
-`cosmos.effect.json` 放在消费工程并接入 AdditionalFiles：
+`cosmos.effect.json` 放在消费工程并接入 AdditionalFiles（可直接复制的样板见 `templates/cosmos.effect.json`）：
 
 ```json
 { "extraMappings": [{ "api": "MyPool.Spawn", "claims": [{ "kind": "occupy", "resource": { "memory": 1 }, "mode": "create", "scope": { "scene": "Battle" } }] }] }
 ```
 
 ```xml
-<!-- .csproj：AdditionalFiles 是 L3 分析器消费本文件的唯一通道 -->
+<!-- .csproj：AdditionalFiles 是 L3 分析器与 L2 生成器共同消费本文件的唯一通道 -->
 <AdditionalFiles Include="cosmos.effect.json" />
 ```
 
-> **接线状态（QED-C1b）**：L3 分析器已自动消费该文件——经 AdditionalFiles 接入即生效（扩展 API 参与 EAA* 诊断，触发前提仍是接收者绑定 Godot 命名空间，见主 README ③）；解析/schema/Canonical 碰撞错误编译期报 **EAA0701**（扩展整体弃用、基础白名单不受影响）。**L2 生成器尚未消费**（emit 不含扩展 API）；自写 CI 严格门时请在调用方传 `LoadExtra(path, strict: true)` / `AllWithExtra(...)`（cosmos audit CLI 本身不消费该文件，也无 strict 开关）。
+> **接线状态（QED-C1b/C1c，全链路已通）**：L3 分析器与 L2 生成器均已自动消费该文件——经 AdditionalFiles 接入即生效（扩展 API 参与 EAA* 诊断，触发前提仍是接收者绑定 Godot 命名空间，见主 README ③；L2 为扩展 API emit 每方法 Signature，扩展-only 方法以字面量 Claims 内嵌）；解析/schema/Canonical 碰撞错误编译期报 **EAA0701**（该文件扩展整体弃用、基础白名单不受影响；L3/L2 同契约 ID 各报一次）。自写 CI 严格门时请在调用方传 `LoadExtra(path, strict: true)` / `AllWithExtra(...)`（cosmos audit CLI 审计的是 effect-script 契约剧本，不消费本文件）。
 
 ## AI 闭环
 

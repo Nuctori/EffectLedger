@@ -211,8 +211,11 @@
       ③RS2008 随分析器侧同款 NoWarn；④ApiMapping 为 struct ⇒ TryGetValue 后用 bool 标记非空。
       钉 QedP2C1cGeneratorAdditionalFilesPins 3 枚（扩展-only 字面量 emit + 基础不受影响 /
       坏配置 EAA0701 loud + 基础路径保留 / 无配置零诊断原行为）。门禁 702 全绿（+3）。
-    - [ ] **C1d** 文档收口：README ③ 白名单扩展章节改真接线说明、诚实边界 #12 解决标记、
-          templates/effect-script.json 样例核对。
+    - [x] **C1d** 文档收口 ✅ 2026-09-06：README ③ 改全链路真接线说明（L3 诊断 + L2 字面量 emit、
+          EAA0701 双侧同契约 ID、模板指引）；诚实边界 #12 关闭（钉 5+4+3 + 真实构建门）；
+          templates/README 白名单扩展节同步全链路状态；新增 templates/cosmos.effect.json 可复制样板。
+          **C1 全部完成（决策 WIRE + C1a/C1b/C1c/C1d）。**
+- [x] **C1** `cosmos.effect.json` 真接线 ✅ 2026-09-06（见 C1-决策 + C1a–C1d）。
 - [ ] **C2** `ResetDiagnostics` 生产接线（长会话自动调用点）或砍（诚实边界 #19）——二选一。
 
 ## P3 形式化验证（QED 主线）
