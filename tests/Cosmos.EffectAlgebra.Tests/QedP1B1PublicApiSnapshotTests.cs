@@ -53,9 +53,9 @@ public class QedP1B1PublicApiSnapshotTests
         var blocks = new SortedDictionary<string, string[]>(StringComparer.Ordinal);
         foreach (var t in asm.GetExportedTypes())
         {
-            if (t.Namespace is null ||
-                !(t.Namespace == "Cosmos.EffectAlgebra" || t.Namespace.StartsWith("Cosmos.EffectAlgebra.", StringComparison.Ordinal)))
-                continue;
+            // 【P5.3-L10】不再按命名空间过滤：导出类型全集入快照（防「新命名空间里的公共类=冻结面外
+            // 膨胀」的枚举缝隙——红队 P5.2-L10）。当前全部导出类型本就在 Cosmos.EffectAlgebra* 下，
+            // 过滤移除应为零差异（历史上证明该过滤是冗余防御）。
             blocks[$"{KindOf(t)} {t.FullName}"] = Members(t).Select(m => "  " + m).ToArray();
         }
         return string.Join("\n", blocks.SelectMany(kv => new[] { kv.Key }.Concat(kv.Value))) + "\n";
