@@ -7,11 +7,17 @@ dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror --no-incremental 
 # qed-p3（D4d/D5）：形式规约验证入门禁（依赖与环境同 ci.sh 注记）
 $z3 = if ($env:DAFNY_Z3) { $env:DAFNY_Z3 } else { "$HOME/.dotnet/tools/z3/bin/z3-4.12.1.exe" } # P5.2-M4：与 ci.sh 默认值对称
 dafny verify --solver-path $z3 formal/CosmosEffectAlgebra.dfy formal/CosmosSweepLine.dfy
+$dafnyExit = $LASTEXITCODE       # P5.2-N3：dafny 失败不得被后续测试退出码掩盖
+# qed-gate2：三测试工程顺序跑（P5.2-N3：逐工程检查退出码——只看最后一个会吞前面的红）
 dotnet test tests/Cosmos.EffectAlgebra.Tests/Cosmos.EffectAlgebra.Tests.csproj -c Release --no-build
+$t1 = $LASTEXITCODE
 dotnet test tests/Cosmos.EffectAlgebra.Runtime.Tests/Cosmos.EffectAlgebra.Runtime.Tests.csproj -c Release --no-build
+$t2 = $LASTEXITCODE
 dotnet test samples/GodotIntegration/SampleGame.csproj -c Release --no-build
-$gateExit = $LASTEXITCODE        # qed-gate：先存测试退出码——shutdown 不得掩盖门禁红
+$t3 = $LASTEXITCODE
 # qed-gate（2026-09-06）：同 ci.sh——防本机长会话 MSBuild/Roslyn 服务器累积致并行测试宿主 OOM 偶红
 dotnet build-server shutdown 2>$null
+$gateExit = 0
+foreach ($c in @($dafnyExit, $t1, $t2, $t3)) { if ($c -ne 0) { $gateExit = $c; break } }
 if ($gateExit -eq 0) { Write-Host "CI audit gate: PASS (0 errors, 0 test failures; AnalyzerConsumer 1 条 EAA0901 故意泄漏警告为样例设计)" }
 exit $gateExit

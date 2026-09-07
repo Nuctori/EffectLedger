@@ -63,6 +63,10 @@ major）/ M8 OK（行为级冻结标记：#6/#7/#10/#11/#15/#16）/ H2 短期 OK
 #8b FAQ ✅ / 消费#6 分组速查 ✅ / L10 快照枚举缝隙 ✅。
 **H2 无争议加固已落地（2026-09-08）**：样例程序集改名 `SampleGame` →
 `Cosmos.EffectAlgebra.SampleGame`（AssemblyName + IVT 同步；防高频词撞名伪造友元）。
+**已知环境问题（2026-09-08，不阻塞）**：ci.ps1（PowerShell 路径）在本机出现过一次
+  testhost 挂起（启动后 10 分钟无进展，非 OOM）；**主门禁为 bash ci.sh**（自动化实际使用，
+  已多轮验证稳定），ci.ps1 为 Windows 本地备用路径——挂起成因待查（疑与 PowerShell 管道
+  下 spawn-build 测试的 stdio 处理相关），期间请用 bash ci.sh。
 **余项（需人类决策）**：H2 强签名 vs 现状（密钥管理难题：OSS 提交私钥即自废武功）/
 H3 扫换线算法对照（D4c 模型 vs C# Audit 的直译 oracle）/
 消费#6 边界重组 / #8b FAQ / L10 快照枚举缝隙 / L12 性能钉分档。 消费#6 深度重构（逐条影响行）/ L12 性能钉分档。
