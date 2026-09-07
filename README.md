@@ -267,24 +267,24 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 ## 诚实边界（故意留债 · 测试守住不漂移）
 
 1. ~~`Sequence≡Parallel≡Union` 四名一实~~ **已解决（P1-B3）**：Sequence/Parallel 别名已从 `Combination` 删除，组合唯一入口 `Signature.Union`（幂等并，无时序/并行语义）；原 Parallel 的 PARA_CONFLICT 前置守卫随删——冲突检测权威 = `Audit` gate(3)；时序语义若未来需要归 F 轨
-2. `Size ?? Interval.Default` 散布 — `§3.1.5a DO-1` 设计锁，新消费点禁再散布
-3. `Audit` 内联 sweep 与 `NetTable`/`Peak` 两份物理代码 — `D08-001/002` 钉住等价，不做重构
-4. `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI
-5. `At(t)` 是**集合投影**（在场语义：同刻逐字段相同的重复事件去重计 1，与事件个数无关）；并发计数/峰值语义以 `Audit` 扫换线为准（计数语义：net/Peak 逐事件累加）——双语义是多重性载体决策（QED-A5：集合刻意幂等 + 重复构造即拒，多重性走事件序列/size×ω）的直接后果而非缺陷：At 回答「t 时刻有哪些 claim 在场」，Audit 回答「各占多少」。自建核对脚本请勿用 `At`+`Derived.Peak` 对账峰值（对照钉 `QedP0A2ProjectionContractTests`）
-6. `NegativeDip`/`CompatibleConflict` 逐采样点上报（时间序列语义），仅 `PeakExceeded` 做问题集去重（每资源首个反例）——三门去重口径不同是显式设计，喂 AI 回修前请自行按 `(Kind,Resource)` 去重【冻结：三门去重口径，变更=semver major】
-7. `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据
-8. `EAA0303/0304` 是意图提示而非数学缺陷：哨兵资源上惯用形态（`DrawRect`×2、`MoveAndSlide`+`GetSlideCollisionCount`）会触发，按需 `[EffectOverride("理由")]`（它们不豁免 EAA0901）
-9. L3 仅分析**方法体**：构造函数、属性访问器、`using var` 形态不在注册范围；`Position.get/set` 等属性形态白名单条目对 L3 无效——构造期泄漏不在静态覆盖内
-10. Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）【冻结：单线程/单场景/不可重注册契约，变更=semver major】
-11. Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威【冻结：两层口径边界，变更=semver major】
+2. **[影响：开发者口径——新消费点禁止再散布]** `Size ?? Interval.Default` 散布 — `§3.1.5a DO-1` 设计锁，新消费点禁再散布
+3. **[影响：无用户可见影响（等价钉守住，勿重构）]** `Audit` 内联 sweep 与 `NetTable`/`Peak` 两份物理代码 — `D08-001/002` 钉住等价，不做重构
+4. **[影响：违例归因取首个贡献者，定位仅参考]** `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI
+5. **[影响：勿用 At+Peak 对账（核对脚本向）]** `At(t)` 是**集合投影**（在场语义：同刻逐字段相同的重复事件去重计 1，与事件个数无关）；并发计数/峰值语义以 `Audit` 扫换线为准（计数语义：net/Peak 逐事件累加）——双语义是多重性载体决策（QED-A5：集合刻意幂等 + 重复构造即拒，多重性走事件序列/size×ω）的直接后果而非缺陷：At 回答「t 时刻有哪些 claim 在场」，Audit 回答「各占多少」。自建核对脚本请勿用 `At`+`Derived.Peak` 对账峰值（对照钉 `QedP0A2ProjectionContractTests`）
+6. **[影响：喂 AI 回修前按 (Kind,Resource) 去重]** `NegativeDip`/`CompatibleConflict` 逐采样点上报（时间序列语义），仅 `PeakExceeded` 做问题集去重（每资源首个反例）——三门去重口径不同是显式设计，喂 AI 回修前请自行按 `(Kind,Resource)` 去重【冻结：三门去重口径，变更=semver major】
+7. **[影响：跨 API 家族加载泄漏可能漏报（Runtime 兜底）]** `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据
+8. **[影响：惯用形态会误报，需 [EffectOverride] 豁免]** `EAA0303/0304` 是意图提示而非数学缺陷：哨兵资源上惯用形态（`DrawRect`×2、`MoveAndSlide`+`GetSlideCollisionCount`）会触发，按需 `[EffectOverride("理由")]`（它们不豁免 EAA0901）
+9. **[影响：构造期/属性形态泄漏不在静态覆盖内]** L3 仅分析**方法体**：构造函数、属性访问器、`using var` 形态不在注册范围；`Position.get/set` 等属性形态白名单条目对 L3 无效——构造期泄漏不在静态覆盖内
+10. **[影响：多线程调用会坏；场景重载须新建实例]** Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）【冻结：单线程/单场景/不可重注册契约，变更=semver major】
+11. **[影响：跨 scope 泄漏需以剧本审计兜底]** Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威【冻结：两层口径边界，变更=semver major】
 12. `cosmos.effect.json` 白名单扩展 **L3 分析器已真接线（QED-C1b）**：`<AdditionalFiles Include="cosmos.effect.json" />` 后扩展 API 参与 L3 泄漏/冲突分析；解析/schema/Canonical 碰撞错误报 **EAA0701**（该文件扩展整体弃用 + 基础白名单不受影响，绝不静默；碰撞时合并集回退基础表；诊断 ID 公共契约面，2026-09-06 登记）。钉：`QedP2C1bAdditionalFilesPins`（5 枚）+ `tests/GateFixture/ExtendedWhitelist` 真实构建门。**L2 生成器亦已真接线（QED-C1c）**：扩展 API 的每方法 Signature 以字面量 Claims emit（扩展-only）；全链路（L3 诊断 + L2 emit）已受保护。合计钉：`QedP2C1bAdditionalFilesPins`（5）+ `QedP2C1aMergedWhitelistPins`（4）+ `QedP2C1cGeneratorAdditionalFilesPins`（3）+ `tests/GateFixture/ExtendedWhitelist` 真实构建门（接线被拔即红）
 13. ~~L1 包 net9.0 TFM 仅含代数切片~~ **已解决（P1-B5）**：net9.0 缩减切片已删除（A2-06 分析器自包含后为残迹），包族（L1/Generator/Runtime）收敛 `net8.0;net10.0`——同包各 TFM 同一公共面（QedP1B1 快照唯一准绳）；net9 消费者按 NuGet 就近原则消费 net8.0 资产。分析器包保持 net9.0（编译器宿主对齐，自包含、非消费 TFM）
-14. L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
-15. `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）【冻结：往返闭合前提，变更=semver major】
-16. `O(E·K·log E)` 以「互异 (资源,scope) 组数 D 有界」为前提；逐事件独立 scope/resource 的脚本 gate(1)/(3) 每采样点扫 net/grp 字典 ⇒ 整体 O(S·D) 超线性（实测 4 倍数据 ≈6x，曲线钉 `ProdAuditR4AuditScaleTests`）。`NegativeDip`/`CompatibleConflict` 逐采样点上报在此区间输出可达 O(S·G) 条（R4-JD-05/06）【冻结：性能特征承诺，恶化=semver major】
+14. **[影响：IDE 内可能短暂少生成（全量构建恒正确）]** L2 生成器在 IDE 增量编辑的极端序列下可能短暂少生成（transform 内语义绑定不在缓存键，Roslyn 文档明示的受限模式）；全量 `dotnet build` 恒正确——CI 门不受影响（R3-CG-07）
+15. **[影响：混 scope 剧本 ToJson 会被拒（自留 C# 数据）]** `ToJson → Parse` 往返对 C# 手工构建剧本只在「claim scope == 所属 event scope」时闭合（JSON 契约的单一真相即事件级 scope）；C# API 允许构造混 scope 剧本（审计语义按 claim 各自 scope 生效），导出再解析会被拒——混 scope 请自留 C# 数据（R3-L1-07）【冻结：往返闭合前提，变更=semver major】
+16. **[影响：超大异构脚本审计变慢（O(S·D) 超线性）]** `O(E·K·log E)` 以「互异 (资源,scope) 组数 D 有界」为前提；逐事件独立 scope/resource 的脚本 gate(1)/(3) 每采样点扫 net/grp 字典 ⇒ 整体 O(S·D) 超线性（实测 4 倍数据 ≈6x，曲线钉 `ProdAuditR4AuditScaleTests`）。`NegativeDip`/`CompatibleConflict` 逐采样点上报在此区间输出可达 O(S·G) 条（R4-JD-05/06）【冻结：性能特征承诺，恶化=semver major】
 17. **Runtime 异常方言表**（R4-RH-05/15）：JSON 契约=`FormatException`；L1 参数违约=`ArgumentException`（含 `ArgumentOutOfRangeException` 子类）；Runtime 装载校验=`LoadValidationException`；Runtime 状态机/装配前置=`InvalidOperationException`。catch 面按表接，跨族混接会漏。**【QED-A4 冻结 2026-09-06】**自此刻四族方言为冻结契约（L1 族钉 `QedP0A4ContractFreezePins`，Runtime 族钉 Runtime.Tests 既有套件）；变更=semver major
 18. ~~契约面子集~~ **已解决（P1-B4a/B4b）**：非契约面的 C# 超集本体（Resource 侧 Tree/Self/Physics/Disk/Signal/AudioMixer/Callback/Network/Input + NodePathOrUnknown；Scope 侧 Shell/Loop/Conditional/Async）已转 internal——外部消费者只能构造契约面（6 资源 × 4 scope），`ToJson` 抛异常的分叉不复存在。超集语义仍供 §7 白名单层内部使用（仓库测试/样例经 InternalsVisibleTo 授权）。**边界定性：internal 面是文档性边界而非安全边界**——IVT 按程序集名匹配、无公钥，同名程序集可伪造友元访问 internal（红队 P5.2-H2，强命名决策挂 P5.3 队列）
 19. ~~`CrashReports`/`_netAccum` 单实例有界增长~~ **已解决（QED-C2）**：`CrashReports` 环形上限恒保留最近 64 条（last 语义不变）；`_netAccum` 在每批次卸载/退出排空完成点自动剪除非 Active Fiber 条目（零语义损失：Active 过滤器永久跳过 + 同 FiberId 不可重注册）。`ResetDiagnostics` 降级为宿主可选显式出口（非内存安全义务）。钉：`QedP2C2DiagnosticsBoundPins`（3 枚，经 IVT 断言 internal 观测口）
-20. §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
+20. **[影响：跨调用点 net=0 掩蔽（Runtime Σnet 兜底）]** §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
 
 验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（三测试工程：L1 主套件 + Runtime + SampleGame，总数以 CI 汇总为准；doc-guard 禁止硬编码会漂移的全量计数）。
