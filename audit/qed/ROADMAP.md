@@ -294,9 +294,21 @@
     不漏报）；④NetAtSampleCoversSegment——段首样本净额精确等于段内净额（精确评估）。
     这四条即「在全部端点采样 ≡ 在所有时刻审计」的数学心脏。
   - 证据：`dafny verify` ⇒ **5 verified, 0 errors**（本文件；全库累计 75 verified）。
-  - **拆分余项**：D4b 三 gates 覆盖定理（peak/conflict 超集保守性完整化）；D4c 扫换线增量维护
-    == 阶跃定义的算法等价（需建模排序与增量累加）；D4d C# 实现对照 + `dafny verify` 入 ci.sh
-    （与 D5 合并执行）。工具环境（dafny 4.11 + z3 4.12.1 + --solver-path）见 D1 条目。
+  - **拆分余项**：D4b ✅（见下）/ D4c 扫换线增量维护 == 阶跃定义的算法等价（需建模排序与增量
+    累加）/ D4d C# 实现对照 + `dafny verify` 入 ci.sh（与 D5 合并执行）。工具环境见 D1 条目。
+- [x] **D4b** 三 gates 段覆盖定理 ✅ 2026-09-07
+  - **定理**（`formal/CosmosSweepLine.dfy`，段 (a, u] 内无端点的前提下，任意时刻 u 的三类违例
+    都在段首样本 a 处可见——「全端点采样不漏报」的 gate 级完整化）：
+    ①gate(1) SegmentNetCovered：NetAt(a) == NetAt(u)（**精确**，D4a NetAtAgree 推论）；
+    ②gate(2) SegmentPeakCovered：PeakAt(u) ≤ PeakAt(a)（**超集保守**——存活集 ⊆ 样本存活集
+    + 权重 ≥ 0 单调；Ev 增补 w/r/m 三字段承载 peak/conflict 维度）；③gate(3)
+    SegmentConflictCovered：AliveConflictAt(u) ⇒ AliveConflictAt(a)（**见证迁移**——冲突对
+    e1/e2 ∈ AliveSet(u) ⊆ AliveSet(a)，配对条件与时刻无关）；④总纲 SegmentViolationsCovered
+    合成三式。
+  - 形态要点：gate(3) 用蕴含签名（冲突存在性是保证不是前提）；见证提取用 `var e1, e2 :|`
+    多绑定（嵌套 `var :|` 表达式非法）。Mode/Compatible 复用 D2 定义（`import opened` 置于
+    模块体内——文件级导入对内嵌模块不可见；冲突谓词名为 InConflict）。
+  - 证据：`dafny verify` ⇒ CosmosSweepLine.dfy **14 verified, 0 errors**（全库累计 81）。
 - [ ] **D5** C# 实现与形式规约逐条对照的性质测试（反例 shrink）；证明产物纳入 CI 门禁。
 
 ## P4 冻结与发布就绪（终态）

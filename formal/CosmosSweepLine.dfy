@@ -6,10 +6,14 @@
 // net(t) = Σ_{lo ≤ t} contrib，纯阶跃，只在 lo 端点跳变）。
 // 本文件只承载 D4a：恒定性引理。完整三 gates 覆盖定理（peak/conflict 的超集保守性）归 D4b，
 // 扫换线增量维护 == 阶跃定义的算法等价归 D4c，C# 实现对照 + CI 归 D4d/D5。
+include "CosmosEffectAlgebra.dfy"
+
 module SweepLineModel
 {
-  // 事件：寿命 [lo, hi] + 带符号净贡献（在 lo 处入账）
-  datatype Ev = Ev(lo: nat, hi: nat, contrib: int)
+  import opened CosmosEffectAlgebra // D2 的 Mode/Compatible 单一真源复用
+  // 事件：寿命 [lo, hi] + 带符号净贡献（net gate，lo 处入账）+ 峰值权重 w（peak gate，
+  // 对应 size.hi×ω ≥ 0）+ 资源身份 r 与模式 m（conflict gate 的配对键与判定）
+  datatype Ev = Ev(lo: nat, hi: nat, contrib: int, w: nat, r: nat, m: Mode)
   {
     predicate Valid()
     {
@@ -134,5 +138,118 @@ module SweepLineModel
     ensures NetAt(evs, a) == NetAt(evs, u)
   {
     NetAtAgree(evs, a, u);
+  }
+
+  // ── QED-P3-D4b — 三 gates 的段覆盖定理（采样充分性的 gate 级完整化）──
+  // 段 (a, u] 内无任何事件端点 ⇒ 该段内任意时刻 u 的三类违例都在样本 a 处（保守或精确地）可见：
+  //   gate(1) NegativeDip：NetAt(a) == NetAt(u)（精确，D4a NetAtAgree 推论）；
+  //   gate(2) PeakExceeded：PeakAt(u) ≤ PeakAt(a)（超集保守——存活集 ⊆ 样本存活集，权重 ≥ 0）；
+  //   gate(3) CompatibleConflict：冲突对存在性见证从 u 迁移到 a（存活超集承载同一对见证）。
+  // 三者合成：任一时刻的三类违例 ⇒ 对应段首样本处同现违例 ⇒「全端点采样不漏报任何时刻违例」。
+
+  // 时刻 t 的峰值占用：Σ_{alive(t)} w（按序列归纳，镜像 NetAt）
+  function PeakAt(evs: seq<Ev>, t: nat): nat
+    decreases |evs|
+  {
+    if |evs| == 0 then
+      0
+    else
+      (PeakAt(evs[..|evs|-1], t)
+       + (if evs[|evs|-1].AliveAt(t) then evs[|evs|-1].w else 0))
+  }
+
+  // 段内无端点 ⇒ 存活于 u 的事件必存活于样本 a（gate2/3 共用的迁移引理，D4a AliveSuperset 的逐事件形态）
+  lemma AliveAtTransfers(evs: seq<Ev>, a: nat, u: nat, e: Ev)
+    requires a <= u && e in evs
+    requires forall x | x in evs :: !(a < x.lo <= u) && !(a < x.hi <= u)
+    requires e.AliveAt(u)
+    ensures e.AliveAt(a)
+  {
+    assert !(a < e.lo <= u);
+    assert !(a < e.hi <= u);
+    assert e.lo <= a;
+    assert e.hi >= u;
+  }
+
+  // gate(1)：段内负陷在样本处精确可见
+  lemma SegmentNetCovered(evs: seq<Ev>, a: nat, u: nat)
+    requires a <= u
+    requires forall x | x in evs :: !(a < x.lo <= u)
+    ensures NetAt(evs, a) == NetAt(evs, u)
+  {
+    NetAtAgree(evs, a, u);
+  }
+
+  // gate(2)：段内峰值 ≤ 样本处峰值（权重 ≥ 0 + 存活迁移 ⇒ 超集和单调）
+  lemma SegmentPeakCovered(evs: seq<Ev>, a: nat, u: nat)
+    requires a <= u
+    requires forall x | x in evs :: !(a < x.lo <= u) && !(a < x.hi <= u)
+    ensures PeakAt(evs, u) <= PeakAt(evs, a)
+    decreases |evs|
+  {
+    if |evs| == 0
+    {
+    }
+    else
+    {
+      var rest := evs[..|evs|-1];
+      var last := evs[|evs|-1];
+      forall x | x in rest
+        ensures !(a < x.lo <= u) && !(a < x.hi <= u)
+      {
+        PrefixElementIn(evs, |evs|-1, x);
+      }
+      SegmentPeakCovered(rest, a, u);
+      if last.AliveAt(u)
+      {
+        AliveAtTransfers(evs, a, u, last);
+        // alive(u) ⇒ alive(a)：两侧各加 w（≥0），不等式保持
+        assert PeakAt(evs, u) <= PeakAt(evs, a);
+      }
+      else
+      {
+        // !alive(u)：左和不含 w ≤ 右和（alive(a) 侧加 ≥ 0）
+        assert PeakAt(evs, u) <= PeakAt(evs, a);
+      }
+    }
+  }
+
+  // gate(3)：段内冲突对见证迁移到样本（存活超集承载同一对见证）
+  predicate AliveConflictAt(evs: seq<Ev>, t: nat)
+  {
+    exists e1, e2 :: e1 in AliveSet(evs, t) && e2 in AliveSet(evs, t) && e1 != e2
+        && e1.r == e2.r && InConflict(e1.m, e2.m)
+  }
+
+  lemma SegmentConflictCovered(evs: seq<Ev>, a: nat, u: nat)
+    requires a <= u
+    requires forall x | x in evs :: !(a < x.lo <= u) && !(a < x.hi <= u)
+    ensures AliveConflictAt(evs, u) ==> AliveConflictAt(evs, a)
+  {
+    AliveSupersetOnSegment(evs, a, u);
+    if AliveConflictAt(evs, u)
+    {
+      // 见证提取（AliveConflictAt 定义展开）+ 迁移：e1/e2 ∈ AliveSet(u) ⊆ AliveSet(a)（超集），
+      // 配对条件（同资源 + 模式不兼容）与时刻无关
+      assert exists e1, e2 :: e1 in AliveSet(evs, u) && e2 in AliveSet(evs, u)
+          && e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m);
+      var e1, e2 :| e1 in AliveSet(evs, u) && e2 in AliveSet(evs, u)
+          && e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m);
+      assert e1 in AliveSet(evs, a) && e2 in AliveSet(evs, a);
+      assert e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m);
+    }
+  }
+
+  // ── D4b 总纲：段 (a, u] 内任意时刻 u 的三类违例 ⇒ 样本 a 处同现（gate1 精确 / gate2 保守 / gate3 见证迁移）──
+  lemma SegmentViolationsCovered(evs: seq<Ev>, a: nat, u: nat)
+    requires a <= u
+    requires forall x | x in evs :: !(a < x.lo <= u) && !(a < x.hi <= u)
+    ensures NetAt(evs, a) == NetAt(evs, u)
+    ensures PeakAt(evs, u) <= PeakAt(evs, a)
+    ensures AliveConflictAt(evs, u) ==> AliveConflictAt(evs, a)
+  {
+    SegmentNetCovered(evs, a, u);
+    SegmentPeakCovered(evs, a, u);
+    SegmentConflictCovered(evs, a, u);
   }
 }
