@@ -11,7 +11,6 @@
     <!-- NuGet 打包元数据（P0-2：生产可分发）。源生成器须落入 analyzers/dotnet/cs/ 以供消费方编译期加载。 -->
     <IsPackable>true</IsPackable>
     <PackageId>Cosmos.EffectAlgebra.Generator</PackageId>
-    <Version>1.0.0</Version>
     <Authors>Nuctori</Authors>
     <Company>Cosmos</Company>
     <Description>资源效应代价代数 L2 源生成器：将 Godot API 调用真委托到 L1 净代数 Signature（§7 / §14）。零 Godot 依赖。</Description>

@@ -10,7 +10,6 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <IsPackable>true</IsPackable>
     <PackageId>Cosmos.EffectAlgebra.Runtime</PackageId>
-    <Version>1.0.0</Version>
     <Authors>Nuctori</Authors>
     <Company>Cosmos</Company>
     <Description>资源效应代价代数 Runtime：Fiber 状态机/依赖图/逆回放/宿主抽象，零 Godot 依赖（经 IHost）。</Description>

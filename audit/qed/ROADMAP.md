@@ -331,7 +331,14 @@
 
 ## P4 冻结与发布就绪（终态）
 
-- [ ] **E1** 写死的 1.0.0 改真 semver 流水线（根除 NuGet 同 id+version 本地重打包缓存陷阱）。
+- [x] **E1** semver 单一真源流水线 ✅ 2026-09-07
+  - 五处 csproj 写死的 `<Version>1.0.0</Version>` 全部删除，上收至 `Directory.Build.props`
+    单一声明（strict semver 三段数字）。发布流程 = 改这一行 + 走 PUBLISH-CHECKLIST（E4）；
+    版本一旦变更即新 NuGet 缓存键——同 id+version 本地重打包缓存陷阱（README ⓪）随发布纪律根除。
+  - 钉 `QedP4E1VersioningPins` 3 枚：①BuildProps 恰一 Version 且 strict semver；
+    ②src 下任何 csproj 私藏 Version 即红（防漂移）；③五包 PackageId 清单冻结（包族成员不可静默增删）。
+  - pack 走查：`dotnet pack` ⇒ `Cosmos.EffectAlgebra.1.0.0.nupkg`（单一真源流出验证）。
+    首发版本号决策（仍 1.0.0 或直接 1.x）按 PUBLISH-CHECKLIST 在发布时由人类定夺。
 - [ ] **E2** JSON schema 加 `$schema` + 版本字段并冻结契约面。
 - [ ] **E3** README 诚实边界逐条复核：已解决的删除、保留的附测试证据。
 - [ ] **E4** `PUBLISH-CHECKLIST.md` 就绪后【停】——发布动作留给人类。

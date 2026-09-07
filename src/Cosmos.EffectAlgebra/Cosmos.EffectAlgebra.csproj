@@ -15,7 +15,6 @@
     <!-- NuGet 打包元数据（P0-2：生产可分发）。 -->
     <IsPackable>true</IsPackable>
     <PackageId>Cosmos.EffectAlgebra</PackageId>
-    <Version>1.0.0</Version>
     <Authors>Nuctori</Authors>
     <Company>Cosmos</Company>
     <Description>资源效应代价代数（净代数 / 量纲隔离 / 兼容全函数）。零 Godot 依赖的纯代数核心（L1），供 Godot 游戏工程的资源泄漏/量纲冲突编译期审计使用（§3 / §7 / §8）。</Description>

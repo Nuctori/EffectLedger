@@ -12,6 +12,10 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <!-- R3 审计：全部测试项目统一串行执行（MaxCpuCount=1），根除多 testhost 并发 OOM 假红；非测试项目不消费此属性。 -->
     <RunSettingsFilePath>$(MSBuildThisFileDirectory).runsettings</RunSettingsFilePath>
+    <!-- 【P4-E1】semver 单一真源：全包族（L1/Analyzer/Generator/Runtime/Tool）统一版本。
+         发布流程：按 semver 决策改这一行（破坏性+.1、功能+.1、修复+.0.1）→ 走 PUBLISH-CHECKLIST。
+         根除 NuGet 同 id+version 本地重打包缓存陷阱：版本一旦变更即新缓存键（README ⓪ 的运维注记）。 -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
