@@ -84,4 +84,36 @@ public class QedP2C1cGeneratorAdditionalFilesPins
         Assert.Contains("ComputeMyWidget_Show", generated);
         Assert.Contains("GodotApiWhitelist.All", generated); // 基础表命中（MyWidget_Show 名义匹配为基础路径演示）：运行期枚举
     }
+
+    // ── QED-P5.2 己 HIGH 修复钉：跨文件 Canonical 碰撞 ⇒ 整文件弃用 + EAA0701（无部分生效）。
+    //    两配置各定义 My_A（互异 memory uid）：file1 先到生效；file2 同键 ⇒ 整体弃用并报 EAA0701。 ──
+    [Fact]
+    public void CrossFile_CanonicalCollision_SecondFileDropped_WithEaa0701()
+    {
+        const string cfg1 = """
+            { "extraMappings": [ { "api": "My_A", "claims": [ { "kind": "occupy", "resource": { "memory": 11 }, "mode": "use", "scope": { "scene": "B" } } ] } ] }
+            """;
+        const string cfg2 = """
+            { "extraMappings": [ { "api": "My_A", "claims": [ { "kind": "occupy", "resource": { "memory": 99 }, "mode": "create", "scope": { "scene": "B" } } ] } ] }
+            """;
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+        var texts = new[] { "dir1/cosmos.effect.json", "dir2/cosmos.effect.json" }
+            .Zip(new[] { cfg1, cfg2 })
+            .Select(kv => (AdditionalText)new InMemCfg(kv.First, kv.Second))
+            .ToImmutableArray();
+        driver = driver.AddAdditionalTexts(texts);
+        var parse = CSharpSyntaxTree.ParseText("public class C { }");
+        var comp = CSharpCompilation.Create("qed-xf", new[] { parse });
+        driver.RunGeneratorsAndUpdateCompilation(comp, out _, out var diags);
+
+        Assert.Single(diags.Where(d => d.Id == "EAA0701"));
+    }
+
+    private sealed class InMemCfg : AdditionalText
+    {
+        private readonly string _text;
+        public InMemCfg(string path, string text) { Path = path; _text = text; }
+        public override string Path { get; }
+        public override SourceText? GetText(System.Threading.CancellationToken cancellationToken = default) => SourceText.From(_text);
+    }
 }

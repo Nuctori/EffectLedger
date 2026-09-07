@@ -367,9 +367,10 @@
   （NoPad 双侧对称——"custom: residency" 冒号后空格是 LLM 书写签名级拼写错误，
   拼写失配 = 幽灵预算 gate 静默失配；拒绝而非 Trim 改写，嵌入空格合法）。
   钉 `QedP53DialectHardeningPins` 6 枚（budget 前后空白 3 形态 / claim 双侧 / 嵌入空格合法）。
-  余项（方言审计 MED/LOW）：type:global 静默丢弃 scene 值（MED，拒绝而非归并待决策）/
-  双解析器空白口径漂移（本提交已对称收敛）/ 拒绝消息 NUL 回显（LOW）/
-  CLI 载荷未透出 CapsChecked（LOW，与假绿治理相关）——归 P5.3 后续队列。
+  余项处置：type:global 静默丢弃 scene 值（MED）——**已修**（ParseScope 双侧 loud 拒绝
+  scene+global 并存矛盾，契约与 config 同步）+ 拒绝消息 NUL 回显（LOW）——**已修**
+  （EchoKey 转写 U+XXXX）/ CLI 载荷未透出 CapsChecked（LOW）——**已修**
+  （载荷新增 capsChecked/isPeakChecked + R3 钉断言）。
 - [x] **P5.0 最小可跑示例工程 HelloEffect** ✅ 2026-09-08（消费#1/#8 部分）：
   `samples/HelloEffect`——clone 后 `dotnet build` 即见分析器行为（配对零诊断 / 演示泄漏
   EAA0901 warning / EffectOverride 不豁免 DO-9 实证 / 白名单扩展 API 参与审计），

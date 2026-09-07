@@ -98,12 +98,22 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
             try
             {
                 var extra = Cosmos.EffectAlgebra.Generator.Shared.CosmosEffectConfig.LoadExtraFromJson(text);
-                Cosmos.EffectAlgebra.Generator.Shared.GodotApiWhitelist.MergedWith(extra); // 碰撞复核：vs 基础表 / 扩展彼此 ⇒ 抛（整文件弃用）
+                Cosmos.EffectAlgebra.Generator.Shared.GodotApiWhitelist.MergedWith(extra); // vs 基础表碰撞复核
+                // 【QED-P5.2 己 HIGH 修复】跨文件同键 ⇒ 整文件弃用 + EAA0701（loud，无部分生效）——
+                // 修复前 builder[c] = m 静默 last-win，两文件拼写照会拿错 claims（L2/L3 分叉）。
+                var filePairs = new List<(string Canon, Cosmos.EffectAlgebra.Generator.Shared.ApiMapping Mapping)>();
+                var fileKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var m in extra)
                 {
                     var c = Cosmos.EffectAlgebra.Generator.Shared.GodotApiWhitelist.Canonical(m.GodotApi);
-                    builder[c] = m; // 走到此处即无碰撞（MergedWith 已复核）⇒ 覆写仅发生在校验通过后
+                    if (!fileKeys.Add(c))
+                        throw new FormatException($"文件内重复 Canonical：'{c}'（扩展同键，QED-P5.2 己 loud）");
+                    if (builder.ContainsKey(c))
+                        throw new InvalidOperationException($"跨文件 Canonical 碰撞：'{c}' 已被先前配置文件扩展（QED-P5.2 己 loud）");
+                    filePairs.Add((c, m));
                 }
+                foreach (var (c, m) in filePairs)
+                    builder[c] = m;
             }
             catch (Exception ex) when (ex is FormatException or InvalidOperationException)
             {
