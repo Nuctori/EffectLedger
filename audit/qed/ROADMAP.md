@@ -375,11 +375,28 @@
   EAA0901 warning / EffectOverride 不豁免 DO-9 实证 / 白名单扩展 API 参与审计），
   含 cosmos.effect.json 扩展接线样板。入 slnx（CI 自动构建保持可编译）。
   README ⓪ 补最小示例指引（消费#1「无兜底示例」的落地）。
+- [x] **P5.3 加固批次** ✅ 2026-09-08：定律计数门（dafny verified ≥89，ci.sh+ci.yml 双侧）
+  + 测试侧 lemma ≥60 代理 / L3 诊断面快照（SupportedDiagnostics 恰 6 ID + severity）/
+  L11 schema version major == 包版本 major / M8 行为级冻结标记（#6/#7/#10/#11/#15/#16）/
+  H2 友元程序集命名空间化（SampleGame → Cosmos.EffectAlgebra.SampleGame）。
+  钉 `QedP53HardeningPins` 3 枚 + `QedP53RuntimeHardeningPins` 5 枚 +
+  `QedP53SweepModelConformanceTests` 3 Theory（扫换线峰值 vs 模型，阈值两侧边界精确）。
+- [x] **P5.4a 文档深化** ✅ 2026-09-08：诚实边界 13 条活跃项逐条【影响：…】前置标签
+  （可扫描性）；EFFECT_SCRIPT §7 改名「范围外声明」（术语统一，消费#5）。
 - [x] **P5.1 文档产品化** ✅ 2026-09-08：README 头部徽章 + 价值主张四点 + 文档地图
   （10 项导航表）；去陈旧计数锚点（"95 Runtime" 已漂移为 120，改为 CI 汇总口径）；
   EFFECT_SCRIPT.md 产品导读（契约定位 + 配套物）。全部 doc-guard 钉（18 测试）保持绿。
-- [ ] **P5.2 对抗性审计会议**（双审计员并行：外部新消费者视角 / 冻结承诺红队视角）
-  → 会议纪要与处置表落 `audit/p5-adversarial-meeting.md`。
+- [x] **P5.2 对抗性审计会议** ✅ 2026-09-08：三轮双审计员全部交卷并处置
+  （纪要与处置表：`audit/p5-adversarial-meeting.md` + `audit/p5-adversarial-meeting-r3.md`）：
+  - R1：外部新消费者（12 发现：门面/上手）+ 冻结承诺红队（12：承诺攻击）——H1 根层白名单
+    修复、H2 声明+改名、计数门、M4-M9 全处置；
+  - R2：修复验收（PASS-WITH-NOTES，7 注记全处置）+ 产品门面复审（11：1H/4M 修复，
+    成熟度 4/10 → 7/10）；
+  - R3：AI 闭环方言攻击（5 缺陷：HIGH budget 空白 id 已修双侧拒绝 + MED type:global 归并
+    决策挂队列）+ Runtime 生命周期攻击（6 缺陷：MED LoadAll 关闭期守卫已修 +
+    5 LOW 钉死/记录；4 条防御生效实证：非法转移矩阵/重入三连/CrashReports 64-65 精确边界/
+    long.MinValue 防溢出）。
+  - 累计：四名审计员 + 两轮复审，40+ 条发现全处置（修复/记录/否决均有依据）。
 
 P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 项）/ P3 形式化验证（D1–D5，
 89 定律 0 errors + 实现对照 5 测试 + CI 门禁）/ P4 冻结清单（E1–E4）——全数收口。
