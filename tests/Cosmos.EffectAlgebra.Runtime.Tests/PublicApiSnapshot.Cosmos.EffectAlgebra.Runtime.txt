@@ -20,7 +20,6 @@ class Cosmos.EffectAlgebra.Runtime.DependencyGraph
   method Cosmos.EffectAlgebra.Runtime.CycleReport DetectCycles()
   method System.Collections.Immutable.ImmutableArray`1[Cosmos.EffectAlgebra.Runtime.FiberId] DependentsOf(Cosmos.EffectAlgebra.Runtime.FiberId)
   method System.Collections.Immutable.ImmutableArray`1[Cosmos.EffectAlgebra.Runtime.FiberId] TopoSortLeafFirst()
-  method System.Void NotifyDependents(Cosmos.EffectAlgebra.Runtime.Fiber)
   method System.Void Register(Cosmos.EffectAlgebra.Runtime.Fiber)
 class Cosmos.EffectAlgebra.Runtime.Fiber
   ctor Cosmos.EffectAlgebra.Runtime.FiberId, Cosmos.EffectAlgebra.Signature, Cosmos.EffectAlgebra.Runtime.Coeffect, System.Collections.Immutable.ImmutableStack`1[Cosmos.EffectAlgebra.Runtime.InverseClaim]
