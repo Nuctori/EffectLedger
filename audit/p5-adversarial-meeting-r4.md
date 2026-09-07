@@ -24,10 +24,37 @@
 EAA0901 触发零 CS8032 ✓ / PE 层 ALC 自包含字节级验证 ✓ / 包内容安全（无 pdb/源码/临时文件）✓ /
 符号包与 provenance 现状核实 ✓ / 五包版本一致性 + 逐字节确定性 ✓ / cosmos tool 端到端 ✓。
 
-## 己·性能规模与生成器攻击：待交卷
+## 己·性能规模与生成器攻击：已交卷（2026-09-08）
 
-> 交卷后补录本节（判定分类 + 处置 + 与 L12 的衔接——其对抗形状实测会直接决定
-> 性能钉分档/增长率断言的具体设计）。
+**报告**：`audit/p5-auditor-perf.md`。**判定：实现缺陷 1（HIGH，已修复）** + 文档欠明确 3 + 已知边界符合声明 4 + 防御生效 2。
+
+### HIGH 处置：LoadExtras 跨配置文件 Canonical 碰撞静默 last-win
+
+两个 cosmos.effect.json 定义 Canonical 同键（FooBar / Foo_Bar）⇒ L2 构建全绿但
+ComputeFooBar 拿到后文件的错误 claims，同一配置 L3 却报 error EAA0701——L2/L3 分叉。
+**修复**：LoadExtras 逐文件 all-or-nothing——文件内重复/跨文件同键（vs 基础表或先前文件）
+即抛 → 整文件弃用 + EAA0701（无部分生效）；钉 `QedP2C1cGeneratorAdditionalFilesPins
+.CrossFile_CanonicalCollision_SecondFileDropped_WithEaa0701`。
+
+### 性能量化（诚实边界 #16/#6 的补充度量，挂 L12 处置）
+
+- 复现钉形状校准：t4/t1 = 5.3x（与文档 ≈6x 吻合，钉校准有效）。
+- **spread 形状**（Lo=i、Hi=N+i 双向交错）：t4/t1 = **14.8x（alpha≈1.94）**、N=8000 时
+  alpha≈1.99 纯二次渐近——超出 ProdAuditR4AuditScaleTests 自家 12x 阈值。**处置**：
+  #16 补记 spread 形状退化上界 + 曲线钉增补该形状（挂 L12）。
+- **宽预算表第三乘子**：gate(2) 每采样点全扫 cap.Caps 逐键 Normalize——spread+逐资源预算
+  N=4000 从 94.5ms 放大到 3554ms（≈37x）。**处置**：#16 补记（同上）。
+- **违例洪水工具端不可消费**：N=1000 释放早于建立 staggered ⇒ 1,002,000 条 NegativeDip、
+  CLI 端到端 4.0s + stdout 183MB + --out 再写 183MB。**处置**：#6 已声明时间序列语义；
+  工具层加条数上限/折叠选项挂 F 轨队列。
+- 正面：绝对耗时承诺严重保守（1000 事件 16-39ms 对 <5000ms 有 >128 倍裕量）；2000 事件
+  Audit 分配仅 6MB——审计本体内存健康，放大仅沿已声明的违例输出通道。
+
+### 生成器 emit 正确性（防御生效）
+
+34/34 敌意声明形状（泛型/嵌套/重载/接口/partial/深命名空间/关键字名）全部 emit 且编译全绿；
+A2-05 消歧后缀在极端重名下无 CS0111；增量 6 步小改全绿且成员集精确同步——#14 声明的
+IDE 瞬态少生成在真实构建路径未能复现（与「全量构建恒正确」承诺一致）。
 
 ## 累计发现统计（四轮合计，截至本纪要）
 
