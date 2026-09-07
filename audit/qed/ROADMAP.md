@@ -294,8 +294,16 @@
     不漏报）；④NetAtSampleCoversSegment——段首样本净额精确等于段内净额（精确评估）。
     这四条即「在全部端点采样 ≡ 在所有时刻审计」的数学心脏。
   - 证据：`dafny verify` ⇒ **5 verified, 0 errors**（本文件；全库累计 75 verified）。
-  - **拆分余项**：D4b ✅（见下）/ D4c 扫换线增量维护 == 阶跃定义的算法等价（需建模排序与增量
-    累加）/ D4d C# 实现对照 + `dafny verify` 入 ci.sh（与 D5 合并执行）。工具环境见 D1 条目。
+  - **拆分余项**：D4b ✅（见下）/ D4c ✅（见下）/ D4d C# 实现对照 + `dafny verify` 入 ci.sh
+    （与 D5 合并执行）。工具环境见 D1 条目。
+- [x] **D4c** 扫换线增量维护 == 阶跃定义 ✅ 2026-09-07
+  - **定理**（`formal/CosmosSweepLine.dfy`）：①增量律 NetAtAddEventEnter/Future——追加事件
+    e：lo ≤ t ⇒ 净额恰增 e.contrib；lo > t ⇒ 净额不变（扫换线 enter 处理器的数学内容，
+    增量累加无遗漏无重复）；②AliveSetAddEvent——存活集同步并入/忽略（gate2/3 的算法面同构）；
+    ③SweepAccMatchesNetAt——前缀增量累加（算法形态）与定义和（语义形态）逐前缀一致；
+    ④SweepTotalMatchesNetAt——全量累加 == 定义和（扫换线终态 == 逐点定义任意 t）。
+    实现提示：前缀的前缀恒等、全前缀切片==原序列、前缀元素必属全序列（PrefixElementIn）。
+  - 证据：`dafny verify` ⇒ CosmosSweepLine.dfy **22 verified, 0 errors**（全库累计 89）。
 - [x] **D4b** 三 gates 段覆盖定理 ✅ 2026-09-07
   - **定理**（`formal/CosmosSweepLine.dfy`，段 (a, u] 内无端点的前提下，任意时刻 u 的三类违例
     都在段首样本 a 处可见——「全端点采样不漏报」的 gate 级完整化）：

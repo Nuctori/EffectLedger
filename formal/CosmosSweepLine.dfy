@@ -231,8 +231,8 @@ module SweepLineModel
     {
       // 见证提取（AliveConflictAt 定义展开）+ 迁移：e1/e2 ∈ AliveSet(u) ⊆ AliveSet(a)（超集），
       // 配对条件（同资源 + 模式不兼容）与时刻无关
-      assert exists e1, e2 :: e1 in AliveSet(evs, u) && e2 in AliveSet(evs, u)
-          && e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m);
+      assert exists e1, e2 :: (e1 in AliveSet(evs, u) && e2 in AliveSet(evs, u)
+          && e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m));
       var e1, e2 :| e1 in AliveSet(evs, u) && e2 in AliveSet(evs, u)
           && e1 != e2 && e1.r == e2.r && InConflict(e1.m, e2.m);
       assert e1 in AliveSet(evs, a) && e2 in AliveSet(evs, a);
@@ -251,5 +251,80 @@ module SweepLineModel
     SegmentNetCovered(evs, a, u);
     SegmentPeakCovered(evs, a, u);
     SegmentConflictCovered(evs, a, u);
+  }
+
+  // ── QED-P3-D4c — 扫换线增量维护 == 阶跃定义的算法等价（net 维度）──
+  // C# 扫换线按事件逐条增量累加（enter 时加贡献）；D4a 的 NetAt 是「lo ≤ t 全量求和」的定义式。
+  // 三条增量定律证明两者逐事件等价——增量累加（算法）与定义和（语义）互为充要形态。
+
+  // 增量律 1（enter 入账）：新增事件 e 且 e.lo ≤ t ⇒ 净额恰好增加 e.contrib——
+  // 这就是扫换线 enter 处理器的数学内容（加法精确、无遗漏无重复）。
+  lemma NetAtAddEventEnter(evs: seq<Ev>, e: Ev, t: nat)
+    requires e.lo <= t
+    ensures NetAt(evs + [e], t) == NetAt(evs, t) + e.contrib
+  {
+    calc {
+      NetAt(evs + [e], t);
+      NetAt((evs + [e])[..|evs|], t) + (if (evs + [e])[|evs|].lo <= t then (evs + [e])[|evs|].contrib else 0);
+      NetAt(evs, t) + e.contrib;
+    }
+  }
+
+  // 增量律 2（未入账）：新增事件 e 且 e.lo > t ⇒ 净额不变（未来事件不影响当前净额）。
+  lemma NetAtAddEventFuture(evs: seq<Ev>, e: Ev, t: nat)
+    requires e.lo > t
+    ensures NetAt(evs + [e], t) == NetAt(evs, t)
+  {
+    calc {
+      NetAt(evs + [e], t);
+      NetAt((evs + [e])[..|evs|], t) + (if (evs + [e])[|evs|].lo <= t then (evs + [e])[|evs|].contrib else 0);
+      NetAt(evs, t) + 0;
+    }
+  }
+
+  // 增量律 3（存活集同步）：扫换线同时维护的存活集也按同一事件增删——
+  // enter 并入 {e}（或忽略），与峰值/冲突 gate 的增量维护同构（gate2/3 的算法面）。
+  lemma AliveSetAddEvent(evs: seq<Ev>, e: Ev, t: nat)
+    ensures AliveSet(evs + [e], t)
+         == (if e.AliveAt(t) then AliveSet(evs, t) + {e} else AliveSet(evs, t))
+  {
+    assert forall x :: x in AliveSet(evs + [e], t) <==>
+      (x in evs && x.AliveAt(t)) || (x == e && e.AliveAt(t));
+  }
+
+  // 前缀累加（扫换线的增量形态）与定义和（NetAt 的全量形态）逐前缀一致——
+  // 「增量累加（算法）== 定义求和（语义）」的直接等价定理。
+  function SweepAcc(evs: seq<Ev>, k: nat, t: nat): int
+    requires k <= |evs|
+    decreases k
+  {
+    if k == 0 then 0
+    else SweepAcc(evs, k-1, t) + (if evs[k-1].lo <= t then evs[k-1].contrib else 0)
+  }
+
+  lemma SweepAccMatchesNetAt(evs: seq<Ev>, k: nat, t: nat)
+    requires k <= |evs|
+    ensures SweepAcc(evs, k, t) == NetAt(evs[..k], t)
+    decreases k
+  {
+    if k == 0
+    {
+      assert evs[..0] == [];
+    }
+    else
+    {
+      SweepAccMatchesNetAt(evs, k-1, t);
+      assert (evs[..k])[..k-1] == evs[..k-1];           // 前缀的前缀仍为前缀
+      assert evs[..k][k-1] == evs[k-1];                 // 前缀末元素 == 原序列第 k 项
+      assert (evs[..k])[|evs[..k]|-1] == evs[k-1];      // 同上（长度视角）
+    }
+  }
+
+  // 总等价：处理全部事件的增量累加 == 定义和（扫换线终态 == 逐点定义在任意 t 处的值）
+  lemma SweepTotalMatchesNetAt(evs: seq<Ev>, t: nat)
+    ensures SweepAcc(evs, |evs|, t) == NetAt(evs, t)
+  {
+    SweepAccMatchesNetAt(evs, |evs|, t);
+    assert evs[..|evs|] == evs; // 全前缀切片 == 原序列
   }
 }
