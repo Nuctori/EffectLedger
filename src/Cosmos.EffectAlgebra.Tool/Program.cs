@@ -4,6 +4,11 @@
 using System.Text.Json;
 using Cosmos.EffectAlgebra;
 
+// 【QED-P5.2 方言 HIGH】stdout 编码钉 UTF-8：默认跟随控制台代码页（中文 Windows = GBK），
+// 重定向给 LLM 消费时 ⊤/中文 会退化成 '?'——回修载荷语义丢失（od 逐字节实证）。
+// 重定向或宿主不支持时保持默认（不因编码设置失败而中断审计）。
+try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
+
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
     Console.WriteLine("usage: cosmos audit <script.json> [--out violations.json]");
@@ -33,6 +38,9 @@ var result = script.Audit(script.Budget);
 var payload = new
 {
     passed = result.Passed,
+    // QED-P5.3 方言 LOW 收口：透出峰值门状态——AI 闭环可区分「没查（缺 budget）/ 查了 / 幽灵查（CapsChecked>0 但无违例）」
+    capsChecked = result.CapsChecked,
+    isPeakChecked = result.IsPeakChecked,
     events = script.Events.Length, // R3-CG-08：审计规模进载荷——空剧本全绿不再是不可见的「没查当全绿」
     violations = result.Violations.Select(v => new
     {

@@ -133,6 +133,9 @@ public sealed class ProdAuditR3ToolingTests
             var (code, stdout, _) = RunTool("audit", ok);
             Assert.Equal(0, code);
             Assert.Matches(new Regex("\"events\":\\s*1\\b"), stdout);
+            // QED-P5.3 方言 LOW 收口：载荷透出 CapsChecked/IsPeakChecked——AI 闭环可区分「没查/查了/幽灵查」
+            Assert.Matches(new Regex("\"capsChecked\":\\s*0"), stdout); // 无 budget ⇒ 0（透出状态而非断言值；QED-P5.3 LOW 收口）
+            Assert.Matches(new Regex("\"isPeakChecked\":\\s*(true|false)"), stdout);
         }
         finally { File.Delete(ok); }
     }

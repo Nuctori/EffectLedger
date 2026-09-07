@@ -49,4 +49,37 @@ public class QedP53DialectHardeningPins
         var script = Cosmos.EffectAlgebra.EffectScriptContract.Parse(Script("\"custom:residency\"", "\"my res\""));
         Assert.NotEmpty(script.Events);
     }
+
+    // ── 钉 4（方言审计 MED）：type:"global" 与 scene 并存 ⇒ loud 拒绝——
+    //    静默丢弃 scene 名 = 拒绝而非改写教义的反例（拼写失配会让冲突分组漂移）。 ──
+    [Fact]
+    public void Scope_GlobalWithSceneName_Throws()
+    {
+        var json = """
+            {
+              "events": [
+                { "lifetime": [0, 5], "scope": { "scene": "S", "type": "global" },
+                  "footprint": [ { "kind": "occupy", "resource": { "memory": 1 }, "mode": "use" } ] }
+              ]
+            }
+            """;
+        var ex = Assert.Throws<FormatException>(
+            () => Cosmos.EffectAlgebra.EffectScriptContract.Parse(json));
+        Assert.Contains("并存矛盾", ex.Message);
+    }
+
+    // ── 钉 5（回归守卫）：纯 {"type":"global"}（无 scene）仍是合法 Global。 ──
+    [Fact]
+    public void Scope_GlobalWithoutScene_RemainsLegal()
+    {
+        var json = """
+            {
+              "events": [
+                { "lifetime": [0, 5], "scope": { "type": "global" },
+                  "footprint": [ { "kind": "occupy", "resource": { "memory": 1 }, "mode": "use" } ] }
+              ]
+            }
+            """;
+        Assert.NotEmpty(Cosmos.EffectAlgebra.EffectScriptContract.Parse(json).Events);
+    }
 }

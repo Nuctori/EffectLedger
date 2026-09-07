@@ -175,6 +175,10 @@ public static class EffectScriptContract
         {
             "method" => new ScopeId.Method(name),
             "type" => new ScopeId.Type(name),
+            // 【QED-P5.3 方言 MED】scene 与 type:"global" 并存 ⇒ loud 拒绝——
+            // 静默丢弃 scene 名会让冲突分组漂移（拒绝而非改写，R3-L1-03 教义）。
+            "global" when hasScene => throw new FormatException(
+                $"{layer}: scope 的 scene（\"{name}\"）与 type:\"global\" 并存矛盾——全局作用域不接受 scene 名；若确为全局请删除 scene 字段（QED-P5.3）"),
             "global" => new ScopeId.Global(),
             "scene" => new ScopeId.Scene(name),
             _ => throw new FormatException($"{layer}: 未知 scope.type: {ty.GetString()}")
@@ -322,16 +326,26 @@ public static class EffectScriptContract
 
     static string NonEmptyId(string id, string key)
     {
+        var safeKey = EchoKey(key);
         if (string.IsNullOrEmpty(id))
-            throw new FormatException($"budget 键 \"{key}\" 资源 id 不可为空（形如 gpu:<name>；空 id 永不匹配任何 claim）");
+            throw new FormatException($"budget 键 \"{safeKey}\" 资源 id 不可为空（形如 gpu:<name>；空 id 永不匹配任何 claim）");
         // R6-RB-06：与 claim 侧 ReqStr 控制字符口径同界——budget 键 id 同为分组身份。
         foreach (var ch in id)
-            if (ch < ' ') throw new FormatException($"budget 键 \"{key}\" 资源 id 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
+            if (ch < ' ') throw new FormatException($"budget 键 \"{safeKey}\" 资源 id 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
         // 【QED-P5.3 方言 HIGH】前后空白拒绝：" res" 与 "res" 是 budget/claim 两侧拼写照会失配成
         // 幽灵预算（gate 静默失配虚增 CapsChecked）——拒绝而非 Trim 改写（R3-L1-03 教义）。
         if (id != id.Trim())
-            throw new FormatException($"budget 键 \"{key}\" 资源 id 含前后空白（\"{id}\"）——拼写失配会让预算/审计静默失配，拒绝而非改写");
+            throw new FormatException($"budget 键 \"{safeKey}\" 资源 id 含前后空白（\"{id}\"）——拼写失配会让预算/审计静默失配，拒绝而非改写");
         return id;
+    }
+
+    // 【QED-P5.3 方言 LOW】异常消息回显消毒：控制字符转写 U+XXXX（防裸 NUL 污染日志/终端/LLM 载荷）。
+    static string EchoKey(string key)
+    {
+        var sb = new System.Text.StringBuilder(key.Length);
+        foreach (var ch in key)
+            sb.Append(ch < ' ' ? $"\\u{((int)ch):X4}" : ch.ToString());
+        return sb.ToString();
     }
 
     static ResourceId.Memory ParseMemoryKey(string suffix, string key)

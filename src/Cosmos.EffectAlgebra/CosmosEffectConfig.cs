@@ -198,6 +198,9 @@ public static class CosmosEffectConfig
         {
             "method" => new ScopeId.Method(name),
             "type" => new ScopeId.Type(name),
+            // 【QED-P5.3 方言 MED】scene 与 type:"global" 并存 ⇒ loud 拒绝（同契约侧 QED-P5.3）。
+            "global" when name.Length > 0 => throw new FormatException(
+                $"{layer}: scope 的 scene（\"{name}\"）与 type:\"global\" 并存矛盾——全局作用域不接受 scene 名；若确为全局请删除 scene 字段"),
             "global" => new ScopeId.Global(),
             "scene" => new ScopeId.Scene(name),
             _ => throw new FormatException($"{layer} 未知 scope.type: {ty.GetString()}")
