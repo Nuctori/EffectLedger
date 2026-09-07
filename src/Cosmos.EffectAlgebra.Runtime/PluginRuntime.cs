@@ -62,13 +62,20 @@ public sealed class PluginRuntime
     /// <summary>§10（reviewer #193 #6）— 累积当帧网：将调度器提供的 per-Fiber 当帧 net 累加到永久 Fiber 周期快照表（同 Fiber 跨帧相加）。每 N 帧调用一次即实现「周期快照」。</summary>
     public void AccumulateNet(IReadOnlyDictionary<FiberId, long> perFrameNet)
     {
+        if (perFrameNet is null) throw new ArgumentNullException(nameof(perFrameNet), "QED-P5.3：null 输入按方言应抛 ArgumentNullException");
         foreach (var (id, v) in perFrameNet)
             _netAccum = _netAccum.SetItem(id, _netAccum.GetValueOrDefault(id, 0L) + v);
     }
 
     /// <summary>§10（reviewer #193 #6）— 周期快照阈值告警：返回累积网绝对值超过 threshold 的【Active】Fiber（永久存活插件不退出，靠此告警泄漏盲点）。非 Active/TearingDown/Dead/Suspending 不计（已退出路径由 §6 正常回收）。空表⇒空数组。</summary>
     public ImmutableArray<FiberId> CheckPermanentFiberLeak(long threshold)
-        => _fibers.Values
+    {
+        if (threshold < 0) throw new ArgumentOutOfRangeException(nameof(threshold), "QED-P5.3：负阈值会把零累积误报为泄漏（ acc < -threshold 恒假但 acc > threshold 对任意正累积恒真）");
+        return CheckPermanentFiberLeakCore(threshold);
+    }
+
+    private ImmutableArray<FiberId> CheckPermanentFiberLeakCore(long threshold) =>
+        _fibers.Values
             .Where(f => f.State == FiberState.Active && _netAccum.TryGetValue(f.Id, out var acc) && (acc > threshold || acc < -threshold)) // 不用 Math.Abs：避免累积达 long.MinValue 时 OverflowException（reviewer #194 low 边界）
             .Select(f => f.Id)
             .ToImmutableArray();
@@ -137,6 +144,9 @@ public sealed class PluginRuntime
     /// <summary>§3 — 全部装载（仅 Inactive → Active）；装载前执行 §3 step2b/§7.1/§5 校验（R5-6 双重释放 / §5 net 闭合 / scale 校验运行时真正生效）。</summary>
     public void LoadAll()
     {
+        if (IsShuttingDown)
+            throw new InvalidOperationException(
+                "关闭/级联路径禁止 LoadAll（QED-P5.3：逆 Action 重入装载会让 Inactive fiber 激活后无任何 teardown 路径覆盖 = 永久 Active 泄漏；Register/AddDependency/RecomputeTopology 均有守卫，此处补齐最后缺口）");
         var all = _fibers.Values.ToArray();
         // §6（reviewer #187 blocker）：装载期硬环拒载——硬环会令 teardown 永久挂起（死锁/泄漏），须先于装载拒绝。
         var cycle = _graph.DetectCycles();
@@ -309,6 +319,7 @@ public sealed class PluginRuntime
     /// A3-13（生产审计批3）：幂等守卫——同一 shell 重复接线 no-op（热重载/重绑定场景 drain 会双入队），跨实例抛。</summary>
     public void AttachShell(GodotShell shell)
     {
+        if (shell is null) throw new ArgumentNullException(nameof(shell), "QED-P5.3：接线 null shell 会静默 no-op，宿主将误以为退出 drain 已注册");
         if (ReferenceEquals(_attachedShell, shell)) return;
         if (_attachedShell is not null)
             throw new InvalidOperationException("PluginRuntime 已接线另一 GodotShell：跨实例接线须先解绑或新建运行时（重复接线会双入队退出 drain 并静默覆盖 OnSuspending）");
@@ -327,6 +338,7 @@ public sealed class PluginRuntime
     /// 纯逻辑层；真实帧时钟由 Godot 壳 _Process 驱动（deferred）。</summary>
     public void TickWatchdog(Func<Fiber, bool> isTimedOut)
     {
+        if (isTimedOut is null) throw new ArgumentNullException(nameof(isTimedOut), "QED-P5.3：null 谓词按方言应抛 ArgumentNullException");
         foreach (var f in _fibers.Values)
         {
             // §6（reviewer #190 #1）：仅当 f 仍处 Active/Suspending（本帧发生转移）才强制+入队+级联——已 Dead/TearingDown 的 f 不重复入队（避免二次回放抛异常误填 LastCrashReport）。
