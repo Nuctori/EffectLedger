@@ -339,7 +339,11 @@
     ②src 下任何 csproj 私藏 Version 即红（防漂移）；③五包 PackageId 清单冻结（包族成员不可静默增删）。
   - pack 走查：`dotnet pack` ⇒ `Cosmos.EffectAlgebra.1.0.0.nupkg`（单一真源流出验证）。
     首发版本号决策（仍 1.0.0 或直接 1.x）按 PUBLISH-CHECKLIST 在发布时由人类定夺。
-- [ ] **E2** JSON schema 加 `$schema` + 版本字段并冻结契约面。
+- [x] **E2** JSON schema 版本字段 + 契约面冻结 ✅ 2026-09-07
+  - `docs/effect-script.schema.json` 顶层注入 `version: 1.0.0` 与 `x-contract-frozen` 冻结声明
+    （6 资源 × 4 scope × kind 3 × mode 5；变更 = semver major + version 同步递增）。
+  - 钉 `QedP4E2SchemaFreezePins` 4 枚：版本标记存在 / 资源面恰 6 键 / scope 面恰 4 键+type 枚举 /
+    kind+mode 枚举冻结（导航断言精确到 schema 节点）。模板可解析性由既有 DocGuard A1-03 承载。
 - [ ] **E3** README 诚实边界逐条复核：已解决的删除、保留的附测试证据。
 - [ ] **E4** `PUBLISH-CHECKLIST.md` 就绪后【停】——发布动作留给人类。
 

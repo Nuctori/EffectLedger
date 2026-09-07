@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cosmos.effect/effect-script.schema.json",
+  "version": "1.0.0",
+  "x-contract-frozen": "QED-E2（2026-09-07）：本契约面（6 资源 × 4 scope × kind 3 × mode 5）已冻结——任何变更 = 破坏性（semver major + PDR 决策记录），本文件 version 必须同步递增",
   "title": "EffectScript — AI 视觉剧本契约 (§4)",
   "description": "EffectScriptContract.Parse 接受的 JSON 契约，仅 C#，零 Godot 依赖。非法形状抛 FormatException。",
   "type": "object",
