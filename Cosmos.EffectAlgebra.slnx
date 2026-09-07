@@ -15,5 +15,6 @@
     <!-- R3-CI-01：net8 消费验证/分析器接线验证工程入门（否则「net8 兼容」声明无门背书，可静默腐烂） -->
     <Project Path="samples/GodotReal/GodotReal.csproj" />
     <Project Path="samples/AnalyzerConsumer/AnalyzerConsumer.csproj" />
+    <Project Path="samples/HelloEffect/HelloEffect.csproj" />
   </Folder>
 </Solution>

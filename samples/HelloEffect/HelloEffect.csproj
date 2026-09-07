@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 【QED-P5 消费#1/#8】最小可跑示例工程：clone 仓库后 `dotnet build samples/HelloEffect/HelloEffect.csproj`
+       即可看到分析器行为——配对方法零诊断、演示泄漏方法出 EAA0901 警告、白名单扩展 API 参与审计。
+       与 AnalyzerConsumer（故意泄漏的门禁装置）互补：本工程是「正确用法」的正向样板。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NoWarn>RS2008;RS2007</NoWarn>
+    <!-- 演示泄漏方法的 EAA0901 保持 warning 可见（构建成功 + 警告即「分析器活着」的证据）；
+         生产工程请在 .editorconfig 调为 error 使其成为门禁。 -->
+    <WarningsNotAsErrors>EAA0901</WarningsNotAsErrors>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 白名单扩展真接线：自有 API MyPool.Spawn/Despawn 经此获得审计保护（L3 诊断 + L2 Signature emit）。 -->
+    <AdditionalFiles Include="cosmos.effect.json" />
+  </ItemGroup>
+
+</Project>

@@ -51,6 +51,7 @@
 ### ⓪ NuGet 安装（消费已发布的包；源码引用见 ①）
 
 > **发布状态（R3-DT-01）**：以下包**尚未发布到 nuget.org**（`dotnet add package` 会 NU1101）。**发布前的默认接入路径是 ① 的源码引用**（clone 仓库 → 按 ① 改 csproj 相对路径）；NuGet 安装在发布后可用（见 `PUBLISH-CHECKLIST.md`）。前置：.NET 10 SDK，并以 `dotnet build` 构建（VS 内置 MSBuild 宿主对分析器静默不加载，见 ① 注记）。
+> **最小可跑示例**：`samples/HelloEffect`——clone 后 `dotnet build samples/HelloEffect/HelloEffect.csproj` 即见分析器行为（配对零诊断 / 演示泄漏 EAA0901 / 白名单扩展），含白名单扩展接线样板 `cosmos.effect.json`。
 
 ```pwsh
 dotnet add package Cosmos.EffectAlgebra           # L1 代数核心（必需；Generator 产物硬引用其类型）

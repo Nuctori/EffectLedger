@@ -363,6 +363,11 @@
 
 ## P5 产品化与对抗审计（收官加强，2026-09-08）
 
+- [x] **P5.0 最小可跑示例工程 HelloEffect** ✅ 2026-09-08（消费#1/#8 部分）：
+  `samples/HelloEffect`——clone 后 `dotnet build` 即见分析器行为（配对零诊断 / 演示泄漏
+  EAA0901 warning / EffectOverride 不豁免 DO-9 实证 / 白名单扩展 API 参与审计），
+  含 cosmos.effect.json 扩展接线样板。入 slnx（CI 自动构建保持可编译）。
+  README ⓪ 补最小示例指引（消费#1「无兜底示例」的落地）。
 - [x] **P5.1 文档产品化** ✅ 2026-09-08：README 头部徽章 + 价值主张四点 + 文档地图
   （10 项导航表）；去陈旧计数锚点（"95 Runtime" 已漂移为 120，改为 CI 汇总口径）；
   EFFECT_SCRIPT.md 产品导读（契约定位 + 配套物）。全部 doc-guard 钉（18 测试）保持绿。
