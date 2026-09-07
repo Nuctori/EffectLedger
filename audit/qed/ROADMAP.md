@@ -284,7 +284,19 @@
     ExactPairingNetsZero 等 4 义务如期红，回滚 ⇒ 复绿。
   - C# 对应钉（不重复落钉）：`NetTableSignedTests` / `CrossTableTests`——采样钉守实现漂移，
     定理守全称律；合流于 D5。
-- [ ] **D4** 扫换线 == 暴力扫描等价性——把现有随机等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）升级为定理。
+- [x] **D4a** 扫换线等价性·阶跃函数核心 ✅ 2026-09-07
+  - **形式规约**：`formal/CosmosSweepLine.dfy`（独立模块，与 D1-D3 文件并列）。事件模型 =
+    有限寿命 [lo,hi]（含闭存活，与 C# Alive 一致）+ 贡献在自身 lo 处入账（release 负贡献同点入账）
+    ⇒ **net(t) = Σ_{lo≤t} contrib 为纯阶跃函数，只在 lo 端点跳变**。
+  - 四条核心引理（全部机器验证）：①AliveSetAgree——[u,v] 无端点跨越 ⇒ 存活集恒定；
+    ②NetAtAgree——(u,v] 无 lo 端点 ⇒ 累积净额恒定（NegativeDip 段首采样可见性，不漏报）；
+    ③AliveSupersetOnSegment——段内存活集 ⊆ 段首样本存活集（峰值/冲突 gate 以超集保守评估，
+    不漏报）；④NetAtSampleCoversSegment——段首样本净额精确等于段内净额（精确评估）。
+    这四条即「在全部端点采样 ≡ 在所有时刻审计」的数学心脏。
+  - 证据：`dafny verify` ⇒ **5 verified, 0 errors**（本文件；全库累计 75 verified）。
+  - **拆分余项**：D4b 三 gates 覆盖定理（peak/conflict 超集保守性完整化）；D4c 扫换线增量维护
+    == 阶跃定义的算法等价（需建模排序与增量累加）；D4d C# 实现对照 + `dafny verify` 入 ci.sh
+    （与 D5 合并执行）。工具环境（dafny 4.11 + z3 4.12.1 + --solver-path）见 D1 条目。
 - [ ] **D5** C# 实现与形式规约逐条对照的性质测试（反例 shrink）；证明产物纳入 CI 门禁。
 
 ## P4 冻结与发布就绪（终态）
