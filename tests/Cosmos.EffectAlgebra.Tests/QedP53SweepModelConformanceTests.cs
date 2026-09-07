@@ -73,4 +73,41 @@ public class QedP53SweepModelConformanceTests
                 v => v.Kind == "PeakExceeded");
         }
     }
+
+    // ── P3-H3 净额维度：NegativeDip 段首可见性（D4a NetAtAgree 的 C# 可观测推论）──
+    // net 只在 lo 端点跳变 ⇒ release 先于 create 时，net 自 release.lo 起为负 ⇒
+    // NegativeDip 的首个 AtT 必精确等于 release.lo（段首采样可见，不漏报不漂移）。
+    // 任何「入账点漂移到 exit/采样点」的实现分歧都会改变首个 AtT ⇒ 本钉必红。
+    [Theory]
+    [InlineData(5, 10, 3)]
+    [InlineData(2, 17, 5)]
+    [InlineData(0, 30, 1)]
+    public void NegativeDip_FirstVisibleAt_ReleaseLo(int relLo, int creLo, int size)
+    {
+        var rel = new Cosmos.EffectAlgebra.EffectEvent(
+            new Cosmos.EffectAlgebra.Interval(Cosmos.EffectAlgebra.NatStar.Of((ulong)relLo), Cosmos.EffectAlgebra.NatStar.Of((ulong)(relLo + 5))),
+            Scene("S"),
+            Cosmos.EffectAlgebra.Signature.Of(new Claim(
+                Cosmos.EffectAlgebra.Kind.Occupy, Mem(), Cosmos.EffectAlgebra.Mode.Release,
+                Scene("S"), Cosmos.EffectAlgebra.Interval.Exact((ulong)size)).Normalize()),
+            Cosmos.EffectAlgebra.LoopCount.Of(1));
+        var cre = new Cosmos.EffectAlgebra.EffectEvent(
+            new Cosmos.EffectAlgebra.Interval(Cosmos.EffectAlgebra.NatStar.Of((ulong)creLo), Cosmos.EffectAlgebra.NatStar.Of((ulong)(creLo + 5))),
+            Scene("S"),
+            Cosmos.EffectAlgebra.Signature.Of(new Claim(
+                Cosmos.EffectAlgebra.Kind.Occupy, Mem(), Cosmos.EffectAlgebra.Mode.Create,
+                Scene("S"), Cosmos.EffectAlgebra.Interval.Exact((ulong)size)).Normalize()),
+            Cosmos.EffectAlgebra.LoopCount.Of(1));
+        var script = new Cosmos.EffectAlgebra.EffectScript(ImmutableArray.Create(rel, cre));
+
+        var dips = script.Audit(Cosmos.EffectAlgebra.Budget.None).Violations
+            .Where(v => v.Kind == "NegativeDip")
+            .Select(v => (int)v.AtT.Value)
+            .OrderBy(t => t)
+            .ToArray();
+
+        Assert.NotEmpty(dips);
+        Assert.Equal(relLo, dips[0]); // 首个负陷精确出现在 release 的 lo（段首采样可见）
+        Assert.All(dips, t => Assert.InRange(t, relLo, creLo - 1)); // create 入账后回正，此后无负陷
+    }
 }

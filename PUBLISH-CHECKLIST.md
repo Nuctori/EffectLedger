@@ -16,7 +16,7 @@
   - 全量构建 0 错误（`-warnaserror --no-incremental`）；
   - **Dafny 形式验证 89 定律 0 errors**（formal/*.dfy，P3 证明产物）；
   - 测试全绿（≥705：L1 512 + Runtime 120 + SampleGame 73，只增不减）。
-- [ ] `dotnet pack -c Release` 五包走查成功（nupkg × 5 + Tool 包）。
+- [ ] `dotnet pack -c Release` 五包走查成功（五 nupkg 含 Tool）。
 - [ ] GitHub Actions CI（push/PR 门）最近一次运行绿：`gh run list --limit 1`。
 
 ## 3. 契约冻结核对（发布即永久，逐条确认）
@@ -45,6 +45,7 @@
 ## 7. 发布后同步
 
 - [ ] README ⓪「发布状态（R3-DT-01）」注记删除/改写（`dotnet add package` 从此可用）。
+- [ ] `CHANGELOG.md` 补本版本条目（验收员 N7：发布后清单须含 CHANGELOG 步骤）。
 - [ ] `templates/README.md` 安装命令去「源码引用」分支。
 - [ ] 主 README「测试与仪表航迹」补一行：`dafny verify` 形式验证门（89 定律）。
 

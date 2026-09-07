@@ -32,8 +32,6 @@
 
 ---
 
-### 核心能力
-
 ## 能做什么
 
 
@@ -273,7 +271,7 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 4. **[影响：违例归因取首个贡献者，定位仅参考]** `At(t)` 投影不带事件来源 / `EventIndex` 取首个贡献者非峰值最大者 — `R9` YAGNI
 5. **[影响：勿用 At+Peak 对账（核对脚本向）]** `At(t)` 是**集合投影**（在场语义：同刻逐字段相同的重复事件去重计 1，与事件个数无关）；并发计数/峰值语义以 `Audit` 扫换线为准（计数语义：net/Peak 逐事件累加）——双语义是多重性载体决策（QED-A5：集合刻意幂等 + 重复构造即拒，多重性走事件序列/size×ω）的直接后果而非缺陷：At 回答「t 时刻有哪些 claim 在场」，Audit 回答「各占多少」。自建核对脚本请勿用 `At`+`Derived.Peak` 对账峰值（对照钉 `QedP0A2ProjectionContractTests`）
 6. **[影响：喂 AI 回修前按 (Kind,Resource) 去重]** `NegativeDip`/`CompatibleConflict` 逐采样点上报（时间序列语义），仅 `PeakExceeded` 做问题集去重（每资源首个反例）——三门去重口径不同是显式设计，喂 AI 回修前请自行按 `(Kind,Resource)` 去重【冻结：三门去重口径，变更=semver major】
-7. **[影响：跨 API 家族加载泄漏可能漏报（Runtime 兜底）]** `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据
+7. **[影响：跨 API 家族加载泄漏可能漏报（Runtime 兜底）]** `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据【冻结：哨兵配对语义，变更=semver major】
 8. **[影响：惯用形态会误报，需 [EffectOverride] 豁免]** `EAA0303/0304` 是意图提示而非数学缺陷：哨兵资源上惯用形态（`DrawRect`×2、`MoveAndSlide`+`GetSlideCollisionCount`）会触发，按需 `[EffectOverride("理由")]`（它们不豁免 EAA0901）
 9. **[影响：构造期/属性形态泄漏不在静态覆盖内]** L3 仅分析**方法体**：构造函数、属性访问器、`using var` 形态不在注册范围；`Position.get/set` 等属性形态白名单条目对 L3 无效——构造期泄漏不在静态覆盖内
 10. **[影响：多线程调用会坏；场景重载须新建实例]** Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）【冻结：单线程/单场景/不可重注册契约，变更=semver major】

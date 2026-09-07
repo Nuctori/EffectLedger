@@ -5,6 +5,7 @@
   "x-contract-frozen": "QED-P5.2 M6（2026-09-08）：白名单扩展配置契约面冻结——变更 = semver major + version 同步递增",
   "title": "cosmos.effect.json — 白名单扩展配置（§8.1 / QED-C1b/C1c）",
   "description": "L3 分析器与 L2 生成器经 AdditionalFiles 消费的扩展白名单。根层只认 $schema 与 extraMappings（其他键 loud 拒绝——根键拼错会让扩展静默失效，QED-P5.2 H1）。",
+  "x-parser-notes": "解析器（CosmosEffectConfig）比本 schema 更严的三处：①size 的 lo ≤ hi（schema 无法跨 prefixItems 表达）；②字符串值拒绝纯空白（IsNullOrWhiteSpace）；③extraMappings 内部 Canonical 同键碰撞（跨条目约束）。本 schema 为宽松超集——schema 过但 Parse 拒的方向是安全的（loud）。",
   "type": "object",
   "required": ["extraMappings"],
   "additionalProperties": false,

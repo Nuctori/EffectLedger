@@ -34,7 +34,7 @@ dotnet add package Cosmos.EffectAlgebra.Runtime
 # 1. AI 产 JSON（符合 docs/effect-script.schema.json；templates/effect-script.json 为可直接 Parse 的样板）
 # 2. 一键审计（消费工程：安装 .NET tool，勿用仓库相对路径 R3-CG-09）
 dotnet tool install -g Cosmos.EffectAlgebra.Tool   # 包发布前：在 Cosmos 仓根 dotnet pack 后安装。源路径二选一：无 -o 打包用 --add-source ./src/Cosmos.EffectAlgebra.Tool/bin/Release；dotnet pack -o <dir> 用 --add-source <dir>（R6-P）
-cosmos audit effect.json --out violations.json
+cosmos audit effect-script.json --out violations.json
 # 3. violations.json 喂回 LLM 重投直至 passed（退出码 0=passed / 2=违例 / 1=错误；载荷含 events 审计计数）
 ```
 
