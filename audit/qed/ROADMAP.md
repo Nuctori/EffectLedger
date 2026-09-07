@@ -294,8 +294,18 @@
     不漏报）；④NetAtSampleCoversSegment——段首样本净额精确等于段内净额（精确评估）。
     这四条即「在全部端点采样 ≡ 在所有时刻审计」的数学心脏。
   - 证据：`dafny verify` ⇒ **5 verified, 0 errors**（本文件；全库累计 75 verified）。
-  - **拆分余项**：D4b ✅（见下）/ D4c ✅（见下）/ D4d C# 实现对照 + `dafny verify` 入 ci.sh
-    （与 D5 合并执行）。工具环境见 D1 条目。
+  - **拆分余项**：D4b ✅（见下）/ D4c ✅（见下）/ D4d ✅（与 D5 合并完成，见下）。工具环境见 D1 条目。
+- [x] **D4d + D5** C# 实现对照 + 形式验证入 CI ✅ 2026-09-07
+  - **实现对照**（`tests/Cosmos.EffectAlgebra.Tests/QedP3D5ConformanceTests.cs`，5 测试）：
+    oracle = Dafny 模型的**独立 C# 直译**（数学域判定而非环绕检测——两侧实现技巧刻意不同，
+    吻合即「实现 == 规约」的证据，分歧即反例直报）。覆盖：①NatStar Add/Mul（⊤ 输入 × 边界
+    偏置集 10 值 × 随机 100 + 交叉）；②Interval Merge（随机合法区间对 200 组，含不变量保持
+    断言）；③ScopeId IncludedIn（8 构造子全对 64 组合）；④Compatible 25 组合（Unknown→Use
+    + CONFLICT 直译）。反例收缩：失败即打印精确输入对（固定种子 23 可复现）。
+  - **CI 接线**：`dafny verify`（两个 .dfy，0 errors 才放行）入 ci.sh/ci.ps1（DAFNY_Z3 可覆盖）
+    与 ci.yml（新增 Install Dafny + Z3 / Dafny verify 两步骤，ubuntu 用 glibc-2.35 资产）。
+  - 证据：`QedP3D5ConformanceTests` 5/5 绿；门禁含 dafny 步骤全绿（**全库 89 verified + 705 测试**）。
+  - **P3 形式化验证全部完成**：D1/D2/D3/D4a/D4b/D4c/D4d+D5。
 - [x] **D4c** 扫换线增量维护 == 阶跃定义 ✅ 2026-09-07
   - **定理**（`formal/CosmosSweepLine.dfy`）：①增量律 NetAtAddEventEnter/Future——追加事件
     e：lo ≤ t ⇒ 净额恰增 e.contrib；lo > t ⇒ 净额不变（扫换线 enter 处理器的数学内容，
