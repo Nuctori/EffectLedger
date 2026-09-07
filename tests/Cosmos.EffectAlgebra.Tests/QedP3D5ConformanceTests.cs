@@ -183,4 +183,110 @@ public class QedP3D5ConformanceTests
         (bool T, ulong V) xLo, (bool T, ulong V) xHi,
         (bool T, ulong V) yLo, (bool T, ulong V) yHi)
         => (ModelMin(xLo.T, xLo.V, yLo.T, yLo.V), ModelMax(xHi.T, xHi.V, yHi.T, yHi.V));
+
+    // ═══ P5.3-H3 扩展：SignedNet/守恒维度对照（红队 H3「56 条定律无 C# 对照桥」的回填第一批）═══
+    // oracle 独立性：数学域饱和判定（b>0 ? a > MAX−b : a < MIN−b），与实现的环绕/符号检测不同技巧。
+
+    static bool ModelZInRange(long v) => v >= long.MinValue && v <= long.MaxValue;
+
+    // D3 ZAdd 直译：任一 ⊤ ⇒ ⊤；有限和越 ℤ* 值域 ⇒ ⊤；否则精确和
+    static (bool T, long V) ModelZAdd(bool aT, long a, bool bT, long b)
+    {
+        if (aT || bT) return (true, 0);
+        // 无溢出的数学域判定：b>0 ⇔ 检查 a > MAX−b；b<0 ⇔ 检查 a < MIN−b；b==0 ⇒ a
+        var overflow = b > 0 ? a > long.MaxValue - b : a < long.MinValue - b;
+        return overflow ? (true, 0) : (false, a + b);
+    }
+
+    static readonly long[] ZBoundary =
+    {
+        0, 1, -1, 2, -2, long.MaxValue, long.MinValue, long.MaxValue - 1, long.MinValue + 1,
+        long.MaxValue / 2, long.MinValue / 2
+    };
+
+    static IEnumerable<long> ZSample(Random rng)
+    {
+        foreach (var v in ZBoundary) yield return v;
+        for (int i = 0; i < 60; i++) yield return rng.NextInt64(long.MinValue + 1, long.MaxValue);
+    }
+
+    // ── 对照 6：ZStar 加法 ⊤ 闭合 + 饱和（D3 ZAdd 定律的 C# 对照；含 ±MAX 边界与随机域）──
+    [Fact]
+    public void ZStar_Add_ConformsToFormalModel()
+    {
+        var rng = new Random(23);
+        foreach (var a in ZSample(rng))
+            foreach (var b in new[] { 0L, 1L, -1L, long.MaxValue, long.MinValue, ZSample(rng).First() })
+            {
+                var impl = Cosmos.EffectAlgebra.ZStar.Of(a) + Cosmos.EffectAlgebra.ZStar.Of(b);
+                var oracle = ModelZAdd(false, a, false, b);
+                Assert.True((impl.IsTop, impl.Value) == oracle,
+                    $"反例 ZAdd({a}, {b})：实现=({impl.IsTop}, {impl.Value}) 规约={oracle}");
+            }
+
+        // ⊤ 闭合
+        Assert.True((Cosmos.EffectAlgebra.ZStar.Top + Cosmos.EffectAlgebra.ZStar.Zero).IsTop);
+        Assert.True((Cosmos.EffectAlgebra.ZStar.Zero + Cosmos.EffectAlgebra.ZStar.Top).IsTop);
+    }
+
+    // ── 对照 7：SignedInterval Add + ContainsZero（守恒 ⇔ 含 0，任一端 ⊤ fail-closed）──
+    [Fact]
+    public void SignedInterval_Add_And_ContainsZero_Conform()
+    {
+        var rng = new Random(23);
+        for (int iter = 0; iter < 300; iter++)
+        {
+            long a = rng.NextInt64(long.MinValue + 1, long.MaxValue), b = rng.NextInt64(long.MinValue + 1, long.MaxValue);
+            if (a > b) (a, b) = (b, a);
+            long c = rng.NextInt64(long.MinValue + 1, long.MaxValue), d = rng.NextInt64(long.MinValue + 1, long.MaxValue);
+            if (c > d) (c, d) = (d, c);
+
+            var x = new Cosmos.EffectAlgebra.SignedInterval(Cosmos.EffectAlgebra.ZStar.Of(a), Cosmos.EffectAlgebra.ZStar.Of(b));
+            var y = new Cosmos.EffectAlgebra.SignedInterval(Cosmos.EffectAlgebra.ZStar.Of(c), Cosmos.EffectAlgebra.ZStar.Of(d));
+
+            var impl = x.Add(y);
+            // oracle：数学域内逐端相加（输入端点已在 long 域内 ⇒ 和可能越域 ⇒ oracle 饱和判定）
+            var loSum = ModelZAdd(false, a, false, c);
+            var hiSum = ModelZAdd(false, b, false, d);
+            Assert.Equal((loSum.T, loSum.V), (impl.Lo.IsTop, impl.Lo.Value));
+            Assert.Equal((hiSum.T, hiSum.V), (impl.Hi.IsTop, impl.Hi.Value));
+
+            // ContainsZero：任一端 ⊤ ⇒ false（fail-closed）；否则 lo ≤ 0 ≤ hi
+            var expectCz = !impl.Lo.IsTop && !impl.Hi.IsTop && impl.Lo.Value <= 0 && impl.Hi.Value >= 0;
+            Assert.Equal(expectCz, impl.ContainsZero);
+        }
+
+        // 精确配对回归：create(+8) 与 release(−8) 的区间和必含 0（DO-9 不报警的数学根据）
+        var create = new Cosmos.EffectAlgebra.SignedInterval(Cosmos.EffectAlgebra.ZStar.Of(8), Cosmos.EffectAlgebra.ZStar.Of(8));
+        var release = new Cosmos.EffectAlgebra.SignedInterval(Cosmos.EffectAlgebra.ZStar.Of(-8), Cosmos.EffectAlgebra.ZStar.Of(-8));
+        Assert.True(create.Add(release).ContainsZero);
+    }
+
+    // ── 对照 8：NetTable == 逐 claim 符号求和的暴力 oracle（create/release 抵消语义的 D5 桥）──
+    [Fact]
+    public void NetTable_ConformsToBruteForceSignedSum()
+    {
+        var rng = new Random(23);
+        var scope = new Cosmos.EffectAlgebra.ScopeId.Global();
+        for (int iter = 0; iter < 200; iter++)
+        {
+            var claims = new System.Collections.Generic.List<Cosmos.EffectAlgebra.Claim>();
+            long brute = 0;
+            int n = rng.Next(1, 8);
+            for (int i = 0; i < n; i++)
+            {
+                var sz = (ulong)(i + 1) * 2; // 互异 size：防 P0-4 重复 Claim 拒（同五元组会 loud 抛）
+                var mode = rng.Next(2) == 0 ? Cosmos.EffectAlgebra.Mode.Create : Cosmos.EffectAlgebra.Mode.Release;
+                claims.Add(new Cosmos.EffectAlgebra.Claim(Cosmos.EffectAlgebra.Kind.Occupy,
+                    new Cosmos.EffectAlgebra.ResourceId.Memory(1), mode,
+                    new Cosmos.EffectAlgebra.ScopeId.Scene("S"), Cosmos.EffectAlgebra.Interval.Exact(sz)).Normalize());
+                brute += mode == Cosmos.EffectAlgebra.Mode.Release ? -(long)sz : (long)sz;
+            }
+            var sig = Cosmos.EffectAlgebra.Signature.Of(claims.ToArray());
+            var net = Cosmos.EffectAlgebra.NetTable.Compute(sig, scope).Get(Cosmos.EffectAlgebra.ResourceId.Normalize(new Cosmos.EffectAlgebra.ResourceId.Memory(1)));
+
+            Assert.Equal(brute, net.Lo.Value);
+            Assert.Equal(brute, net.Hi.Value);
+        }
+    }
 }

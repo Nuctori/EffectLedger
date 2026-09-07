@@ -51,6 +51,17 @@
 
 ## P5.3 待办（下一轮迭代队列）
 
+**已回填（2026-09-08）**：H3 定律计数门 OK（ci.sh/ci.yml verified >=89 + 测试侧 lemma >=60 代理）/
+H3 oracle 回填第一批 OK（QedP3D5 +3：ZStar 饱和加法、SignedInterval Add+ContainsZero
+fail-closed、NetTable==暴力符号和——「56 条无对照桥」的守恒维度已闭环）/ M7 诊断面快照 OK
+（SupportedDiagnostics 恰 6 ID + severity + 默认启用）/ L11 OK（schema version major==包版本
+major）/ M8 OK（行为级冻结标记：#6/#7/#10/#11/#15/#16）/ H2 短期 OK（#18 补「internal 非安全
+边界」声明）。
+**余项**：H2 IVT 强命名决策（需人类）/ H3 扫换线算法对照（D4c 模型 vs C# Audit 的直译 oracle）/
+消费#6 边界重组 / #8b FAQ / L10 快照枚举缝隙 / L12 性能钉分档。
+
+<details><summary>原队列（存档）</summary>
+
 H2 IVT 决策 / H3 oracle 扩展（SignedNet+扫换线）+ 定律计数门 / M7 诊断面快照 /
 M8 行为级冻结复核 / 消费#6 边界重组 / #8 FAQ+示例工程+渠道 / L10 快照增强 /
 L11 version 钉一致性 / L12 性能钉分档。
