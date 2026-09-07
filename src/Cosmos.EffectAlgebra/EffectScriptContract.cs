@@ -269,12 +269,12 @@ public static class EffectScriptContract
         if (hitCount == 0)
             throw new FormatException("resource 须含 gpu/commandBuffer/memory/occupancy/signalBus/custom 之一");
         // 修 auditR2/R4 C2：resource 值缺失/类型错 ⇒ fail-fast（原静默兜底 "gpu"/""/0 会静默改写数据，比报错更危险）。
-        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(ReqStr(gpu, $"{layer}.gpu")));
-        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(ReqStr(cb, $"{layer}.commandBuffer"));
+        if (el.TryGetProperty("gpu", out var gpu)) return new ResourceId.Gpu(new Rid(NoPad(ReqStr(gpu, $"{layer}.gpu"), layer, "gpu")));
+        if (el.TryGetProperty("commandBuffer", out var cb)) return new ResourceId.CommandBuffer(NoPad(ReqStr(cb, $"{layer}.commandBuffer"), layer, "commandBuffer"));
         if (el.TryGetProperty("memory", out var mem)) return new ResourceId.Memory(mem.ValueKind == JsonValueKind.Number && mem.TryGetUInt64(out var uid) ? uid : throw new FormatException($"resource.memory 须为非负整数（rich-hickey2 R3 V3-006），实际 {mem.ValueKind}"));
-        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(ReqStr(occ, $"{layer}.occupancy"));
-        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(ReqStr(sb, $"{layer}.signalBus")));
-        if (el.TryGetProperty("custom", out var cu)) return new ResourceId.Custom(ReqStr(cu, $"{layer}.custom"));
+        if (el.TryGetProperty("occupancy", out var occ)) return new ResourceId.Occupancy(NoPad(ReqStr(occ, $"{layer}.occupancy"), layer, "occupancy"));
+        if (el.TryGetProperty("signalBus", out var sb)) return new ResourceId.SignalBus(new StringName(NoPad(ReqStr(sb, $"{layer}.signalBus"), layer, "signalBus")));
+        if (el.TryGetProperty("custom", out var cu)) return new ResourceId.Custom(NoPad(ReqStr(cu, $"{layer}.custom"), layer, "custom"));
         throw new FormatException("resource 形状非法");
     }
 
@@ -327,6 +327,10 @@ public static class EffectScriptContract
         // R6-RB-06：与 claim 侧 ReqStr 控制字符口径同界——budget 键 id 同为分组身份。
         foreach (var ch in id)
             if (ch < ' ') throw new FormatException($"budget 键 \"{key}\" 资源 id 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
+        // 【QED-P5.3 方言 HIGH】前后空白拒绝：" res" 与 "res" 是 budget/claim 两侧拼写照会失配成
+        // 幽灵预算（gate 静默失配虚增 CapsChecked）——拒绝而非 Trim 改写（R3-L1-03 教义）。
+        if (id != id.Trim())
+            throw new FormatException($"budget 键 \"{key}\" 资源 id 含前后空白（\"{id}\"）——拼写失配会让预算/审计静默失配，拒绝而非改写");
         return id;
     }
 
@@ -417,6 +421,15 @@ public static class EffectScriptContract
         foreach (var ch in s)
             if (ch < ' ') throw new FormatException($"{field} 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
         return s;
+    }
+
+    // 【QED-P5.3 方言 HIGH】资源 id 前后空白拒绝——" res" 与 "res" 是 budget/claim 两侧拼写照会
+    // 失配成幽灵预算（gate 静默失配虚增 CapsChecked）；嵌入空格合法（身份逐字精确匹配）。
+    static string NoPad(string v, string layer, string key)
+    {
+        if (v.Length > 0 && v != v.Trim())
+            throw new FormatException($"{layer}.{key}: 资源 id 含前后空白（\"{v}\"）——拒绝而非改写（拼写失配会让预算/审计静默失配）");
+        return v;
     }
 }
 

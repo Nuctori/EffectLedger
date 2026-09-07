@@ -363,6 +363,13 @@
 
 ## P5 产品化与对抗审计（收官加强，2026-09-08）
 
+- [x] **P5.2b 方言审计 HIGH 处置** ✅ 2026-09-08：budget/claim 资源 id 前后空白拒绝
+  （NoPad 双侧对称——"custom: residency" 冒号后空格是 LLM 书写签名级拼写错误，
+  拼写失配 = 幽灵预算 gate 静默失配；拒绝而非 Trim 改写，嵌入空格合法）。
+  钉 `QedP53DialectHardeningPins` 6 枚（budget 前后空白 3 形态 / claim 双侧 / 嵌入空格合法）。
+  余项（方言审计 MED/LOW）：type:global 静默丢弃 scene 值（MED，拒绝而非归并待决策）/
+  双解析器空白口径漂移（本提交已对称收敛）/ 拒绝消息 NUL 回显（LOW）/
+  CLI 载荷未透出 CapsChecked（LOW，与假绿治理相关）——归 P5.3 后续队列。
 - [x] **P5.0 最小可跑示例工程 HelloEffect** ✅ 2026-09-08（消费#1/#8 部分）：
   `samples/HelloEffect`——clone 后 `dotnet build` 即见分析器行为（配对零诊断 / 演示泄漏
   EAA0901 warning / EffectOverride 不豁免 DO-9 实证 / 白名单扩展 API 参与审计），
