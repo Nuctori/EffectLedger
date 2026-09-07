@@ -11,6 +11,8 @@
   -->
 
   <PropertyGroup>
+    <!-- 【QED-P5.3 H2 加固】AssemblyName 命名空间化：防通用词撞名伪造 IVT 友元（SampleGame 是高频词）。 -->
+    <AssemblyName>Cosmos.EffectAlgebra.SampleGame</AssemblyName>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

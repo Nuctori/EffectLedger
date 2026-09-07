@@ -30,7 +30,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Cosmos.EffectAlgebra.Tests" />
     <InternalsVisibleTo Include="Cosmos.EffectAlgebra.Runtime.Tests" />
-    <InternalsVisibleTo Include="SampleGame" />
+    <InternalsVisibleTo Include="Cosmos.EffectAlgebra.SampleGame" /><!-- P5.3-H2：命名空间化防撞名 -->
   </ItemGroup>
 
 </Project>
