@@ -1,10 +1,37 @@
 # Cosmos.EffectAlgebra
 
+[![CI - Effect Cost Algebra Audit Gate](https://github.com/Nuctori/Cosmos/actions/workflows/ci.yml/badge.svg)](https://github.com/Nuctori/Cosmos/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-blue)
+![Formal Verification](https://img.shields.io/badge/Dafny-89%20lemmas%20verified-brightgreen)
+
 > 效应代数（Effect Algebra）——在**编译期**做**资源守恒 / 泄漏 / 峰值超预算 / 互斥冲突**的静态近似审计，并在**运行时**由 `Cosmos.EffectAlgebra.Runtime` 做权威闭合判定。
-> 设计文档见 `PDR_Effect_Cost_Algebra_v3_FINAL.md`；声明式剧本 DSL 见 `EFFECT_SCRIPT.md`；运行时壳层设计见 `docs/spatial-plugin-shell-design.md`。
-> 仪表层见 `DELIVERABLE.md`。
+
+**为什么选它**：
+
+- **编译期拦截，运行期权威**——L3 Roslyn 分析器在写代码时就报泄漏/冲突（EAA* 诊断），运行时 Σnet 闭合做最终裁决，两层互为印证。
+- **89 条机器验证定律**——代数核心（ℕ∪{⊤} 闭合、区间半格、ScopeId 偏序、Compatible 全函数、SignedNet 守恒、扫换线采样充分性）由 Dafny 形式化验证并纳入 CI 门禁，`dafny verify` 0 errors 才放行。
+- **三层冻结契约**——公共 API 面 43 类型快照钉死、JSON 契约面 schema version 1.0.0 冻结、异常方言/退出码冻结：升级兼容性可被机器断言。
+- **AI 友好**——声明式剧本 JSON（6 资源 × 4 scope）可被 LLM 产出并直接机审，`cosmos audit` CLI 一键闭环。
+
+**文档地图**：
+
+| 想了解 | 去哪 |
+| ------ | ---- |
+| 5 分钟上手（安装/接线/诊断门禁） | 本页 ⓪–⑤ |
+| 剧本 DSL 与 AI 闭环 | `EFFECT_SCRIPT.md`（§4 数据契约） |
+| JSON Schema（AI 产出校验用） | `docs/effect-script.schema.json` + `templates/effect-script.json` |
+| 形式化验证（89 条 Dafny 定律） | `formal/CosmosEffectAlgebra.dfy`、`formal/CosmosSweepLine.dfy` |
+| 设计总纲（PDR v3.0-FINAL） | `PDR_Effect_Cost_Algebra_v3_FINAL.md` |
+| 运行时壳层设计 | `docs/spatial-plugin-shell-design.md` |
+| 发布流程（人类执行） | `PUBLISH-CHECKLIST.md` |
+| QED 路线与维护模式 | `audit/qed/ROADMAP.md` |
+| 历史交付快照 | `DELIVERABLE.md` |
+| 已知边界（20 条，逐条附证据） | 本页「已知语义锐边」 |
 
 ---
+
+### 能做什么
 
 ## 能做什么
 
@@ -235,4 +262,4 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 19. ~~`CrashReports`/`_netAccum` 单实例有界增长~~ **已解决（QED-C2）**：`CrashReports` 环形上限恒保留最近 64 条（last 语义不变）；`_netAccum` 在每批次卸载/退出排空完成点自动剪除非 Active Fiber 条目（零语义损失：Active 过滤器永久跳过 + 同 FiberId 不可重注册）。`ResetDiagnostics` 降级为宿主可选显式出口（非内存安全义务）。钉：`QedP2C2DiagnosticsBoundPins`（3 枚，经 IVT 断言 internal 观测口）
 20. §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
 
-验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（95 Runtime + Tests + 73 SampleGame——Tests 计数随迭代增删，以 CI 汇总为准；文档硬编码总数已随漂移移除，见 doc-guard 测试）。
+验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（三测试工程：L1 主套件 + Runtime + SampleGame，总数以 CI 汇总为准；doc-guard 禁止硬编码会漂移的全量计数）。

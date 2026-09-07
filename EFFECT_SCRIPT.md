@@ -1,3 +1,11 @@
+<!--
+    本文件是 Cosmos.EffectAlgebra 的**声明式剧本契约规范**：AI/工具产出 JSON 剧本，
+    `EffectScriptContract.Parse` 零 Godot 依赖机审（非法形状 fail-fast 抛 FormatException），
+    `Audit` 三道 gate（守恒/峰值/兼容）给出违例清单，`cosmos audit` CLI 一键闭环。
+    配套：`docs/effect-script.schema.json`（校验用 Schema，契约面已冻结 QED-E2）、
+    `templates/effect-script.json`（可复制样板）。面向使用者的速查见主 README ④/⑤。
+-->
+
 # EFFECT_SCRIPT — 视觉效应代数剧本（L1 增量设计）
 
 > 状态：设计冻结（待 3 轮独立数学家对抗性审计）
