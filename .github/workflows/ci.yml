@@ -28,6 +28,9 @@ jobs:
       - name: Dafny verify (P3 形式规约门：0 errors 才放行)
         run: |
           export PATH="$HOME/.dotnet/tools:$PATH"
-          dafny verify --solver-path "$HOME/.dotnet/tools/z3/bin/z3-4.12.1" formal/CosmosEffectAlgebra.dfy formal/CosmosSweepLine.dfy
+          dafny verify --solver-path "$HOME/.dotnet/tools/z3/bin/z3-4.12.1" formal/CosmosEffectAlgebra.dfy formal/CosmosSweepLine.dfy | tee /tmp/dafny.txt
+          grep -q "0 errors" /tmp/dafny.txt || { echo "P3-H3 计数门：Dafny 存在验证错误"; exit 1; }
+          COUNT=$(grep -oE '[0-9]+ verified' /tmp/dafny.txt | grep -oE '[0-9]+' | head -1)
+          [ "${COUNT:-0}" -ge 89 ] || { echo "P3-H3 计数门：verified $COUNT < 89——定律被删减即红"; exit 1; }
       - name: Test (审计 + 代数 + L2/L3 端到端；slnx 已含 SampleGame，任何失败=红)
         run: dotnet test Cosmos.EffectAlgebra.slnx -c Release --no-build --verbosity normal
