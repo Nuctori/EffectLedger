@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cosmos.effect/cosmos-effect-config.schema.json",
+  "version": "1.0.0",
+  "x-contract-frozen": "QED-P5.2 M6（2026-09-08）：白名单扩展配置契约面冻结——变更 = semver major + version 同步递增",
+  "title": "cosmos.effect.json — 白名单扩展配置（§8.1 / QED-C1b/C1c）",
+  "description": "L3 分析器与 L2 生成器经 AdditionalFiles 消费的扩展白名单。根层只认 $schema 与 extraMappings（其他键 loud 拒绝——根键拼错会让扩展静默失效，QED-P5.2 H1）。",
+  "type": "object",
+  "required": ["extraMappings"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "extraMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["api", "claims"],
+        "additionalProperties": false,
+        "properties": {
+          "api": { "type": "string", "minLength": 1, "description": "Godot API 名（规范化去 ./_ 后小写匹配）" },
+          "claims": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["kind", "resource", "mode", "scope"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["read", "write", "occupy"] },
+                "resource": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "gpu": { "type": "string", "minLength": 1 },
+                    "commandBuffer": { "type": "string", "minLength": 1 },
+                    "memory": { "type": "integer", "minimum": 0 },
+                    "occupancy": { "type": "string", "minLength": 1 },
+                    "signalBus": { "type": "string", "minLength": 1 },
+                    "custom": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "mode": { "enum": ["use", "create", "release", "move", "unknown"] },
+                "scope": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "scene": { "type": "string", "minLength": 1 },
+                    "type": { "enum": ["method", "type", "global", "scene"] }
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "prefixItems": [
+                    { "anyOf": [{ "type": "integer", "minimum": 0 }, { "const": "⊤" }] },
+                    { "anyOf": [{ "type": "integer", "minimum": 0 }, { "const": "⊤" }] }
+                  ],
+                  "items": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://cosmos.effect/effect-script.schema.json",
+  "$schema": "../docs/effect-script.schema.json",
   "events": [
     {
       "lifetime": [0, 6],

@@ -32,6 +32,7 @@ dotnet_diagnostic.EAA0304.severity = error
 dotnet_diagnostic.EAA0801.severity = error
 # §8.3.2 [AcceptDeviation] epsilon ∈ [0.0, 0.5]
 dotnet_diagnostic.EAA0802.severity = error
+dotnet_diagnostic.EAA0701.severity = error
 
 # 注：EAA0901/EAA0303/EAA0304 为「控制流近似」早期根因提示（运行期 net 为权威），
 # 标记为 error 即要求开发者对每一处泄漏提示显式 [EffectOverride(reason)] 或修正配对；

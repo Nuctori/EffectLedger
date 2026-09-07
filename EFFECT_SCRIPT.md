@@ -8,7 +8,7 @@
 
 # EFFECT_SCRIPT — 视觉效应代数剧本（L1 增量设计）
 
-> 状态：设计冻结（待 3 轮独立数学家对抗性审计）
+> 状态：设计冻结（已闭环 30 轮迭代对抗审计，轨迹见 §10；QED-P3 后代数核心另有 89 条 Dafny 定律，见 `formal/`）
 > 范围：纯 L1 增量（`Cosmos.EffectAlgebra/`，**零 Godot 依赖**）。**不动** §7 白名单 / L2 Generator / L3 Analyzer。
 > 目标：把「AI 看参考图/视频 → 写视觉效果」这一步，落地为一层**可静态验证、可符号探索、不跑游戏**的代数剧本类型。
 > 出处：所有类型严格复用 PDR §3.1–§3.3 已建 L1。新增类型不引入任何未证明的代数结构。
@@ -71,7 +71,7 @@ public readonly record struct EffectEvent
 
 > **边界注记（OPEN-B4，来自 iter-effect03_14 审计）：** `Lifetime.Lo` 必须有限。`Interval` 构造子允许退化 `[⊤,⊤]`（Lo=⊤ 且 Hi=⊤），此时 `Lo.CompareToFinite(t)>0` 恒真 ⇒ 该 Event 在任意有限 t 均「不存活」，完全脱离 `At(t)` 与审计（fail-open：未知生命周期诚实不审计）。用户须给出有限起点 `Lo`；`[⊤,⊤]` 视为非法输入而非错误项。
 
-> 类型强制（用户铁律）：5 字段位置记录 ⇒ 构造即全必填，不存在漏字段的 Event。`Lifetime`/`Footprint`/`Loop` 的数学边界由既有类型承载。
+> 类型强制（用户铁律）：4 字段位置记录（Lifetime/Scope/Footprint/Loop——上方草样省略 Scope，实际形状见 R4-RH-16 注记）⇒ 构造即全必填，不存在漏字段的 Event。`Lifetime`/`Footprint`/`Loop` 的数学边界由既有类型承载。
 
 ### 2.2 `EffectScript` — 剧本 = 有限个 Event 的集合
 
@@ -237,7 +237,7 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 **复用调用为零新增代数**：`Interval` / `Signature.Union` / `NetTable.Compute` / `Derived.IsConserved` / `Peak.Compute` / `Compatible.IsCompatible` / `Combination.Loop` / `LoopCount` / `ResourceId.Normalize` / `ScopeId.IncludedIn`。
 
-测试（下一轮迭代补）：endpoint 采样完备性、守恒反例、峰值超限、循环 ω=⊤ 非守恒、确定性。
+测试（已纳入迭代回归集）：endpoint 采样完备性、守恒反例、峰值超限、循环 ω=⊤ 非守恒、确定性。
 
 ---
 

@@ -20,9 +20,9 @@ jobs:
         run: dotnet build Cosmos.EffectAlgebra.slnx -c Release --no-restore -warnaserror
       - name: Install Dafny + Z3 (P3 形式验证门依赖：D1 记录的版本组合)
         run: |
-          dotnet tool install --global Dafny
+          dotnet tool install --global Dafny --version 4.11.0 # P5.2-M4：钉版本（D1 验证组合），防 latest 改变义务集
           mkdir -p $HOME/.dotnet/tools/z3/bin
-          curl -sL https://github.com/Z3Prover/z3/releases/download/z3-4.12.1/z3-4.12.1-x64-glibc-2.35.zip -o /tmp/z3.zip
+          curl -fL --retry 2 https://github.com/Z3Prover/z3/releases/download/z3-4.12.1/z3-4.12.1-x64-glibc-2.35.zip -o /tmp/z3.zip # P5.2-M4：-f 拒绝 404 页存盘
           cd /tmp && unzip -o -q z3.zip && cp z3-4.12.1-x64-glibc-2.35/bin/z3 $HOME/.dotnet/tools/z3/bin/z3-4.12.1
           echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
       - name: Dafny verify (P3 形式规约门：0 errors 才放行)

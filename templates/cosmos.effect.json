@@ -1,5 +1,5 @@
 {
-  "$schema": "https://cosmos.effect/cosmos-effect-config.schema.json",
+  "$schema": "../docs/cosmos-effect-config.schema.json",
   "extraMappings": [
     {
       "api": "MyPool.Spawn",

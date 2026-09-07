@@ -61,11 +61,16 @@ public class QedMaintFuzzTests
         if (malformed)
         {
             // 畸形语料：截断/错型/未知键——验证方言鲁棒性（只允许 FormatException）
-            return rng.Next(3) switch
+            // 首轮 4 类「合法形状被拒」的语料转为畸形常驻（P5.2-M5：方言拒绝路径保持每晚演练）
+            return rng.Next(7) switch
             {
                 0 => "{ \"events\": [ { \"lifetime\": [0",
                 1 => "{ \"events\": \"not-an-array\", \"budget\": 3 }",
-                _ => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"occupy\", \"resource\": { \"gpu\": 3 }, \"mode\": \"use\" } ] } ] }",
+                2 => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"occupy\", \"resource\": { \"gpu\": 3 }, \"mode\": \"use\" } ] } ] }",
+                3 => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"occupy\", \"resource\": { \"memory\": \"2\" }, \"mode\": \"use\" } ] } ] }",       // memory 字符串值
+                4 => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"read\", \"resource\": { \"memory\": 1 }, \"mode\": \"create\", \"scope\": { \"scene\": \"S\" } } ] } ] }",                                             // Read+Create
+                5 => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"occupy\", \"resource\": { \"memory\": 1 }, \"mode\": \"use\", \"scope\": { \"scene\": \"S\" }, \"size\": [7, 5] } ] } ] }",                                     // size lo>hi
+                _ => "{ \"events\": [ { \"lifetime\": [0, 5], \"scope\": { \"scene\": \"S\" }, \"footprint\": [ { \"kind\": \"occupy\", \"resource\": { \"memory\": 1 }, \"mode\": \"use\", \"scope\": { \"scene\": \"T\" } } ] } ] }",                                                 // claim scope ≠ event scope
             };
         }
         var sb = new StringBuilder();
@@ -133,7 +138,7 @@ public class QedMaintFuzzTests
             var r3 = reparsed.Audit(reparsed.Budget);
             Assert.Equal(r1.Violations.Length, r3.Violations.Length);
             for (int i = 0; i < r1.Violations.Length; i++)
-                Assert.Equal(r1.Violations[i].Kind, r3.Violations[i].Kind);
+                Assert.Equal((r1.Violations[i].Kind, r1.Violations[i].AtT), (r3.Violations[i].Kind, r3.Violations[i].AtT)); // P5.2-M5：投影点漂移也要红
         }
     }
 }

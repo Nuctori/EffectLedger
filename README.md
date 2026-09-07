@@ -6,6 +6,7 @@
 ![Formal Verification](https://img.shields.io/badge/Dafny-89%20lemmas%20verified-brightgreen)
 
 > 效应代数（Effect Algebra）——在**编译期**做**资源守恒 / 泄漏 / 峰值超预算 / 互斥冲突**的静态近似审计，并在**运行时**由 `Cosmos.EffectAlgebra.Runtime` 做权威闭合判定。
+> 白话版：装上它，`dotnet build` 时对 `AddChild`/`QueueFree` 这类 API 报泄漏与冲突警告（EAA* 诊断）；AI 产出的 JSON 特效剧本不跑游戏即可机审。
 
 **为什么选它**：
 
@@ -31,7 +32,7 @@
 
 ---
 
-### 能做什么
+### 核心能力
 
 ## 能做什么
 
@@ -41,7 +42,7 @@
 | **守恒/泄漏审计** | 一组 `EffectEvent`（`lifetime` × `scope` × `footprint` × `LoopCount`）      | `AuditResult.Violations`（`Kind`: Leak / NegativeDip / PeakExceeded / CompatibleConflict）                                              | Σnet(t) 含 ⊤ 保守律（MA-002），O(E·K·log E) 扫换线（等价端点采样，`audit/drafts/iter-effect26.md`）                                                          |
 | **峰值预算**    | `EffectScript.Budget.Caps`（按归一化资源键）                                     | `Peak ≤ cap`，`IsPeakChecked`/`CapsChecked` 报告门是否实际运行（R1-HIGH-3, R5）                                                         | 值语义 `Budget: ImmutableDictionary` 归一底座（Self→SignalBus 等，R6 S06-002）与 `peakReported` 问题集语义（同资源只报首个）                         |
 | **互斥冲突**    | `gate(3) Compatible`                                                    | `CompatibleConflict`（跨 scope×mode×归一化 ResourceId；CONFLICT 集见 §3.2.3）                                                                | `Compatible.IsCompatible` 对角律单一真源（CONFLICT 集 §3.2.3）                                                               |
-| **声明式剧本**   | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载                                                                                                      | fail-fast 白名单（根/事件/claim 层未知键拒，대 小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
+| **声明式剧本**   | `EffectScriptContract.Parse(string) → EffectScript`；`ToJson` round-trip | 可证伪的 JSON 契约 + L1 类型承载                                                                                                      | fail-fast 白名单（根/事件/claim 层未知键拒，大写小写 Loop 静默退化 ⊤ 等）、`default(LoopCount)` 构造期封堵、`Scope{}`/`resource` 非空校验（R1-R2, R6 S06-001） |
 | **编译期近似**   | L2 `Generator` + L3 `Analyzer`（`ApiMapping` 白名单；cosmos.effect.json 扩展经 AdditionalFiles 真接线，QED-C1b）                        | `EAA*` 诊断（EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 并发冲突 / EAA0801 EffectOverride reason 必填 / EAA0802 AcceptDeviation epsilon 越界 / EAA0701 白名单扩展配置错误） | 对抗测试族 co-driven（`samples/GodotIntegration/AdvE2E_*`：逃逸/豁免/误报对抗形状），白名单 §7 单点                                                |
 
 
@@ -51,7 +52,7 @@
 
 ### ⓪ NuGet 安装（消费已发布的包；源码引用见 ①）
 
-> **发布状态（R3-DT-01）**：以下包**尚未发布到 nuget.org**（`dotnet add package` 会 NU1101）。发布前请用 ① 的源码引用接入；包内容与依赖闭包已由 `dotnet pack` 门验证。
+> **发布状态（R3-DT-01）**：以下包**尚未发布到 nuget.org**（`dotnet add package` 会 NU1101）。**发布前的默认接入路径是 ① 的源码引用**（clone 仓库 → 按 ① 改 csproj 相对路径）；NuGet 安装在发布后可用（见 `PUBLISH-CHECKLIST.md`）。前置：.NET 10 SDK，并以 `dotnet build` 构建（VS 内置 MSBuild 宿主对分析器静默不加载，见 ① 注记）。
 
 ```pwsh
 dotnet add package Cosmos.EffectAlgebra           # L1 代数核心（必需；Generator 产物硬引用其类型）
@@ -65,7 +66,7 @@ dotnet add package Cosmos.EffectAlgebra.Generator # L2 每方法 Signature 生�
 > （`dotnet list package --include-transitive` 可核对依赖是否真流动）。重打包后须先删除缓存中
 > 对应包目录。CI/全新机器不受影响。
 
-**门禁须自行接线**：诊断默认 warning，把 ② 的五行 severity=error 复制进你的 `.editorconfig`。JSon 剧本一键审计用 `cosmos` CLI（见 ⑤）。
+**门禁须自行接线**：诊断默认 warning，把 ② 的六行 severity=error 复制进你的 `.editorconfig`（根 .editorconfig 同款六行）。JSon 剧本一键审计用 `cosmos` CLI（见 ⑤）。
 
 
 ### ① 接 L1 + L3 分析器 + L2 生成器（消费工程 `.csproj`）
@@ -164,8 +165,9 @@ string back = EffectScriptContract.ToJson(script);
 ### ⑤ `cosmos` CLI：剧本 JSON 一键审计（AI 闭环用）
 
 ```pwsh
-dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit effect.json --out violations.json
+dotnet run --project src/Cosmos.EffectAlgebra.Tool -c Release -- audit templates/effect-script.json --out violations.json
 ```
+> 注意文件名区分：`effect-script.json` 是**剧本**（本 CLI 的输入）；`cosmos.effect.json` 是**白名单扩展配置**（编译期 L2/L3 消费，见 ③）——两者用途不同，喂错会得到费解报错。
 
 `violations.json` 喂回 LLM 重投直至 `passed`。**退出码契约（R2B-06，注意与常见惯例不同）**：
 

@@ -28,6 +28,20 @@ public static class CosmosEffectConfig
         using var _ = doc; // R4-JD-07：同契约侧，归还池化缓冲
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) throw new FormatException("根须为对象，含 extraMappings 数组");
+        // 【QED-P5.2 H1 根层白名单】根键拼错（如 "extramappings"/"extra_mapping"）此前静默返回空 =
+        // 扩展静默死亡且无任何诊断（违反「绝不静默」承诺，红队 P5.2-H1）。现在：根层只认
+        // $schema / extraMappings；出现其他键而缺 extraMappings ⇒ loud FormatException。
+        // （$schema 与 extraMappings 并存合法——模板即此形态。）
+        var hasExtra = false;
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (prop.Name == "$schema") continue;
+            if (prop.Name == "extraMappings") { hasExtra = true; continue; }
+            throw new FormatException(
+                $"未知根键 \"{prop.Name}\"（合法根键: $schema, extraMappings）。" +
+                "根键拼错会让扩展静默失效，故 loud 拒绝而非静默忽略（QED-P5.2 H1）");
+        }
+        if (!hasExtra) return ImmutableArray<ApiMapping>.Empty;
         if (!root.TryGetProperty("extraMappings", out var arr)) return ImmutableArray<ApiMapping>.Empty;
         if (arr.ValueKind != JsonValueKind.Array) throw new FormatException("extraMappings 须为数组");
         var list = new List<ApiMapping>();

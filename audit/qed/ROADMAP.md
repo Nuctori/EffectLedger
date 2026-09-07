@@ -114,7 +114,7 @@
   - **机制**：反射枚举 L1 与 Runtime 两个公共程序集的全部导出类型（类型头 + 公共成员块，序数排序
     确定性渲染），与仓库内冻结快照逐字节比对——任何公共面新增/变更/删除即红，差异信息直出。
     过滤编译器合成（`<` 名/`CompilerGenerated`/属性访问器行）；枚举值含常量。
-  - 快照：`tests/Cosmos.EffectAlgebra.Tests/PublicApiSnapshot.Cosmos.EffectAlgebra.txt`（L1，217 行）
+  - 快照：`tests/Cosmos.EffectAlgebra.Tests/PublicApiSnapshot.Cosmos.EffectAlgebra.txt`（L1）
     与 `tests/Cosmos.EffectAlgebra.Runtime.Tests/PublicApiSnapshot.Cosmos.EffectAlgebra.Runtime.txt`
     （Runtime，125 行）。重生成：`QED_REGEN_API_SNAPSHOT=1 dotnet test`（写入后须人工审查 diff）。
     B2/B4 的公共面收缩将走「有意变更 + 快照同步重生成」流程——这正是本机制的预期用法。
@@ -327,7 +327,7 @@
     多绑定（嵌套 `var :|` 表达式非法）。Mode/Compatible 复用 D2 定义（`import opened` 置于
     模块体内——文件级导入对内嵌模块不可见；冲突谓词名为 InConflict）。
   - 证据：`dafny verify` ⇒ CosmosSweepLine.dfy **14 verified, 0 errors**（全库累计 81）。
-- [ ] **D5** C# 实现与形式规约逐条对照的性质测试（反例 shrink）；证明产物纳入 CI 门禁。
+- [x] **D5** C# 实现与形式规约逐条对照的性质测试；证明产物纳入 CI 门禁。（✅ 已完成，执行记录见上方「D4d + D5」条目——蓝图区本行仅为任务定义存档）
 
 ## P4 冻结与发布就绪（终态）
 
@@ -345,7 +345,7 @@
   - 钉 `QedP4E2SchemaFreezePins` 4 枚：版本标记存在 / 资源面恰 6 键 / scope 面恰 4 键+type 枚举 /
     kind+mode 枚举冻结（导航断言精确到 schema 节点）。模板可解析性由既有 DocGuard A1-03 承载。
 - [x] **E3** README 诚实边界逐条复核 ✅ 2026-09-07
-  - 20 条逐条过检：6 条已解决就地保留划线标记（#1 四名一实→B3 / #5 双语义→A2 / #12 白名单
+  - 20 条逐条过检：6 条已解决就地标记（4 条划线：#1/#13/#18/#19；2 条改写扩充：#5→A2 / #12→C1b,c）——原文「划线标记」措辞以此为准（#1 四名一实→B3 / #5 双语义→A2 / #12 白名单
     接线→C1b/c / #13 TFM→B5 / #18 契约面→B4 / #19 诊断有界→C2，各附修复证据）；
     14 条活跃语义各附测试钉/文档引用（#2 DO-1 锁 / #3 D08 等价钉 / #7⑨⑩ 运行期权威宪法 /
     #11 两层口径 / #14 R3-CG-07 / #16 性能曲线钉 / #17 方言冻结→A4 / #20 常量合并→A7 等）。

@@ -44,7 +44,26 @@ public class QedP2C1aMergedWhitelistPins
         Assert.Throws<InvalidOperationException>(() => GodotApiWhitelist.MergedWith(dup));
     }
 
-    // ── 钉 4：空扩展 = 原基础表（长度相等、内容一致）。 ──
+    // ── 钉 4（QED-P5.2 H1 根层白名单）：extraMappings 根键拼错 ⇒ FormatException loud——
+    //    静默返回空 = 扩展静默死亡 = 违反「绝不静默」冻结承诺（R6-E1 教义在本通道的延伸）。 ──
+    [Theory]
+    [InlineData("{ \"extramappings\": [] }")]              // 大小写拼写
+    [InlineData("{ \"extra_mapping\": [] }")]              // 下划线拼写
+    [InlineData("{ \"$schema\": \"x\", \"mappings\": [] }")] // 未知内容键
+    public void LoadExtraFromJson_UnknownRootKey_Throws(string json)
+    {
+        var ex = Assert.Throws<FormatException>(() => CosmosEffectConfig.LoadExtraFromJson(json));
+        Assert.Contains("根键", ex.Message);
+    }
+
+    // ── 钉 4b：仅 $schema（无 extraMappings）= 合法空扩展。 ──
+    [Fact]
+    public void LoadExtraFromJson_OnlySchema_ReturnsEmpty()
+    {
+        Assert.Empty(CosmosEffectConfig.LoadExtraFromJson("{ \"$schema\": \"https://cosmos.effect/cosmos-effect-config.schema.json\" }"));
+    }
+
+    // ── 钉 5：空扩展 = 原基础表（长度相等、内容一致）。 ──
     [Fact]
     public void MergedWith_EmptyExtra_ReturnsBase()
     {
