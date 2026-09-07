@@ -20,8 +20,14 @@ public sealed class DependencyGraph
     private readonly HashSet<(FiberId Dependent, FiberId Provider)> _soft = new();
     private readonly Dictionary<FiberId, Fiber> _fibers = new();
 
-    /// <summary>§1/§3 — 注册 Fiber（用于拓扑排序解析依赖）。</summary>
-    public void Register(Fiber f) => _fibers[f.Id] = f;
+    /// <summary>§1/§3 — 注册 Fiber（用于拓扑排序解析依赖）。
+    /// 【QED-P5.3】同 id 重复注册 loud 抛（红队 P5.2-#5：静默覆盖 = 双账本失步 + ghost 永不推进；
+    /// 与 PluginRuntime.Register 的 R7-L1 loud 语义对齐，消「同名操作两种语义」口径分裂）。</summary>
+    public void Register(Fiber f)
+    {
+        if (!_fibers.TryAdd(f.Id, f))
+            throw new InvalidOperationException($"QED-P5.3：DependencyGraph 重复 Register {f.Id}（同 id 静默覆盖会双账本失步）");
+    }
 
     /// <summary>§3 — 加显式边（同 Scope 内 B.Requires ⊇ A.Provides）。返回是否新增。
     /// R7-N5（hickey-x3）：同 Scope 前置条件在图内强制——堵住 PluginRuntime.Graph 公共后门绕过 AddDependency 校验的通道。</summary>
@@ -103,8 +109,10 @@ public sealed class DependencyGraph
         return result.ToImmutable();
     }
 
-    /// <summary>§3 — provider 通知其 dependents 进入 Suspending（provider-first-notify, R4-4 幂等）。</summary>
-    public void NotifyDependents(Fiber provider)
+    /// <summary>§3 — provider 通知其 dependents 进入 Suspending（provider-first-notify, R4-4 幂等）。
+    /// 【QED-P5.3】收编 internal（红队 P5.2-#4：公共突变后门会让 dependent 成僵尸 Suspending——
+    /// 不入队、无钩子、仅看门狗可救；级联职责随调度器走，不对外开放）。</summary>
+    internal void NotifyDependents(Fiber provider)
     {
         foreach (var (dep, prov) in _hard)
             if (prov == provider.Id && _fibers.TryGetValue(dep, out var d))

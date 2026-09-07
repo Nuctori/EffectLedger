@@ -270,8 +270,12 @@ public sealed class PluginRuntime
                 f.Unload();
                 EnqueueTeardownTask(f);
             }
-            else if (f.State == FiberState.TearingDown)
+            else if (f.State == FiberState.TearingDown && !f.ReplayInProgress)
             {
+                // 【QED-P5.3】ReplayInProgress 排除（红队 r2 #1）：回放中的 fiber 再入队会触发
+                // R3-RT-04 loud 抛 → fail-open 提前 Dead + 假崩溃报告 + IsShuttingDown 中途复位
+                //（= QED-P5.3 LoadAll/Register 守卫被绕过）。与 TickWatchdog 自愈分支的
+                // ReplayInProgress 排除同纪律（此前只落实一半）。
                 EnqueueTeardownTask(f);
             }
             // Inactive：D4——未装载无资源，跳过（不入队不标记）；Dead：已终结。
@@ -342,7 +346,12 @@ public sealed class PluginRuntime
         foreach (var f in _fibers.Values)
         {
             // §6（reviewer #190 #1）：仅当 f 仍处 Active/Suspending（本帧发生转移）才强制+入队+级联——已 Dead/TearingDown 的 f 不重复入队（避免二次回放抛异常误填 LastCrashReport）。
-            if (isTimedOut(f) && (f.State == FiberState.Active || f.State == FiberState.Suspending))
+            // 【QED-P5.3】宿主谓词异常逐 fiber 隔离（红队 r2 #3）：单谓词抛异常只跳过该 fiber，
+            // 同帧其余 fiber 照常处理——异常逸出帧循环会让同帧其余超时 fiber 失去处理机会。
+            bool timedOut;
+            try { timedOut = isTimedOut(f); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { continue; }
+            if (timedOut && (f.State == FiberState.Active || f.State == FiberState.Suspending))
             {
                 f.ForceTeardownOnWatchdog();                         // Active/Suspending → TearingDown
                 EnqueueTeardownTask(f); // A3-01：入队前置位（单点成对）——逆回放 ⇒ DrainTeardownBatch 真正回收资源
