@@ -62,7 +62,7 @@
 
   <!-- 分析器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。 -->
   <ItemGroup>
-    <None Include="bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+    <None Include="bin/$(Configuration)/$(TargetFramework)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
   </ItemGroup>
 
 </Project>
