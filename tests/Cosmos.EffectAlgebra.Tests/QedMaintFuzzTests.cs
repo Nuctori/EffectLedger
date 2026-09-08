@@ -83,7 +83,9 @@ public class QedMaintFuzzTests
             var hi = lo + rng.Next(0, 20);
             var hiStr = rng.Next(6) == 0 ? "\"⊤\"" : hi.ToString();
             var loop = rng.Next(5) == 0 ? ", \"loop\": \"⊤\"" : (rng.Next(3) == 0 ? $", \"loop\": {rng.Next(1, 5)}" : "");
-            var claims = string.Join(", ", Enumerable.Range(0, rng.Next(1, 4)).Select(_ => RandClaim(rng)));
+            var claims = string.Join(", ", Enumerable.Range(0, rng.Next(1, 4))
+                .Select(_ => RandClaim(rng))
+                .Distinct()); // 去重：同 footprint 内重复 Claim 会被 P0-4 拒——fuzzer 语料须合法
             sb.Append($"{{ \"lifetime\": [{lo}, {(hiStr == "\"⊤\"" ? "\"⊤\"" : hiStr)}], \"scope\": {RandScope(rng)}{loop}, \"footprint\": [ {claims} ] }}");
         }
         sb.Append(" ]");
