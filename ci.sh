@@ -9,7 +9,7 @@ dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror --no-incremental 
 # qed-p3（D4d/D5）：形式规约验证入门禁——0 errors 才放行（证明产物即门禁本体）。
 # 依赖：dafny 4.11（dotnet tool install -g Dafny）+ Z3 4.12.1（DAFNY_Z3 可覆盖，缺省见 ROADMAP D1）。
 dafny verify --solver-path "${DAFNY_Z3:-$HOME/.dotnet/tools/z3/bin/z3-4.12.1.exe}"   formal/CosmosEffectAlgebra.dfy formal/CosmosSweepLine.dfy | tee /tmp/dafny-gate.txt
-grep -q "0 errors" /tmp/dafny-gate.txt || { echo "P3-H3 计数门：Dafny 存在验证错误"; exit 1; }
+grep -qE ', 0 errors$' /tmp/dafny-gate.txt || { echo "P3-H3 计数门：Dafny 存在验证错误（含 "10 errors" 子串假匹配漏洞已修复）"; exit 1; }
 DAFNY_COUNT=$(grep -oE "[0-9]+ verified" /tmp/dafny-gate.txt | grep -oE "[0-9]+" | awk '{s+=$1} END {print s+0}')
 [ "$DAFNY_COUNT" -ge 89 ] || { echo "P3-H3 计数门：verified $DAFNY_COUNT < 89——定律被删减即红"; exit 1; }
 dotnet test tests/Cosmos.EffectAlgebra.Tests/Cosmos.EffectAlgebra.Tests.csproj -c Release --no-build
