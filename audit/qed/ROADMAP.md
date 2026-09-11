@@ -382,6 +382,10 @@
   H2 友元程序集命名空间化（SampleGame → Cosmos.EffectAlgebra.SampleGame）。
   钉 `QedP53HardeningPins` 3 枚 + `QedP53RuntimeHardeningPins` 5 枚 +
   `QedP53SweepModelConformanceTests` 3 Theory（扫换线峰值 vs 模型，阈值两侧边界精确）。
+  **L12 曲线钉增补** ✅：`ProdAuditR4AuditScaleTests` 新增 spread 形状钉（交错寿命+互异
+  res+scope，alpha≈1.94 纯二次渐近）——独立 25x 阈值门（回归检测：劣化超 25x 即红；
+  二次基线 16x），与共享形状 12x 阈值共存不混用。性能审计员实测 14.8x 超自家 12x 的
+  缺口由此钉回填。
 - [x] **P5.4a 文档深化** ✅ 2026-09-08：诚实边界 13 条活跃项逐条【影响：…】前置标签
   （可扫描性）；EFFECT_SCRIPT §7 改名「范围外声明」（术语统一，消费#5）。
 - [x] **P5.1 文档产品化** ✅ 2026-09-08：README 头部徽章 + 价值主张四点 + 文档地图

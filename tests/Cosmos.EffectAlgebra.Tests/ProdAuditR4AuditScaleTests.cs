@@ -58,4 +58,32 @@ public sealed class ProdAuditR4AuditScaleTests
             $"{(distinctScope ? "独立 scope" : "共享形状")} 形状疑似二次劣化：t(4000)/t(1000)={ratio:F1}x（阈值 12x；二次基线 16x；实测基线 {(distinctScope ? 6.0 : 2.2):F1}x）");
         Assert.True(t4 < 30_000, $"绝对墙钟护栏：t(4000)={t4:F0}ms");
     }
+
+    // ── QED-P5.3 L12：spread 形状（交错寿命 + 互异 res+scope）——性能审计员实证 alpha≈1.94
+    //    纯二次渐近，超出自家 12x 共享阈值。独立 25x 阈值门（回归检测：劣化超 25x 即红），
+    //    不与 12x 混用——两种形状预期复杂度不同，混用会让阈值要么过松要么假红。 ──
+    static EffectEvent SpreadEv(int i, int total)
+    {
+        var res = new ResourceId.Gpu(new Rid("tex" + i));
+        var scope = new ScopeId.Scene("S" + i);
+        var fp = Signature.Of(new Claim(Kind.Occupy, res, Mode.Create, scope, Interval.Exact(1)));
+        // 交错寿命：Lo=i、Hi=N+i 双向交错（进入/退出各产生 N 个采样点，net 字典只增不减）
+        return new EffectEvent(new Interval(NatStar.Of((ulong)i), NatStar.Of((ulong)(i + total))), scope, fp);
+    }
+
+    [Fact]
+    public void Spread_Scaling_NearQuadratic()
+    {
+        // 预热
+        AuditMsBest(200, true);
+        // 四倍数据比值对照（性能审计员实测：alpha≈1.94 纯二次渐近，N=8000 alpha≈1.99）
+        var t1 = AuditMsBest(1000, true); // spread: 全部互异 res+scope
+        var t4 = AuditMsBest(4000, true);
+        var ratio = t4 / Math.Max(t1, 0.001);
+        // 二次基线 16x（4 倍数据的 α=2 理论值）；阈值 25x 给实现常数因子留余量，仍远低于三次 64x
+        Assert.True(ratio is > 4.0 and < 25.0,
+            $"spread 形状增长率异常：t(4000)/t(1000)={ratio:F1}x（期望 ∈ (4, 25)；二次基线 16x）——" +
+            "低于 4 ⇒ 实现意外改善（审查）；高于 25 ⇒ 劣化加剧（修复）");
+        Assert.True(t4 < 30_000, $"绝对墙钟护栏：t(4000)={t4:F0}ms");
+    }
 }
