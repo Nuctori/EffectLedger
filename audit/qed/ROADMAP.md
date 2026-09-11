@@ -430,4 +430,10 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
 
 ## Blockers
 
+## Blockers
+
+- **PUSH-PENDING（2026-09-08）**：GitHub 链路中断（schannel SSL 握手失败持续）。本地提交
+  `9d3d086`（DeviationVal NaN/∞ 守卫）及后续提交安全落盘。网络恢复后
+  `git push origin master` 即可；下次会话开工前先检查 `git status` 是否有未推送提交。
+
 （无——PUSH-PENDING 已于 2026-09-06 网络恢复后清空：B3/B4a 及全部积压提交已上远端。）
