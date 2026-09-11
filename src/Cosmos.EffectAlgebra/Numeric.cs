@@ -128,7 +128,12 @@ public readonly record struct DeviationVal
     public static readonly DeviationVal Top = new(true, 0.0);
 
     /// <summary>§3.1.5c — 从具体偏差值构造（有限值）。</summary>
-    public static DeviationVal Of(double v) => new(false, v);
+    public static DeviationVal Of(double v)
+    {
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            throw new ArgumentOutOfRangeException(nameof(v), v, "DeviationVal finite value must be neither NaN nor infinity");
+        return new(false, v);
+    }
 
     /// <summary>§9.1 语义：仅当有限值时与阈值比较；IsTop ⇒ 视为需人工界定返回 false（不报警）。</summary>
     public bool ExceedsThreshold(double threshold) => !IsTop && Value > threshold;
