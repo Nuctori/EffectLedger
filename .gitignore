@@ -29,3 +29,4 @@ Thumbs.db
 # Orchestration registry (pi-todone) — CRLF-normalized product, not deliverable code
 .orchestra/registry.json
 temp/
+.verify_p8.py
