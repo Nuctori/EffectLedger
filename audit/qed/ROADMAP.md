@@ -463,14 +463,32 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
     （EffectLedger.Tests 562 + Runtime.Tests 129 + SampleGame 73）；CLI 新命令名实测
     exit 0（合法剧本）/ exit 2（违例剧本）契约不变。
 
+- [x] **P5-9-02（决策）** 仓库公开 + 公开前脱敏 ✅ 已完成
+  - `Nuctori/Cosmos` → `Nuctori/EffectLedger`，可见性 PRIVATE → **PUBLIC**；仓库描述同步更新。
+    （改名后 GitHub 自动重定向旧 URL；本地 remote 已指向新地址。）
+  - 公开前扫描（全 HEAD 跟踪文件）：无硬编码凭证（`gho_`/`ghp_`/`AKIA`/`PRIVATE KEY`）、
+    无 >1MB 大文件、无其他本机用户名残留。
+  - 脱敏处置：**取消跟踪** `audit/` 下 7 个未被任何文档引用的临时调试脚本
+    （`dump_session.py` / `inspect_session.py` / `run_serial.py` / `gen_prompts*.py`，含
+    `C:\Users\<用户名>\...` 本机路径），本地文件保留、`.gitignore` 排除；
+    `audit/effect-api-auditR6-RB.md:178` 的生成器路径脱敏为 `<TEMP>\gen_corpus.py`。
+    其余 `audit/` 历史报告一律不改（证据链原貌）。
+
+- [x] **P5-9-03（稳定性）** 伸缩性曲线钉共享 runner 假红收口 ✅ 已修复
+  - 缺陷：`ProdAuditR4AuditScaleTests.Audit_Scaling_Subquadratic` 在 GitHub 共享 runner 上
+    假红——`t(4000)/t(1000)=13.7x` 越 12x 阈值（历史基线 6.0x）。该钉此前已因同类毛刺
+    （12.3x）打过一次 min-of-3 补丁，共享 runner 突发抢占下仍不够。
+    **非改名引起**：已实证代数热路径（Algebra/SignedNet/DerivedMetrics/Numeric）
+    去命名空间后内容**逐字节等价**；同一提交的后续运行 CI 转绿。
+  - 修复：**阈值不动**（12x，未放松回归检测），改为「初判越线 ⇒ 升配 reps 3→7 重测再裁决」。
+    机理：真实二次劣化是**稳定**的（重测仍高 ⇒ 判红），抢占毛刺是**一次性**的（重测回落 ⇒ 放行）。
+    已用独立探针双向验证：稳定 14.0x ⇒ 判红（正确）；一次性 13.7x ⇒ 重测 6.0x 放行（正确）。
+  - 证据：本机连跑 5 次全过（~650ms/次）；`bash ci.sh` 全绿。
+
 ## Blockers
 
-- **PUSH-PENDING（2026-09-13）**：改名提交 `07809a2` 已本地提交、未上远端。
-  原因：全出口 HTTPS 中断（`curl https://example.com` = HTTP 000，非仅 GitHub），
-  且 `gh` keyring token 失效（`gh auth status` ⇒ "The token in keyring is invalid"）。
-  恢复后：① `gh auth refresh -h github.com`；② `git push origin master`；
-  ③ 仓库改名 `gh repo rename EffectLedger`（GitHub 会自动重定向旧 URL）；
-  ④ 更新本地 remote 指向（若 rename 后 origin 未自动跟进）。
-- **PUSH-PENDING（历史）**：（无——PUSH-PENDING 已于网络恢复后清空，全部积压提交已上远端。）
-
-（无——PUSH-PENDING 已于 2026-09-06 网络恢复后清空：B3/B4a 及全部积压提交已上远端。）
+（无——2026-09-13：出口 HTTPS 中断实为本地代理 `127.0.0.1:7890` 上游隧道故障
+（直连 GitHub = 200，经代理 = 000），`gh` token 实为有效（`gh auth status` 之
+"token in keyring is invalid" 系代理故障下的误报）。改用 `git -c http.proxy= -c https.proxy=`
+直连后推送成功；`HTTPS_PROXY= HTTP_PROXY= ALL_PROXY=` 清空代理后 `gh` 正常。
+全部提交已上远端，改名与公开均已落地。）

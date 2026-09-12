@@ -40,12 +40,35 @@ public sealed class ProdAuditR4AuditScaleTests
     // R6 收口（本机 CI 偶红实证：t(4000)/t(1000)=12.3x 越线 12x，历史基线 6x）——单次墙钟采样对
     // 抢占/负载毛刺敏感，且大运行吃毛刺概率更高、系统性抬高比值。取 3 次重复最小值（墙钟微基准
     // 标准去噪，min 对抢占毛刺最不敏感）；阈值 12x 不动——仍远高于健康 6x、低于二次 16x，无放松。
+    //
+    // QED-P5.9（2026-09-13，GitHub 共享 runner 二次假红实证 13.7x）：min-of-3 在共享 runner 的
+    // 突发抢占下仍可能被抬高——毛刺落在 t1 与 t4 的相对权重上而非单点。**判据不变**（12x 阈值
+    // 不放宽），改为「初判越线则升配重测」：真实二次劣化是**稳定**的（重测仍高），抢占毛刺是
+    // **一次性**的（重测回落）。重测用更多重复次数（reps=7）压毛刺，仍超线才判红——既不放松
+    // 回归检测，也不让共享 runner 的抖动决定门禁颜色。
     static double AuditMsBest(int n, bool distinctScope, int reps = 3)
     {
         var best = double.MaxValue;
         for (int r = 0; r < reps; r++)
             best = Math.Min(best, AuditMs(n, distinctScope));
         return best;
+    }
+
+    /// <summary>比值判据：越线则升配重测（reps 3→7）再裁决。真劣化稳定⇒仍红；毛刺一次性⇒回落。</summary>
+    static double RatioWithEscalation(bool distinctScope, out double t4Out)
+    {
+        var t1 = AuditMsBest(1000, distinctScope);
+        var t4 = AuditMsBest(4000, distinctScope);
+        var ratio = t4 / Math.Max(t1, 0.001);
+        if (ratio >= 12.0)
+        {
+            // 升配重测：7 次取最小，单次抢占毛刺被压掉；真劣化不受重复次数影响。
+            t1 = AuditMsBest(1000, distinctScope, 7);
+            t4 = AuditMsBest(4000, distinctScope, 7);
+            ratio = t4 / Math.Max(t1, 0.001);
+        }
+        t4Out = t4;
+        return ratio;
     }
 
     [Theory]
@@ -55,11 +78,9 @@ public sealed class ProdAuditR4AuditScaleTests
     {
         // 预热（JIT/首次分配不进比值）
         AuditMs(200, distinctScope);
-        var t1 = AuditMsBest(1000, distinctScope);
-        var t4 = AuditMsBest(4000, distinctScope);
-        var ratio = t4 / Math.Max(t1, 0.001);
+        var ratio = RatioWithEscalation(distinctScope, out var t4);
         Assert.True(ratio < 12.0,
-            $"{(distinctScope ? "独立 scope" : "共享形状")} 形状疑似二次劣化：t(4000)/t(1000)={ratio:F1}x（阈值 12x；二次基线 16x；实测基线 {(distinctScope ? 6.0 : 2.2):F1}x）");
+            $"{(distinctScope ? "独立 scope" : "共享形状")} 形状疑似二次劣化：t(4000)/t(1000)={ratio:F1}x（阈值 12x；二次基线 16x；实测基线 {(distinctScope ? 6.0 : 2.2):F1}x。已升配重测 reps=7，真劣化稳定才判红）");
         Assert.True(t4 < 30_000, $"绝对墙钟护栏：t(4000)={t4:F0}ms");
     }
 
