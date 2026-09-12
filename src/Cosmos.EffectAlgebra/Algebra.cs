@@ -47,19 +47,39 @@ public sealed class NetTable
 
     private NetTable() { }
 
-    /// <summary>§3.3.1 — 仅含 c.kind == Occupy 且 c.Scope ⊆* scope 的 Claim；按归一化资源分组，create/move 加、release 减（有符号）。</summary>
+    /// <summary>§3.3.1 — 仅含 c.kind == Occupy 且 c.Scope ⊆* scope 的 Claim；按归一化资源分组，create/move 加、release 减。
+    /// 【QED-P5.8 修复 P5-8-01】Int128 中间累加替代逐条 ZStar.Add：ZStar+ 溢出⇒⊤ 不具结合律
+    /// （D3 审计员实证），而 ImmutableHashSet 枚举顺序依赖进程哈希随机化种子 ⇒ 数学净和为 0 的
+    /// 资源可能因聚合顺序不同而中间溢出 ⇒ LoadAll 随机拒绝合法 Fiber（审计员实证 9/40 进程误拒）。
+    /// Int128 域 ≫ long²，聚合阶段恒不溢出；仅当**最终结果**超 ℤ* 表示域才 ⊤（真实越界 fail-closed）。</summary>
     public static NetTable Compute(Signature sig, ScopeId scope)
     {
         var t = new NetTable();
+        var lo = new Dictionary<ResourceId, (Int128 V, bool Top)>();
+        var hi = new Dictionary<ResourceId, (Int128 V, bool Top)>();
         foreach (var c in sig.AllClaims())
         {
             if (c.Kind != Kind.Occupy) continue;      // §3.3.1 net 仅含 occupy 桶（量纲隔离）
             if (!c.Scope.IncludedIn(scope)) continue;  // §3.1.3b ⊆* 过滤
             var r = ResourceId.Normalize(c.Resource);
-            // §3.3.1 有符号 size：release 取 size 的「负向」[-hi,-lo]；create/move 正号 [lo,hi]。
-            var signed = c.Mode == Mode.Release ? Negate(c.Size ?? Interval.Default) : ToSigned(c.Size ?? Interval.Default);
-            // §3.3.1 有符号 net = 同资源多 Claim 净效应「求和」（Add），非 min/max 包络（Merge 会吞掉守恒判定，漏报泄漏）。
-            t._net[r] = t._net.ContainsKey(r) ? t._net[r].Add(signed) : signed;
+            var size = c.Size ?? Interval.Default;
+            // create/move：+[lo,hi]；release：−[lo,hi] = [−hi,−lo]
+            bool topContrib = size.Lo.IsTop || size.Hi.IsTop;
+            Int128 addLo = size.Lo.IsTop ? 0 : (Int128)size.Lo.Value;
+            Int128 addHi = size.Hi.IsTop ? 0 : (Int128)size.Hi.Value;
+            if (c.Mode == Mode.Release) { (addLo, addHi) = (-addHi, -addLo); }
+
+            var curLo = lo.TryGetValue(r, out var cl) ? cl : (V: (Int128)0, Top: false);
+            var curHi = hi.TryGetValue(r, out var ch) ? ch : (V: (Int128)0, Top: false);
+            lo[r] = (V: curLo.V + addLo, Top: curLo.Top || topContrib);
+            hi[r] = (V: curHi.V + addHi, Top: curHi.Top || topContrib);
+        }
+        foreach (var r in lo.Keys)
+        {
+            var l = lo[r]; var h = hi[r];
+            ZStar loZ = l.Top || l.V > long.MaxValue || l.V < long.MinValue ? ZStar.Top : ZStar.Of((long)l.V);
+            ZStar hiZ = h.Top || h.V > long.MaxValue || h.V < long.MinValue ? ZStar.Top : ZStar.Of((long)h.V);
+            t._net[r] = new SignedInterval(loZ, hiZ);
         }
         return t;
     }

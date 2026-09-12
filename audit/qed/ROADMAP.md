@@ -432,6 +432,18 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
 
 每晚对抗模糊测试（随机剧本 fuzz + 变异门 + 性能曲线钉 `ProdAuditR4AuditScaleTests`），回归即修。
 
+## P5.8 第八轮独立对抗审计（2026-09-12）
+
+- [x] **P5-8-01（CRITICAL）** Runtime 跨进程非确定性拒载 ✅ 已修复
+  - 缺陷：`NetTable.Compute` 逐条 `ZStar.Add` 累加，而 `ZStar+` 溢出⇒⊤ **不具结合律**（D3 已实证），
+    `ImmutableHashSet` 枚举顺序依赖 `string.GetHashCode` 的进程哈希随机化种子 ⇒ 数学净和为 0 的
+    资源可能因聚合顺序不同而中间溢出 ⇒ `Check` 判非守恒 ⇒ `LoadAll` 抛 `LoadValidationException`。
+    审计员实证：同一 exe 40 个新进程 **9/40（22.5%）误拒**合法 Fiber。
+  - 修复：改用 **Int128 中间累加**——Int128 域（2^127）≫ long²，聚合阶段恒不溢出；仅当**最终结果**
+    超 ℤ* 表示域（long）才 ⊤（真实越界仍 fail-closed）。`src/Cosmos.EffectAlgebra/Algebra.cs`
+  - 证据：`QedP8NetOrderDeterminismPins` 8 钉（审计员原始 4-claim 反例净零守恒 / 重复计算确定性 /
+    顺序无关 / 真实越界仍 ⊤ / Loop 缩放超域 / Runtime LoadAll 不误拒）；全量 764 测试零回归。
+
 ## Blockers
 
 ## Blockers
