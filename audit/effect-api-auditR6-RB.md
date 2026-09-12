@@ -175,7 +175,7 @@ fail-fast 方言在 51 次对抗投喂中 50 次精确命中（FormatException +
 
 ## 4. 证据清单（文件路径与 exit code）
 
-- 语料目录：`P:\Temp\r6rb-corpus\`（t01…t36 + t37…t40，46 个 JSON；生成器 `C:\Users\Nuctori\AppData\Local\Temp\gen_corpus.py`）
+- 语料目录：`P:\Temp\r6rb-corpus\`（t01…t36 + t37…t40，46 个 JSON；生成器 `<TEMP>\gen_corpus.py`）
 - 直连 Parse 探针工程：`P:\Temp\r6rb-harness\`（r6rb-harness.csproj + Program.cs）
 - 双路原始输出：
   - `P:\Temp\r6rb-parse-results.txt` — harness 直连 Parse 全量结果（41 文件）

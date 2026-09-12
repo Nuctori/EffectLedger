@@ -30,3 +30,6 @@ Thumbs.db
 .orchestra/registry.json
 temp/
 .verify_p8.py
+
+# audit/ 下的临时调试脚本：不随仓库发布（含本机路径），仅本地保留
+audit/*.py
