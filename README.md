@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-blue)
 ![Formal Verification](https://img.shields.io/badge/Dafny-89%20lemmas%20verified-brightgreen)
+![Tests](https://img.shields.io/badge/tests-764%20passing-brightgreen)
+![Status](https://img.shields.io/badge/status-pre--release-orange)
 
 > 效应代数（Effect Algebra）——在**编译期**做**资源守恒 / 泄漏 / 峰值超预算 / 互斥冲突**的静态近似审计，并在**运行时**由 `Cosmos.EffectAlgebra.Runtime` 做权威闭合判定。
 > 白话版：装上它，`dotnet build` 时对 `AddChild`/`QueueFree` 这类 API 报泄漏与冲突警告（EAA* 诊断）；AI 产出的 JSON 特效剧本不跑游戏即可机审。
@@ -14,6 +16,17 @@
 - **89 条机器验证定律**——代数核心（ℕ∪{⊤} 闭合、区间半格、ScopeId 偏序、Compatible 全函数、SignedNet 守恒、扫换线采样充分性）由 Dafny 形式化验证并纳入 CI 门禁，`dafny verify` 0 errors 才放行。
 - **三层冻结契约**——公共 API 面 43 类型快照钉死、JSON 契约面 schema version 1.0.0 冻结、异常方言/退出码冻结：升级兼容性可被机器断言。
 - **AI 友好**——声明式剧本 JSON（6 资源 × 4 scope）可被 LLM 产出并直接机审，`cosmos audit` CLI 一键闭环。
+
+**项目状态**：pre-release（内部质量已收口，尚待首次公开发布）。
+
+| 维度 | 现状 |
+| ---- | ---- |
+| 测试 | 764 测试全绿（L1 562 + Runtime 129 + SampleGame 73） |
+| 形式化 | 89 条 Dafny 定律，`dafny verify` 0 errors 纳入 CI 门禁 |
+| 契约冻结 | 公共 API 面 43 类型快照 + JSON 契约 schema 1.0.0 + 异常方言/退出码 |
+| 对抗审计 | 八轮独立审计（消费/红队/验收/门面/方言/Runtime/供应链/性能/并发/构建矩阵/独立），发现全处置 |
+| 分发 | 尚未发布到 nuget.org——走 ① 源码引用；发布清单见 `PUBLISH-CHECKLIST.md` |
+| 支持 | Issue / Discussion 欢迎；本库为个人项目，无商业支持承诺 |
 
 **文档地图**：
 
@@ -29,6 +42,9 @@
 | QED 路线与维护模式 | `audit/qed/ROADMAP.md` |
 | 历史交付快照 | `DELIVERABLE.md` |
 | 已知边界（20 条，逐条附证据） | 本页「诚实边界」节（语义锐边短笺在前） |
+| 贡献指引 | `CONTRIBUTING.md` |
+| 安全策略（漏洞报告） | `SECURITY.md` |
+| 变更记录 | `CHANGELOG.md` |
 
 ---
 
@@ -288,3 +304,12 @@ dotnet test  Cosmos.EffectAlgebra.slnx -c Release --no-build
 20. **[影响：跨调用点 net=0 掩蔽（Runtime Σnet 兜底）]** §7 API 白名单层**常量实例保守合并**（QED-A7）：无身份差分资源族（`Callback("cb")`、`AudioMixer(0)`、裸名 memory 哨兵）跨调用点折叠到单一实例——`Connect(sigA)` + `Disconnect(sigB)` 在静态层 net=0（泄漏被掩蔽）。JSON 剧本契约面不受影响（显式 id 即身份，拒裸名，钉 `QedP0A7AliasFoldingPins`）；该盲区以运行期 Σnet 为权威判据（同 ⑦ 宪法）。参数化 alias 与 F1 流敏感化同窗评估
 
 验证：`dotnet build Cosmos.EffectAlgebra.slnx -c Release -warnaserror` 0 错误（AnalyzerConsumer 样例 1 条 EAA0901 故意泄漏警告为设计——「分析器在真实编译路径活着」的可见证据，R6-P）；`dotnet test --no-build` 全绿（三测试工程：L1 主套件 + Runtime + SampleGame，总数以 CI 汇总为准；doc-guard 禁止硬编码会漂移的全量计数）。
+---
+
+## 许可与致谢
+
+MIT License（见 `LICENSE`）。本库为个人项目，欢迎 Issue / PR（规约见 `CONTRIBUTING.md`）；
+安全问题请按 `SECURITY.md` 私下报告。
+
+本项目的设计文档（`PDR_Effect_Cost_Algebra_v3_FINAL.md`）与全部对抗审计报告（`audit/`）
+一并开源——包括失败案例与已知盲区。**诚实记录边界，是这类静态分析工具能被信任的前提。**
