@@ -465,6 +465,12 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
 
 ## Blockers
 
-（无——PUSH-PENDING 已于网络恢复后清空，全部积压提交已上远端。）
+- **PUSH-PENDING（2026-09-13）**：改名提交 `07809a2` 已本地提交、未上远端。
+  原因：全出口 HTTPS 中断（`curl https://example.com` = HTTP 000，非仅 GitHub），
+  且 `gh` keyring token 失效（`gh auth status` ⇒ "The token in keyring is invalid"）。
+  恢复后：① `gh auth refresh -h github.com`；② `git push origin master`；
+  ③ 仓库改名 `gh repo rename EffectLedger`（GitHub 会自动重定向旧 URL）；
+  ④ 更新本地 remote 指向（若 rename 后 origin 未自动跟进）。
+- **PUSH-PENDING（历史）**：（无——PUSH-PENDING 已于网络恢复后清空，全部积压提交已上远端。）
 
 （无——PUSH-PENDING 已于 2026-09-06 网络恢复后清空：B3/B4a 及全部积压提交已上远端。）
