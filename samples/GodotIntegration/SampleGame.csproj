@@ -2,7 +2,7 @@
 
   <!--
     真实 Godot 游戏工程的 L2/L3 消费样例（非侵入式 name-match 设计验证）。
-    本工程模拟一个 Godot 游戏工程如何接入 Cosmos.EffectAlgebra：
+    本工程模拟一个 Godot 游戏工程如何接入 EffectLedger：
       - L3 DiagnosticAnalyzer 以 Roslyn 分析器接入（OutputItemType=Analyzer, ReferenceOutputAssembly=false）
       - L2 源生成器以 Roslyn generator 接入（ReferenceOutputAssembly=false）
       - 游戏侧照常写 DrawMesh / Instantiate / QueueFree 等 Godot 风格 API（stub 占位，非真 Godot SDK），
@@ -12,7 +12,7 @@
 
   <PropertyGroup>
     <!-- 【QED-P5.3 H2 加固】AssemblyName 命名空间化：防通用词撞名伪造 IVT 友元（SampleGame 是高频词）。 -->
-    <AssemblyName>Cosmos.EffectAlgebra.SampleGame</AssemblyName>
+    <AssemblyName>EffectLedger.SampleGame</AssemblyName>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -27,24 +27,24 @@
 
   <ItemGroup>
     <!-- L1 纯代数：游戏逻辑直接引用（如 EffectScript 剧本审计）。 -->
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <ProjectReference Include="..\..\src\EffectLedger\EffectLedger.csproj" />
 
     <!--
       L2 源生成器：本集成测试直接以 CSharpGeneratorDriver 驱动（见 IntegrationTests.cs），
-      故用普通 ProjectReference 使测试可见 Cosmos.EffectAlgebra.Generator 命名空间并实例化。
+      故用普通 ProjectReference 使测试可见 EffectLedger.Generator 命名空间并实例化。
       真实 Game.csproj 接法为 OutputItemType="Analyzer"（见下）。
     -->
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj" />
+    <ProjectReference Include="..\..\src\EffectLedger.Generator\EffectLedger.Generator.csproj" />
 
     <!--
       L3 分析器两部分接法：
       (1) OutputItemType="Analyzer" ReferenceOutputAssembly="false"：生产接法，编译器在隔离 ALC 加载分析器（CS8032 已根治：分析器自包含嵌入 L1 纯代数）。
       (2) 普通 ProjectReference（ReferenceOutputAssembly=true）：使分析器 DLL 复制到本 E2E 测试输出目录，供 AnalyzerTestLoader 反射加载并以 WithAnalyzers 驱动（见 AnalyzerTestLoader.cs）。
-          注：CS0433（ResourceId/Signature 同名冲突）由分析器内嵌 L1 类型的命名空间改写（Cosmos.EffectAlgebra.Analyzer.Shared）规避，与是否引用此 ProjectReference 无关。
+          注：CS0433（ResourceId/Signature 同名冲突）由分析器内嵌 L1 类型的命名空间改写（EffectLedger.Analyzer.Shared）规避，与是否引用此 ProjectReference 无关。
     -->
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+    <ProjectReference Include="..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj" />
+    <ProjectReference Include="..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj" />
   </ItemGroup>
 
   <!-- 集成 E2E 测试（与真实 Game.csproj 分离：测试引用 Roslyn + xunit，游戏代码不引）。 -->

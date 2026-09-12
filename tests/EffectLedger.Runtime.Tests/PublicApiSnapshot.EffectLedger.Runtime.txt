@@ -1,0 +1,130 @@
+class EffectLedger.Runtime.Coeffect
+  ctor EffectLedger.ResourceId, EffectLedger.ResourceId, EffectLedger.ScopeId
+  prop EffectLedger.ResourceId Provides()
+  prop EffectLedger.ResourceId Requires()
+  prop EffectLedger.ScopeId Scope()
+class EffectLedger.Runtime.CrashReport
+  ctor EffectLedger.Runtime.FiberId, System.Exception, System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId]
+  prop System.Exception Exception()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] NotifiedDependents()
+  prop EffectLedger.Runtime.FiberId Provider()
+class EffectLedger.Runtime.CycleReport
+  ctor System.Boolean, System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId], System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId]
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] HardCycle()
+  prop System.Boolean HasHardCycle()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] SoftCycle()
+class EffectLedger.Runtime.DependencyGraph
+  ctor 
+  method System.Boolean AddHardEdge(EffectLedger.Runtime.Fiber, EffectLedger.Runtime.Fiber)
+  method System.Boolean AddSoftEdge(EffectLedger.Runtime.Fiber, EffectLedger.Runtime.Fiber)
+  method EffectLedger.Runtime.CycleReport DetectCycles()
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] DependentsOf(EffectLedger.Runtime.FiberId)
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] TopoSortLeafFirst()
+  method System.Void Register(EffectLedger.Runtime.Fiber)
+class EffectLedger.Runtime.Fiber
+  ctor EffectLedger.Runtime.FiberId, EffectLedger.Signature, EffectLedger.Runtime.Coeffect, System.Collections.Immutable.ImmutableStack`1[EffectLedger.Runtime.InverseClaim]
+  prop EffectLedger.Runtime.Coeffect Coeffect()
+  prop System.Collections.Immutable.ImmutableHashSet`1[EffectLedger.Runtime.FiberId] Dependents()
+  prop EffectLedger.Signature Effect()
+  prop EffectLedger.Signature EffectiveSignature()
+  prop EffectLedger.Runtime.FiberId Id()
+  prop System.Collections.Immutable.ImmutableStack`1[EffectLedger.Runtime.InverseClaim] Inverses()
+  prop System.Boolean ReplayInProgress()
+  prop EffectLedger.ScopeId Scope()
+  prop EffectLedger.Runtime.FiberState State()
+  prop System.Boolean TeardownEnqueued()
+  method System.Void ForceTeardownOnWatchdog()
+  method System.Void MarkDead()
+  method System.Void MarkSuspending()
+  method System.Void Unload()
+class EffectLedger.Runtime.FiberSpec
+  ctor EffectLedger.Runtime.FiberId, EffectLedger.Signature, EffectLedger.Runtime.Coeffect, System.Collections.Immutable.ImmutableStack`1[EffectLedger.Runtime.InverseClaim]
+  prop EffectLedger.Runtime.Coeffect Coeffect()
+  prop EffectLedger.Signature Effect()
+  prop EffectLedger.Runtime.FiberId Id()
+  prop System.Collections.Immutable.ImmutableStack`1[EffectLedger.Runtime.InverseClaim] Inverses()
+class EffectLedger.Runtime.GodotShell
+  ctor EffectLedger.Runtime.IHost
+  prop System.Boolean ExitDraining()
+  prop System.Action`1[System.Exception] OnDrainFault()
+  method System.Boolean IsSafeToInvoke(System.Object)
+  method System.Void CascadeProcessModeDisabled(EffectLedger.Runtime.Fiber)
+  method System.Void Defer(System.Action)
+  method System.Void Defer(System.Action, System.Object)
+  method System.Void EnqueueExitDrain(System.Action)
+  method System.Void FlushExitDrain()
+class EffectLedger.Runtime.InverseClaim
+  ctor EffectLedger.ResourceId, EffectLedger.ScopeId, System.Action, System.Collections.Generic.IReadOnlySet`1[System.String]
+  prop System.Action Execute()
+  prop System.Collections.Generic.IReadOnlySet`1[System.String] ReleaseApiTags()
+  prop EffectLedger.ResourceId Resource()
+  prop EffectLedger.ScopeId Scope()
+class EffectLedger.Runtime.InverseReplay
+  method EffectLedger.Runtime.PartialReleaseDiagnosis ReplayAndDead(EffectLedger.Runtime.Fiber)
+class EffectLedger.Runtime.LoadValidation
+  method System.Void ValidateDoubleRelease(EffectLedger.Runtime.Fiber, System.Collections.Generic.IReadOnlyCollection`1[EffectLedger.Runtime.Fiber])
+  method System.Void ValidateForLoad(EffectLedger.Runtime.Fiber, System.Collections.Generic.IReadOnlyCollection`1[EffectLedger.Runtime.Fiber])
+  method System.Void ValidateReleaseClass(EffectLedger.Runtime.Fiber)
+  method System.Void ValidateScaleClosure(EffectLedger.Runtime.Fiber)
+  method System.Void VerifyNetClosure(System.Collections.Generic.IEnumerable`1[EffectLedger.Runtime.Fiber])
+class EffectLedger.Runtime.LoadValidationException
+  ctor System.String
+class EffectLedger.Runtime.NetBenefitClosure
+  method EffectLedger.Runtime.NetClosureResult Check(EffectLedger.Runtime.Fiber)
+  method EffectLedger.Runtime.NetClosureResult CheckAll(System.Collections.Generic.IEnumerable`1[EffectLedger.Runtime.Fiber])
+class EffectLedger.Runtime.NetClosureResult
+  ctor System.Boolean, System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId]
+  prop System.Boolean Conserved()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId] ViolatingResources()
+class EffectLedger.Runtime.PartialReleaseDiagnosis
+  ctor System.Boolean, System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId], System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId], System.Int32, System.Exception
+  prop System.Boolean AllCompleted()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId] Completed()
+  prop System.Int32 FailedIndex()
+  prop System.Exception FirstError()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.ResourceId] Pending()
+class EffectLedger.Runtime.PluginRuntime
+  ctor 
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.CrashReport] CrashReports()
+  prop System.Collections.Generic.IReadOnlyCollection`1[EffectLedger.Runtime.Fiber] Fibers()
+  prop EffectLedger.Runtime.DependencyGraph Graph()
+  prop System.Boolean IsShuttingDown()
+  prop EffectLedger.Runtime.CrashReport LastCrashReport()
+  prop System.Action`1[EffectLedger.Runtime.Fiber] OnSuspending()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] SoftCycles()
+  method System.Boolean ShouldDispatch(EffectLedger.Runtime.Fiber)
+  method System.Boolean TryGetFiber(EffectLedger.Runtime.FiberId, EffectLedger.Runtime.Fiber&)
+  method EffectLedger.Runtime.Fiber Register(EffectLedger.Runtime.FiberSpec)
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.Runtime.FiberId] CheckPermanentFiberLeak(System.Int64)
+  method System.Void AccumulateNet(System.Collections.Generic.IReadOnlyDictionary`2[EffectLedger.Runtime.FiberId,System.Int64])
+  method System.Void AddDependency(EffectLedger.Runtime.Fiber, EffectLedger.Runtime.Fiber, EffectLedger.Runtime.EdgeKind)
+  method System.Void AttachShell(EffectLedger.Runtime.GodotShell)
+  method System.Void BeginTeardown(EffectLedger.Runtime.Fiber)
+  method System.Void DrainTeardownBatch()
+  method System.Void LoadAll()
+  method System.Void RecomputeTopology()
+  method System.Void ResetDiagnostics()
+  method System.Void ResetNetAccum()
+  method System.Void SynchronousExitDrain()
+  method System.Void TickWatchdog(System.Func`2[EffectLedger.Runtime.Fiber,System.Boolean])
+class EffectLedger.Runtime.ProviderCrashCascade
+  method EffectLedger.Runtime.CrashReport Handle(EffectLedger.Runtime.PluginRuntime, EffectLedger.Runtime.Fiber, System.Exception)
+enum EffectLedger.Runtime.EdgeKind
+  field EffectLedger.Runtime.EdgeKind Hard = 0
+  field EffectLedger.Runtime.EdgeKind Soft = 1
+  field System.Int32 value__
+enum EffectLedger.Runtime.FiberState
+  field EffectLedger.Runtime.FiberState Active = 1
+  field EffectLedger.Runtime.FiberState Dead = 4
+  field EffectLedger.Runtime.FiberState Inactive = 0
+  field EffectLedger.Runtime.FiberState Suspending = 2
+  field EffectLedger.Runtime.FiberState TearingDown = 3
+  field System.Int32 value__
+interface EffectLedger.Runtime.IHost
+  method System.Boolean IsInstanceValid(System.Object)
+  method System.Void Defer(System.Action)
+  method System.Void DisableDispatch(EffectLedger.Runtime.FiberId)
+  method System.Void EnableDispatch(EffectLedger.Runtime.FiberId)
+struct EffectLedger.Runtime.FiberId
+  ctor System.String
+  prop System.String Value()

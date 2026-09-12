@@ -20,11 +20,11 @@
 
   <ItemGroup>
     <!-- L1 纯代数（游戏逻辑直接引用）。 -->
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
+    <ProjectReference Include="..\..\src\EffectLedger\EffectLedger.csproj" />
 
     <!-- L3 分析器：真实接法 —— 编译器在独立 ALC 加载此 DLL 作为 analyzer。
          此为 CS8032 的复现点：若加载失败则 build 报 CS8032。 -->
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+    <ProjectReference Include="..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

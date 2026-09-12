@@ -7,8 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- A2-02：真实接线（OutputItemType=Analyzer）——这是 README §① 教的写法，fixture 即其可执行证明 -->
-    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
-    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+    <ProjectReference Include="..\..\..\src\EffectLedger\EffectLedger.csproj" />
+    <ProjectReference Include="..\..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

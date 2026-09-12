@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -50,7 +50,7 @@ namespace UserCode {
 
     // ── P0-2b：Godot 类型（Godot.Shapes 桩）的 Load ⇒ 仍须命中白名单报泄漏 ──
     private const string GodotTypedLoadSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class ResourceLoader { public object Load(string path) => new(); }
 }
@@ -70,7 +70,7 @@ namespace GameCode {
 
     // ── P0-3：官方推荐配对 AddChild→QueueFree ⇒ 不报 EAA0303（量纲提示豁免），且平衡不报 EAA0901 ──
     private const string PairedAcquireReleaseSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) { } public void QueueFree() { } }
 }
@@ -91,7 +91,7 @@ namespace GameCode2 {
 
     // ── P0-3 反向：非配对的真实混用仍报 A3 ──
     private const string GenuineMixSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes2 {
     public sealed class Node3D { public void AddChild(object c) { } }
     public sealed class SignalHub { public void Connect(object s, object c) { } public void IsConnected(object s) { } }

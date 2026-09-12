@@ -7,7 +7,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -38,7 +38,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
 
     // ── 接收者限定泄漏：node.AddChild 后缺 node.QueueFree ──
     private const string ReceiverLeakSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
     public sealed class Leaky {
@@ -47,7 +47,7 @@ namespace Godot.Shapes {
     }
 }";
 
-    // ── 无 using Cosmos.EffectAlgebra：白名单是 L1 数据，不依赖 using，仍应命中 ──
+    // ── 无 using EffectLedger：白名单是 L1 数据，不依赖 using，仍应命中 ──
     private const string NoUsingSource = @"
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
@@ -59,7 +59,7 @@ namespace Godot.Shapes {
 
     // ── 局部变量/字段名恰为 API 名（非调用）→ 不应误报 ──
     private const string NameOnlyNoCallSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
     public sealed class Decoy {
@@ -75,7 +75,7 @@ namespace Godot.Shapes {
 
     // ── 匿名方法 / lambda 内调用 API ──
     private const string LambdaSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
     public sealed class WithLambda {
@@ -89,7 +89,7 @@ namespace Godot.Shapes {
 
     // ── 泛型方法 QueueFree<T>：canonical 应为 QueueFree，不应误判 ──
     private const string GenericMethodSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild<T>(object c) {} public void QueueFree<T>() {} }
     public sealed class WithGeneric {
@@ -100,7 +100,7 @@ namespace Godot.Shapes {
 
     // ── 嵌套类 / partial 类：两部分各调用 API ──
     private const string PartialSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
     public partial class Split {
@@ -114,7 +114,7 @@ namespace Godot.Shapes {
 
     // ── 平衡对照：有接收者限定 release，不报 ──
     private const string BalancedSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) {} public void QueueFree() {} }
     public sealed class PhysicsBody { public void ApplyForce(float x, float y) {} }

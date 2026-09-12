@@ -1,4 +1,4 @@
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Godot;
 
 // R6-P-03 收口：真实 Godot 形状 stub——分析器的 Godot.* 命名空间门控（A2-09）要求调用接收者

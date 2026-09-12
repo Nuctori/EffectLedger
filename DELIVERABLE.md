@@ -1,24 +1,24 @@
-# Cosmos.EffectAlgebra 交付证明（v3.0-FINAL-rA6 实现）
+# EffectLedger 交付证明（v3.0-FINAL-rA6 实现）
 
 > **历史快照声明（A4-12，生产审计批2）**：本文中的测试计数（212 等）是写作时刻的快照，非当前基线。
 > 当前数字以 CI `dotnet test` 汇总与 README「测试与仪表航迹」为准。
 
 ## 构建状态
-- 全解 `dotnet build Cosmos.EffectAlgebra.slnx -clp:ErrorsOnly`（前置 `MSBUILD_EXE_PATH=`）：
+- 全解 `dotnet build EffectLedger.slnx -clp:ErrorsOnly`（前置 `MSBUILD_EXE_PATH=`）：
   ```
   已成功生成。
       0 个警告
       0 个错误
   已用时间 00:00:01.03
   ```
-- 全测 `dotnet test Cosmos.EffectAlgebra.slnx -clp:ErrorsOnly --nologo`：
+- 全测 `dotnet test EffectLedger.slnx -clp:ErrorsOnly --nologo`：
   ```
   总共 1 个测试文件与指定模式相匹配。
-  已通过! - 失败:     0，通过:   212，已跳过:     0，总计:   212，持续时间: 1 s - Cosmos.EffectAlgebra.Tests.dll (net10.0)
+  已通过! - 失败:     0，通过:   212，已跳过:     0，总计:   212，持续时间: 1 s - EffectLedger.Tests.dll (net10.0)
   ```
 
 ## 交付内容（文件树）
-- **L1 纯代数核心（零 Godot 依赖）** `src/Cosmos.EffectAlgebra/`：
+- **L1 纯代数核心（零 Godot 依赖）** `src/EffectLedger/`：
   - `Numeric.cs` — §3.1.5a/b/c：ℕ\*（⊤ 闭包、溢出⇒⊤）、Interval（lo≤hi 不变量、Default[1,1]、Dynamic[1,⊤]、Merge join-semilattice）、DeviationVal
   - `Objects.cs` — §3.1.1/§3.1.2/§3.1.3b/§3.1.4a/§3.1.4b：Claim 五元组、ResourceId 判别联合单点真相、ScopeId 偏序（⊆\*）、Signature 三桶量纲隔离
   - `Algebra.cs` — §3.2.1/§3.2.3/§3.3.1/§3.3.2：组合、Compatible 全函数+对称、NetTable 有符号净占用、Peak 峰值
@@ -27,14 +27,14 @@
   - `ApiMapping.cs` — §7（§7.1–§7.10）38 条 Godot API→Claim 白名单 + §8.1 release-class 7 项
   - `DerivedMetrics.cs` — §3.2.5/§3.3：循环组合 ω∈ℕ∪{⊤}、Derived.Peak/Net/IsConserved 便利封装
   - `EffectAttributes.cs` — §8.3.1/§8.3.2：[EffectOverride]（reason 非空构造子强制）/[AcceptDeviation]（ε∈[0,0.5] 构造子强制）
-- **L2 Source Generator** `src/Cosmos.EffectAlgebra.Generator/EffectAlgebraGenerator.cs`：
+- **L2 Source Generator** `src/EffectLedger.Generator/EffectAlgebraGenerator.cs`：
   - `IIncrementalGenerator`；识别 `[EffectOverride]`/`[AcceptDeviation]` 标注方法，为每个方法真实生成委托 L1 `Signature` 的桩（数学全在 L1，生成代码零重算）；零 Godot 引用
-- **L3 Roslyn Analyzer** `src/Cosmos.EffectAlgebra.Analyzer/EffectAlgebraAnalyzer.cs`：
+- **L3 Roslyn Analyzer** `src/EffectLedger.Analyzer/EffectAlgebraAnalyzer.cs`：
   - `EAA0901` DO-9 近似泄漏（acquire 无 release + 未标 `[EffectOverride]` ⇒ Warning）
   - `EAA0303` KIND_MIX（§14.3 A3：同资源跨 read/write/occupy 混算，量纲隔离提示）
   - `EAA0304` Compat 冲突（§14.3 A4：同资源 Compatible 冲突 mode 配对）
   - 控制流近似 + 运行期权威在类注释/description 两处诚实标注，无静默漏报
-- **Tests** `tests/Cosmos.EffectAlgebra.Tests/`（18 个测试文件，212 用例）：
+- **Tests** `tests/EffectLedger.Tests/`（18 个测试文件，212 用例）：
   AlgebraLawsTests / PropertyTests / VerificationMatrixTests / StabilityAuditTests / ToolingTests / CrossLayerTests / ScaleGuardTests / CrossTableTests / CompatibleMatrixTests / GeneratorEmitTests / EndToEndTests / AttributeBoundaryTests / ScopeOrderTests / LoopCombinationTests / ResourceNormalizationTests / BucketIsolationTests / IntervalArithmeticTests / AnalyzerCompletenessTests / NetTableSignedTests（共 19 个 .cs，含 1 个 csproj）
 
 ## PDR 对照覆盖

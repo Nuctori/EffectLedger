@@ -1,6 +1,6 @@
 // GodotReal — 最小 net8 消费样板：验证 L1/L2/L3 在 net8 下无 CS8032/CS0433。
 // 游戏侧照常写 Godot 风格 API（AddChild/QueueFree），由 L3 按白名单审计；此处以 IHost 抽象保持零 Godot 依赖。
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 
 public class Game
 {

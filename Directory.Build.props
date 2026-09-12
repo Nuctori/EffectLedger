@@ -3,7 +3,7 @@
   <!-- A4-13（生产审计批2）：全仓共享 NuGet 打包元数据——来源可溯（RepositoryUrl）、nuget.org 页面带 README。
        PackageId/Version/Description 等包特有元数据仍留在各 csproj；此处只放跨包一致的来源性字段。 -->
   <PropertyGroup>
-    <RepositoryUrl>https://github.com/Nuctori/Cosmos</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Nuctori/EffectLedger</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>

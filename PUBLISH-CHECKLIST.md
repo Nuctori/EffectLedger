@@ -10,7 +10,7 @@
   - 全部 5 包（L1/Analyzer/Generator/Runtime/Tool）随单一真源统一变化（钉 `QedP4E1VersioningPins`）。
   - **必须递增版本**：同 id+version 重复发布会因 NuGet 缓存/不可变政策失败（README ⓪ 注记的根除机制）。
   - **【P5.4 供应链审计补充】历史版本污染清理**：本机/CI 若还原过 2026-09-04 之前的旧包
-    （1.0.0 无依赖组版本），全局缓存（`~/.nuget/packages/cosmos.effectalgebra*` 或
+    （1.0.0 无依赖组版本），全局缓存（`~/.nuget/packages/effectledger*` 或
     `NUGET_PACKAGES` 指向目录）会**静默遮蔽新包**（R2B-01 修复被旧缓存复活实证）——
     发布前删除这些缓存目录；假绿症状：Generator-only 还原不联装 L1。
 
@@ -32,7 +32,7 @@
 
 ## 4. 发布物核对
 
-- [ ] 五个 nupkg：`Cosmos.EffectAlgebra` / `.Analyzer` / `.Generator` / `.Runtime` / `.Tool`。
+- [ ] 五个 nupkg：`EffectLedger` / `.Analyzer` / `.Generator` / `.Runtime` / `.Tool`。
 - [ ] 依赖闭包正确：单装 Generator 自动联装 L1（钉 R2B-01/「干净缓存实验」）；L1 三 TFM（net8.0/net10.0）齐。
 - [ ] 包内 README 存在（NU5039 门）；RepositoryUrl 指向本仓库。
 

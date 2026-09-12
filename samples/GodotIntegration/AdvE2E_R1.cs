@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SampleGame.IntegrationTests;
@@ -30,7 +30,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     {
         var comp = MakeCompilation(src);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
         var genText = output.SyntaxTrees
             .Where(t => t.FilePath.EndsWith(".g.cs"))
@@ -64,7 +64,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     public void R1_SnakeCase_MapsToAddChild()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class C {{ private readonly Node3D _n = new();
     [EffectOverride(""x"")] public void add_child(object c) {{ _n.child = c; }} }} }}";
@@ -80,7 +80,7 @@ namespace SampleGame {{ {Node}
     public void R1_UpperCase_MapsToAddChild()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class C {{ private readonly Node3D _n = new();
     [EffectOverride(""x"")] public void ADDCHILD(object c) {{ _n.child = c; }} }} }}";
@@ -95,7 +95,7 @@ namespace SampleGame {{ {Node}
     public void R1_Prefix_NoFalseMatch()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class C {{ private readonly Node3D _n = new();
     [EffectOverride(""x"")] public void Add(object c) {{ _n.child = c; }} }} }}";
@@ -110,7 +110,7 @@ namespace SampleGame {{ {Node}
     public void R1_Digits_NoFalseMatch()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class C {{ private readonly Node3D _n = new();
     [EffectOverride(""x"")] public void AddChild3(object c) {{ _n.child = c; }} }} }}";
@@ -124,7 +124,7 @@ namespace SampleGame {{ {Node}
     public void R1_DegenerateName_NoThrow_EmptySig()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class C {{ private readonly Node3D _n = new();
     [EffectOverride(""x"")] public void _() {{ _n.child = null; }} }} }}";
@@ -138,7 +138,7 @@ namespace SampleGame {{ {Node}
     public void R1_CrossNotation_Equality()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{
   public sealed class C {{
     [EffectOverride(""x"")] public void PositionGet() {{ }} }} }}";
@@ -155,7 +155,7 @@ namespace SampleGame {{
     public void R1_InstantiateVsInstance_Distinct()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{
   public sealed class C {{
     [EffectOverride(""x"")] public void Instantiate() {{ }}
@@ -173,7 +173,7 @@ namespace SampleGame {{
     public void R1_DuplicateMethodName_NoCrash()
     {
         var src = $@"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {{ {Node}
   public sealed class A {{ private readonly Node3D _n = new();
     [EffectOverride(""a"")] public void AddChild(object c) {{ _n.child = c; }} }}

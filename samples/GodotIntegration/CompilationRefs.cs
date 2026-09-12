@@ -2,11 +2,11 @@
 // 全量扫描把 testhost 已加载的 Roslyn/xunit/runner 等上百个程序集逐个做成 MetadataReference，
 // 内存放大 1~2 个数量级——solution 级多 testhost 并发叠加机器内存压力时曾把 commit 内存压到 OOM
 //（MetadataReference.CreateFromFile 抛 OutOfMemoryException，28 个偶发假红）。
-// 此处与 tests/Cosmos.EffectAlgebra.Tests 现有驱动同款的 TPA 精选模式：只挂编译所需的最小集合。
+// 此处与 tests/EffectLedger.Tests 现有驱动同款的 TPA 精选模式：只挂编译所需的最小集合。
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 
 namespace SampleGame.IntegrationTests;

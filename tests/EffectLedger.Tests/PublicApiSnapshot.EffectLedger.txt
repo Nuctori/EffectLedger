@@ -1,0 +1,210 @@
+class EffectLedger.AcceptDeviationAttribute
+  ctor System.Double
+  prop System.Double Epsilon()
+class EffectLedger.Combination
+  method EffectLedger.Signature Loop(EffectLedger.Signature, EffectLedger.LoopCount, EffectLedger.ScopeId)
+class EffectLedger.Compatible
+  method System.Boolean IsCompatible(EffectLedger.Mode, EffectLedger.Mode)
+class EffectLedger.Derived
+  method System.Boolean IsConserved(EffectLedger.Signature, EffectLedger.ResourceId, EffectLedger.ScopeId)
+  method EffectLedger.NatStar Peak(EffectLedger.Signature, EffectLedger.ScopeId)
+  method EffectLedger.NetTable Net(EffectLedger.Signature, EffectLedger.ScopeId)
+class EffectLedger.EffectLedgerConfig
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.ApiMapping] AllWithExtra(System.String, System.Boolean)
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.ApiMapping] LoadExtra(System.String, System.Boolean)
+  method System.Collections.Immutable.ImmutableArray`1[EffectLedger.ApiMapping] LoadExtraFromJson(System.String)
+class EffectLedger.EffectOverrideAttribute
+  ctor System.String
+  prop System.Nullable`1[EffectLedger.Mode] OverrideMode()
+  prop System.Nullable`1[System.Double] OverrideSize()
+  prop System.String Reason()
+  prop EffectLedger.ScopeId Scope()
+class EffectLedger.EffectScript
+  ctor System.Collections.Generic.IEnumerable`1[EffectLedger.EffectEvent], EffectLedger.Budget
+  ctor System.Collections.Immutable.ImmutableArray`1[EffectLedger.EffectEvent], EffectLedger.Budget
+  prop EffectLedger.Budget Budget()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.EffectEvent] Events()
+  method EffectLedger.AuditResult Audit()
+  method EffectLedger.AuditResult Audit(EffectLedger.Budget)
+  method EffectLedger.Signature At(EffectLedger.NatStar)
+  method System.ValueTuple`2[System.Collections.Generic.IReadOnlyList`1[EffectLedger.NatStar],EffectLedger.NatStar] ComputeSamplePoints(System.Collections.Immutable.ImmutableArray`1[EffectLedger.EffectEvent])
+class EffectLedger.EffectScriptContract
+  method EffectLedger.EffectScript Parse(System.String)
+  method System.String ToJson(EffectLedger.EffectScript)
+class EffectLedger.GodotApiWhitelist
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.ApiMapping] All()
+  method System.String Canonical(System.String)
+  method System.Void ValidateNoCollisions(System.Collections.Immutable.ImmutableArray`1[EffectLedger.ApiMapping])
+class EffectLedger.NetTable
+  prop System.Collections.Generic.IEnumerable`1[EffectLedger.ResourceId] Resources()
+  method System.Boolean IsConserved(EffectLedger.ResourceId)
+  method EffectLedger.NetTable Compute(EffectLedger.Signature, EffectLedger.ScopeId)
+  method EffectLedger.SignedInterval Get(EffectLedger.ResourceId)
+class EffectLedger.Peak
+  method EffectLedger.NatStar Compute(EffectLedger.Signature, EffectLedger.ScopeId)
+class EffectLedger.ReleaseClass
+  prop System.Collections.Immutable.ImmutableArray`1[System.String] All()
+  prop System.Collections.Immutable.ImmutableHashSet`1[System.String] Names()
+  method System.Boolean IsRelease(System.String)
+class EffectLedger.ResourceId
+  method EffectLedger.ResourceId Normalize(EffectLedger.ResourceId)
+class EffectLedger.ResourceId+CommandBuffer
+  ctor System.String
+  prop System.String Channel()
+class EffectLedger.ResourceId+Custom
+  ctor System.String
+  prop System.String Name()
+class EffectLedger.ResourceId+Gpu
+  ctor EffectLedger.Rid
+  prop EffectLedger.Rid BufferId()
+class EffectLedger.ResourceId+Memory
+  ctor System.UInt64
+  prop System.UInt64 Uid()
+class EffectLedger.ResourceId+Occupancy
+  ctor System.String
+  prop System.String Channel()
+class EffectLedger.ResourceId+SignalBus
+  ctor EffectLedger.StringName
+  prop EffectLedger.StringName Name()
+class EffectLedger.ScopeId
+  method System.Boolean IncludedIn(EffectLedger.ScopeId)
+class EffectLedger.ScopeId+Global
+  ctor 
+class EffectLedger.ScopeId+Method
+  ctor System.String
+  prop System.String Name()
+class EffectLedger.ScopeId+Scene
+  ctor System.String
+  prop System.String Name()
+class EffectLedger.ScopeId+Type
+  ctor System.String
+  prop System.String Name()
+class EffectLedger.Signature
+  field EffectLedger.Signature Empty
+  prop System.Collections.Immutable.ImmutableHashSet`1[EffectLedger.Claim] OccupyClaims()
+  prop System.Collections.Immutable.ImmutableHashSet`1[EffectLedger.Claim] ReadClaims()
+  prop System.Collections.Immutable.ImmutableHashSet`1[EffectLedger.Claim] WriteClaims()
+  method System.Boolean Equals(EffectLedger.Signature)
+  method System.Boolean Equals(System.Object)
+  method System.Boolean op_Equality(EffectLedger.Signature, EffectLedger.Signature)
+  method System.Boolean op_Inequality(EffectLedger.Signature, EffectLedger.Signature)
+  method EffectLedger.NetTable Net(EffectLedger.ScopeId)
+  method EffectLedger.Signature Join(EffectLedger.Signature, EffectLedger.Signature)
+  method EffectLedger.Signature Of(EffectLedger.Claim[])
+  method EffectLedger.Signature Union(EffectLedger.Signature, EffectLedger.Signature)
+  method System.Int32 GetHashCode()
+class EffectLedger.SignatureDeviation
+  method EffectLedger.DeviationVal Calculate(EffectLedger.Signature, EffectLedger.Signature)
+class EffectLedger.SignatureExtensions
+  method System.Collections.Generic.IEnumerable`1[EffectLedger.Claim] AllClaims(EffectLedger.Signature)
+enum EffectLedger.Kind
+  field EffectLedger.Kind Occupy = 2
+  field EffectLedger.Kind Read = 0
+  field EffectLedger.Kind Write = 1
+  field System.Int32 value__
+enum EffectLedger.Mode
+  field EffectLedger.Mode Create = 1
+  field EffectLedger.Mode Move = 3
+  field EffectLedger.Mode Release = 2
+  field EffectLedger.Mode Unknown = 4
+  field EffectLedger.Mode Use = 0
+  field System.Int32 value__
+struct EffectLedger.ApiMapping
+  ctor System.String, System.Collections.Immutable.ImmutableArray`1[EffectLedger.Claim]
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Claim] Claims()
+  prop System.String GodotApi()
+struct EffectLedger.AuditResult
+  ctor System.Boolean, System.Collections.Immutable.ImmutableArray`1[EffectLedger.Violation]
+  ctor System.Boolean, System.Collections.Immutable.ImmutableArray`1[EffectLedger.Violation], System.Int32
+  prop System.Int32 CapsChecked()
+  prop System.Boolean IsPeakChecked()
+  prop System.Boolean Passed()
+  prop System.Collections.Immutable.ImmutableArray`1[EffectLedger.Violation] Violations()
+struct EffectLedger.Budget
+  ctor System.Collections.Generic.IReadOnlyDictionary`2[EffectLedger.ResourceId,EffectLedger.NatStar]
+  field EffectLedger.Budget None
+  prop System.Collections.Generic.IReadOnlyDictionary`2[EffectLedger.ResourceId,EffectLedger.NatStar] Caps()
+  method System.Boolean Equals(EffectLedger.Budget)
+  method System.Int32 GetHashCode()
+struct EffectLedger.Claim
+  ctor EffectLedger.Kind, EffectLedger.ResourceId, EffectLedger.Mode, EffectLedger.ScopeId, System.Nullable`1[EffectLedger.Interval]
+  prop EffectLedger.Kind Kind()
+  prop EffectLedger.Mode Mode()
+  prop EffectLedger.ResourceId Resource()
+  prop EffectLedger.ScopeId Scope()
+  prop System.Nullable`1[EffectLedger.Interval] Size()
+  method EffectLedger.Claim Normalize()
+struct EffectLedger.DeviationVal
+  field EffectLedger.DeviationVal Top
+  prop System.Boolean IsTop()
+  prop System.Double Value()
+  method System.Boolean ExceedsThreshold(System.Double)
+  method EffectLedger.DeviationVal Of(System.Double)
+  method System.String ToString()
+struct EffectLedger.EffectEvent
+  ctor EffectLedger.Interval, EffectLedger.ScopeId, EffectLedger.Signature
+  ctor EffectLedger.Interval, EffectLedger.ScopeId, EffectLedger.Signature, EffectLedger.LoopCount
+  prop EffectLedger.Signature Footprint()
+  prop EffectLedger.Interval Lifetime()
+  prop EffectLedger.LoopCount Loop()
+  prop EffectLedger.ScopeId Scope()
+struct EffectLedger.Interval
+  ctor EffectLedger.NatStar, EffectLedger.NatStar
+  field EffectLedger.Interval Default
+  field EffectLedger.Interval Dynamic
+  prop EffectLedger.NatStar Hi()
+  prop EffectLedger.NatStar Lo()
+  method EffectLedger.Interval Exact(System.UInt64)
+  method EffectLedger.Interval Merge(EffectLedger.Interval)
+  method System.String ToString()
+struct EffectLedger.LoopCount
+  field EffectLedger.LoopCount Top
+  prop EffectLedger.NatStar Count()
+  prop System.Boolean IsValid()
+  method EffectLedger.LoopCount Of(System.UInt64)
+struct EffectLedger.NatStar
+  field EffectLedger.NatStar Top
+  prop System.Boolean IsTop()
+  prop System.UInt64 Value()
+  method EffectLedger.NatStar Max(EffectLedger.NatStar)
+  method EffectLedger.NatStar Min(EffectLedger.NatStar)
+  method EffectLedger.NatStar Of(System.UInt64)
+  method EffectLedger.NatStar op_Addition(EffectLedger.NatStar, EffectLedger.NatStar)
+  method EffectLedger.NatStar op_Multiply(EffectLedger.NatStar, EffectLedger.NatStar)
+  method System.Int32 CompareToFinite(EffectLedger.NatStar)
+  method System.String ToString()
+struct EffectLedger.Rid
+  ctor System.String
+  prop System.String Value()
+struct EffectLedger.SignedInterval
+  ctor EffectLedger.ZStar, EffectLedger.ZStar
+  field EffectLedger.SignedInterval Zero
+  prop System.Boolean ContainsZero()
+  prop EffectLedger.ZStar Hi()
+  prop EffectLedger.ZStar Lo()
+  method System.Boolean TryMid(System.Double&, System.Double&)
+  method EffectLedger.SignedInterval Add(EffectLedger.SignedInterval)
+  method EffectLedger.SignedInterval Merge(EffectLedger.SignedInterval)
+  method System.String ToString()
+struct EffectLedger.StringName
+  ctor System.String
+  prop System.String Value()
+struct EffectLedger.Violation
+  ctor EffectLedger.NatStar, EffectLedger.ResourceId, EffectLedger.ScopeId, System.String, System.String, System.Int32
+  prop EffectLedger.NatStar AtT()
+  prop System.String Detail()
+  prop System.Int32 EventIndex()
+  prop System.String Kind()
+  prop EffectLedger.ResourceId Resource()
+  prop EffectLedger.ScopeId Scope()
+struct EffectLedger.ZStar
+  field EffectLedger.ZStar Top
+  field EffectLedger.ZStar Zero
+  prop System.Boolean IsTop()
+  prop System.Int64 Value()
+  method EffectLedger.ZStar Max(EffectLedger.ZStar)
+  method EffectLedger.ZStar Min(EffectLedger.ZStar)
+  method EffectLedger.ZStar Of(System.Int64)
+  method EffectLedger.ZStar op_Addition(EffectLedger.ZStar, EffectLedger.ZStar)
+  method EffectLedger.ZStar op_Subtraction(EffectLedger.ZStar, EffectLedger.ZStar)
+  method System.String ToString()

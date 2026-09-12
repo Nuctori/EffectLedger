@@ -17,16 +17,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+    <ProjectReference Include="..\..\src\EffectLedger\EffectLedger.csproj" />
+    <ProjectReference Include="..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\Cosmos.EffectAlgebra.Generator\Cosmos.EffectAlgebra.Generator.csproj"
+    <ProjectReference Include="..\..\src\EffectLedger.Generator\EffectLedger.Generator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 白名单扩展真接线：自有 API MyPool.Spawn/Despawn 经此获得审计保护（L3 诊断 + L2 Signature emit）。 -->
-    <AdditionalFiles Include="cosmos.effect.json" />
+    <AdditionalFiles Include="effectledger.config.json" />
   </ItemGroup>
 
 </Project>

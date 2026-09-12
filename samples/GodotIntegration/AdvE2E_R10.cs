@@ -7,8 +7,8 @@
 //   - 但本仓 analyzer 在编译器 analyzer-ALC 下因 SDK Roslyn 版本绑定差异可能报 CS8032，
 //     故测试工程用普通 ProjectReference 引用 analyzer 程序集，并以 WithAnalyzers 直接驱动
 //     （new EffectAlgebraAnalyzer() 是真实 DiagnosticAnalyzer 实例，非桩），语义等价覆盖。
-//   - 跨平台路径（commit a65b359）：本测试从测试输出目录向上定位仓库根（搜 Cosmos.EffectAlgebra.slnx），
-//     再指向 src/Cosmos.EffectAlgebra/EffectScript.cs，避免 Windows 硬编码路径在 Linux CI 上失败。
+//   - 跨平台路径（commit a65b359）：本测试从测试输出目录向上定位仓库根（搜 EffectLedger.slnx），
+//     再指向 src/EffectLedger/EffectScript.cs，避免 Windows 硬编码路径在 Linux CI 上失败。
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -16,7 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -29,7 +29,7 @@ public sealed class AdvE2E_R10
 {
     // 与 IntegrationTests.cs 同构的 GameSource（acquire 无 release 的 LeakyEnemy 必触发 EAA0901）。
     private const string LeakyGameSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object child) { } } }
 namespace R10Game {
     public sealed class LeakyEnemy {
@@ -52,7 +52,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Cosmos.EffectAlgebra.slnx")))
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "EffectLedger.slnx")))
             dir = dir.Parent;
         Assert.NotNull(dir);
         return dir!.FullName;
@@ -86,7 +86,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
 
     // 带 [EffectOverride] 标注方法的 GameSource（生成器仅对标注方法 emit，与真实 SampleGame.cs 同构）。
     private const string AnnotatedGameSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace R10Game {
     public sealed class Node3D { public object? child; }
     public sealed class HealthyEnemy {
@@ -104,12 +104,12 @@ namespace R10Game {
     public void E2E_R10_HarnessBuildsWithWarnAsError()
     {
         // 仓库相对定位 L1 程序集（跨平台：Windows/Linux/macOS 均可用，无硬编码 D:/...）。
-        var l1Dll = Path.Combine(RepoRoot(), "src", "Cosmos.EffectAlgebra", "bin", "Debug", "net10.0",
-            "Cosmos.EffectAlgebra.dll");
+        var l1Dll = Path.Combine(RepoRoot(), "src", "EffectLedger", "bin", "Debug", "net10.0",
+            "EffectLedger.dll");
         // 若尚未构建，回溯到任何 net10.0 输出（CI Release 下路径不同；此处本机 Debug 已构建）。
         if (!File.Exists(l1Dll))
         {
-            var alt = Directory.GetFiles(RepoRoot(), "Cosmos.EffectAlgebra.dll", SearchOption.AllDirectories)
+            var alt = Directory.GetFiles(RepoRoot(), "EffectLedger.dll", SearchOption.AllDirectories)
                 .FirstOrDefault(p => p.Contains("net10.0"));
             if (alt is not null) l1Dll = alt;
         }
@@ -124,7 +124,7 @@ var refs = CompilationRefs.Lean(l1Dll);
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
 
         var genText = output.SyntaxTrees
@@ -149,8 +149,8 @@ var refs = CompilationRefs.Lean(l1Dll);
         // 跨平台门禁：TreatWarningsAsErrors 必须开启（ci.yml 的 -warnaserror 同义）。
         Assert.Contains("TreatWarningsAsErrors", proj);
 
-        // 集成工程必须纳入 SLN（ci.yml 的 dotnet test Cosmos.EffectAlgebra.slnx 会覆盖）。
-        var slnx = File.ReadAllText(Path.Combine(RepoRoot(), "Cosmos.EffectAlgebra.slnx"));
+        // 集成工程必须纳入 SLN（ci.yml 的 dotnet test EffectLedger.slnx 会覆盖）。
+        var slnx = File.ReadAllText(Path.Combine(RepoRoot(), "EffectLedger.slnx"));
         Assert.Contains("SampleGame.csproj", slnx);
 
         // 当前测试程序集确实由该工程产出（本测试正在运行即证明跨平台构建成功）。

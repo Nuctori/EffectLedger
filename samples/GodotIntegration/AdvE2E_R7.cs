@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Xunit;
 using SampleGame.IntegrationTests;
 
@@ -30,7 +30,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     }
 
     private static readonly string GameSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class RecvEnemy {
@@ -112,7 +112,7 @@ namespace SampleGame {
     {
         // L2 方法名规范化（去 . 和 _，小写）：验证一个带下划线/点的方法名能命中白名单 key。
         var genSrc = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class G {
         [EffectOverride(""x"")]
@@ -123,7 +123,7 @@ namespace SampleGame {
 }";
         var comp = MakeCompilation(genSrc);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
 
         var genText = output.SyntaxTrees
@@ -148,7 +148,7 @@ namespace SampleGame {
 
         // L3 侧：同一规范化（addchild/removechild）在 BuildAcquireNames/BuildReleaseNames 中成立，与分析器一致。
         var analyzeSrc = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class H {
         public void Leak() { Add_Child(new object()); }
@@ -182,7 +182,7 @@ namespace SampleGame {
     {
         // AddChild 含 Write+Occupy；用生成器对 AddChild 标注方法，断言生成 .g.cs 真含这些 Claim（经 L1 Signature.Of）。
         var src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class K {
         [EffectOverride(""x"")]
@@ -191,7 +191,7 @@ namespace SampleGame {
 }";
         var comp = MakeCompilation(src);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
         using var ms = new MemoryStream();
         var emit = output.Emit(ms);

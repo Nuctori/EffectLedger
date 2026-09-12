@@ -14,7 +14,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -42,7 +42,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
             ImmutableArray.Create<DiagnosticAnalyzer>(AnalyzerTestLoader.LoadAnalyzer()));
         var diags = await withAnalyzers.GetAnalyzerDiagnosticsAsync();
 
-        var driver = (GeneratorDriver)CSharpGeneratorDriver.Create(new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+        var driver = (GeneratorDriver)CSharpGeneratorDriver.Create(new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
         var genText = output.SyntaxTrees
             .Where(t => t.FilePath.EndsWith(".g.cs"))
@@ -57,7 +57,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     public async Task E2E_R5_BothAttributes_SingleCompute_AndExempt()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class BothTagged {
@@ -70,7 +70,7 @@ namespace SampleGame {
 }";
         var (diags, gen) = await RunBoth(src);
         // 仅一个 ComputeAddChild emit（不重复）。
-        Assert.Equal(1, gen.Split(new[] { "public static global::Cosmos.EffectAlgebra.Signature ComputeAddChild" }, StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, gen.Split(new[] { "public static global::EffectLedger.Signature ComputeAddChild" }, StringSplitOptions.None).Length - 1);
         Assert.Contains("ComputeAddChild", gen);
         // 标了合法 reason + 合法 epsilon ⇒ 被视为逃逸通道，对 (无 acquire 的 Spawn) 不应误报泄漏。
         Assert.DoesNotContain(diags, d => d.Id == "EAA0901" && d.GetMessage().Contains("BothTagged"));
@@ -84,7 +84,7 @@ namespace SampleGame {
     public async Task E2E_R5_OverrideEmptyReason_NotExempted_AndDiagnosed()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
@@ -106,7 +106,7 @@ namespace SampleGame {
     public async Task E2E_R5_OverrideWhitespaceReason_Diagnosed()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
@@ -128,7 +128,7 @@ namespace SampleGame {
     public async Task E2E_R5_AcceptDeviationOutOfRange_NotExempted()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class BadEpsilon {
@@ -148,7 +148,7 @@ namespace SampleGame {
     public async Task E2E_R5_DuplicateOverride_CompileError()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Dup {
@@ -169,7 +169,7 @@ namespace SampleGame {
     public async Task E2E_R5_AttributeOnClass_IgnoredNoCrash()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     [EffectOverride(""类级 reason"")]
@@ -192,7 +192,7 @@ namespace SampleGame {
     public async Task E2E_R5_ValidOverride_StillExempt()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Balanced {

@@ -9,7 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -44,7 +44,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     {
         var comp = MakeCompilation(source);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
         using var ms = new MemoryStream();
         var emit = output.Emit(ms);
@@ -67,7 +67,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
 
     // ── 场景源：pair 容器（P0-2 对齐：Godot 桩 + 接收者调用；标注方法保留供 L2 生成器 emit）──
     private const string PairSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class Node3D { public void AddChild(object c) { } public void RemoveChild() { } }
     public sealed class ResourceLoader { public object Load() => new(); }
@@ -120,7 +120,7 @@ namespace R8 {
 
     // ── 重父化对抗：节点A acquire / 节点B release 运行期是不同资源；但 name-match 设计下两者归一为同资源(已知 false negative) ──
     private const string ReparentSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace R8 {
     public sealed class Node3D { public object? child; }
     public sealed class Reparent {
@@ -153,7 +153,7 @@ namespace R8 {
 
     // ── 逃逸：per-method。[EffectOverride] 的逃逸方法 imbalance 不报；同类未标注兄弟 imbalance 必报。──
     private const string EscapeSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace R8b {
     public sealed class Escape {

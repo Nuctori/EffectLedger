@@ -1,8 +1,32 @@
 # Changelog
 
-Cosmos.EffectAlgebra 的用户可见变更记录。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+EffectLedger 的用户可见变更记录。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
+
+### 改名：Cosmos → EffectLedger（破坏性，未发布前无既有消费者）
+
+项目由 `Cosmos` 更名为 `EffectLedger`。旧名是通用词（撞名/歧义），且不符合 .NET 官方命名模板
+`<Company>.(<Product>|<Technology>)` 的「第二级用稳定产品名」。改名按语义面分解执行：
+
+| 面 | 旧 | 新 |
+| --- | --- | --- |
+| 包 / 程序集 / 命名空间 | `Cosmos.EffectAlgebra[.*]` | `EffectLedger[.*]` |
+| CLI 命令 | `cosmos audit` | `effectledger audit` |
+| 白名单扩展配置 | `cosmos.effect.json` | `effectledger.config.json` |
+| 配置 schema | `docs/cosmos-effect-config.schema.json` | `docs/effectledger-config.schema.json` |
+| CI workflow | `cosmos-audit.yml` | `effectledger-audit.yml` |
+| 形式化规约 | `CosmosEffectAlgebra.dfy` / `CosmosSweepLine.dfy` | `EffectLedger.dfy` / `EffectLedgerSweepLine.dfy` |
+| L1 类型 | `CosmosEffectConfig` | `EffectLedgerConfig` |
+
+**迁移**：消费工程须把 `cosmos.effect.json` 重命名为 `effectledger.config.json`，并同步
+`.csproj` 的 `<AdditionalFiles Include="..."/>`；`using Cosmos.EffectAlgebra;` → `using EffectLedger;`。
+CLI 调用从 `cosmos audit` 改为 `effectledger audit`（退出码契约 0/1/2 不变）。
+
+改名归入 semver **major**。诊断 ID（`EAA*`）、退出码、JSON 契约方言均**未变**。
+公共 API 快照两枚已重生成，经人工核对为纯命名空间替换、零结构性变更。
+
+> `audit/` 下的历史审计报告保留原 `Cosmos` 字样不改写——那是当时语境的证据链，改之即失真。
 
 ### 计划首发（未发布——发布流程见 `PUBLISH-CHECKLIST.md`）
 
@@ -23,14 +47,14 @@ Cosmos.EffectAlgebra 的用户可见变更记录。格式遵循 [Keep a Changelo
 
 - 每标注方法（[EffectOverride]/[AcceptDeviation]）生成 Signature 组合代码——真委托 L1 白
   名单 Claims（非桩代码），支持泛型/嵌套/重载/partial/深命名空间/关键字名全部形态。
-- 白名单扩展真接线：`cosmos.effect.json` 经 AdditionalFiles 被生成器消费（跨文件 Canonical
+- 白名单扩展真接线：`effectledger.config.json` 经 AdditionalFiles 被生成器消费（跨文件 Canonical
   碰撞 loud EAA0701 拒绝，无部分生效）。
 
 #### L3 Roslyn 分析器
 
 - EAA0901 泄漏 / EAA0303 量纲混用 / EAA0304 兼容冲突 / EAA0801·0802 特性校验 /
   EAA0701 白名单扩展配置错误诊断。
-- 白名单扩展真消费：`cosmos.effect.json` 经 AdditionalFiles 后扩展 API 参与 EAA* 分析
+- 白名单扩展真消费：`effectledger.config.json` 经 AdditionalFiles 后扩展 API 参与 EAA* 分析
   （跨文件碰撞 EAA0701 loud，与 L2 同契约 ID）。
 
 #### 运行时
@@ -42,12 +66,12 @@ Cosmos.EffectAlgebra 的用户可见变更记录。格式遵循 [Keep a Changelo
 
 #### CLI
 
-- `cosmos audit <script.json> [--out violations.json]` 一键门——AI 闭环工具。
+- `effectledger audit <script.json> [--out violations.json]` 一键门——AI 闭环工具。
 - 退出码契约：0=通过 / 2=存在违例 / 1=解析或 IO 错误。
 
 #### 形式化验证
 
-- 89 条 Dafny 定律（`formal/CosmosEffectAlgebra.dfy` + `formal/CosmosSweepLine.dfy`）：
+- 89 条 Dafny 定律（`formal/EffectLedger.dfy` + `formal/EffectLedgerSweepLine.dfy`）：
   NatStar ⊤ 闭合与溢出⇒⊤ / Interval 半格 / ScopeId 单向偏序 / Compatible 对称 /
   SignedNet 守恒 / 扫换线采样充分性与增量等价。
 - `dafny verify` 纳入 CI 门禁（verified ≥89 计数门，删减即红）。

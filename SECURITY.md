@@ -3,7 +3,7 @@
 ## 报告漏洞
 
 如发现安全问题，请**不要开公开 Issue**，改用 GitHub 的
-[Private vulnerability reporting](https://github.com/Nuctori/Cosmos/security/advisories/new)
+[Private vulnerability reporting](https://github.com/Nuctori/EffectLedger/security/advisories/new)
 （仓库 Security 标签页 → Report a vulnerability）。
 
 请包含：影响的版本/提交、复现步骤、最小可复现样例（若适用）、你评估的影响面。

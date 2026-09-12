@@ -6,8 +6,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra\Cosmos.EffectAlgebra.csproj" />
-    <ProjectReference Include="..\..\..\src\Cosmos.EffectAlgebra.Analyzer\Cosmos.EffectAlgebra.Analyzer.csproj"
+    <ProjectReference Include="..\..\..\src\EffectLedger\EffectLedger.csproj" />
+    <ProjectReference Include="..\..\..\src\EffectLedger.Analyzer\EffectLedger.Analyzer.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

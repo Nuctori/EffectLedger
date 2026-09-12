@@ -1,0 +1,256 @@
+// ApiMapping.cs — PDR §7（§7.1–§7.10）实现：Godot API → Claim 白名单；§8.1 release-class。LANDING_PLAN §3：L1 数据层（零 Godot）。
+using System.Collections.Immutable;
+using System.Linq;
+
+#if ANALYZER_SHARED
+namespace EffectLedger.Analyzer.Shared;
+#elif GENERATOR_SHARED
+namespace EffectLedger.Generator.Shared;
+#else
+namespace EffectLedger;
+#endif
+
+// 迭代03：§7 Godot API ↔ Claim 白名单 + §8.1 release-class 数据层。
+// L1 零 Godot 依赖：API 名用字符串、resource 用 ResourceId 构造子、scope 用 ScopeId.Shell()/Global() 表示
+// shell_scope / global_scope。裸名（gpu/memory/command_buffer/signal_bus/...）按 §3.1.4a 归一映射
+// （运行时由 ResourceId.Normalize 完成，白名单不重复写死）。
+// 每条映射带来源 §7.x 注释；类型字段即边界。
+
+/// <summary>§7 — 单条 API 映射：Godot 方法名 + 其 Claim 集合（按 L1 类型建模）。</summary>
+public readonly record struct ApiMapping
+{
+    /// <summary>§7 — 稳定 API 键（Godot 方法名；同名异义以 "Audio.Play" / "Anim.Play" 消歧）。</summary>
+    public string GodotApi { get; }
+
+    /// <summary>§7 — 该 API 引发的 Claim 集合（已 Normalize，§3.1.4a）。</summary>
+    public ImmutableArray<Claim> Claims { get; }
+
+    /// <summary>§7 — 构造单条 API 映射（API 名 + Claim 集合）。</summary>
+    public ApiMapping(string godotApi, ImmutableArray<Claim> claims)
+    {
+        GodotApi = godotApi;
+        Claims = claims;
+    }
+}
+
+/// <summary>§7.1–§7.10 全表白名单（强类型数据；类型即边界，来源注释承载数学语义）。</summary>
+public static class GodotApiWhitelist
+{
+    // ── 作用域/资源/Claim 构造帮助器（保持编码紧凑、与 §7 表逐格对齐）──
+    static ScopeId Shell() => new ScopeId.Shell();
+    static ScopeId Global() => new ScopeId.Global();
+
+    static ResourceId Tree(string p) => new ResourceId.Tree(NodePathOrUnknown.Of(p));
+    static ResourceId Self(string c) => new ResourceId.Self(c);
+    static ResourceId Phys(string b) => new ResourceId.Physics(new Rid(b));
+    static ResourceId Mem() => new ResourceId.Memory(0); // 通用内存资源哨兵；真实 UID 由映射层运行时填入（§3.1.4a）
+    static ResourceId Disk(string p) => new ResourceId.Disk(p);
+    static ResourceId SigBus(string n) => new ResourceId.SignalBus(new StringName(n));
+    static ResourceId Gpu(string b) => new ResourceId.Gpu(new Rid(b));
+    static ResourceId CmdBuf() => new ResourceId.CommandBuffer("gpu");   // §7 裸 command_buffer
+    static ResourceId AudioMx() => new ResourceId.AudioMixer(0);          // 通用音频混音通道哨兵
+    static ResourceId Occ(string ch) => new ResourceId.Occupancy(ch);    // audio_channel / animation_state
+    static ResourceId Cb() => new ResourceId.Callback("cb");             // §7 Connect callback；常量实例保守合并【QED-A7】：跨调用点折叠=已声明盲区（README 诚实边界 #20，钉 QedP0A7AliasFoldingPins），权威判定=运行期 Σnet
+    static ResourceId Net(int peer, string m) => new ResourceId.Network(peer, m);
+    static ResourceId Inp(string a) => new ResourceId.Input(a);          // §7.8 input
+
+    static Claim Rd(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Read, r, m, s, sz).Normalize();
+    static Claim Wr(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Write, r, m, s, sz).Normalize();
+    static Claim Oc(ResourceId r, Mode m, ScopeId s, Interval? sz = null) => new Claim(Kind.Occupy, r, m, s, sz).Normalize();
+
+    static ApiMapping M(string api, params Claim[] claims) => new(api, claims.ToImmutableArray());
+
+    /// <summary>§7 / §14.3 — 白名单键归一化单一真源：去 '.' 与 '_'、小写（与 L2/L3 的 Canonical 一致）。
+    /// 原 Analyzer/Generator 各自内联一份相同逻辑（R2 #3 词冲），集中于此避免漂移。</summary>
+    /// <summary>P2 — 白名名期碰撞校验（Canonical 去\u0027.\u0027/_\u0027后碰撞）。</summary>
+    public static void ValidateNoCollisions(ImmutableArray<ApiMapping> arr = default)
+    {
+        var seen = new System.Collections.Generic.Dictionary<string,string>();
+        foreach(var m in (arr.IsDefault ? All : arr)) {
+            var c = Canonical(m.GodotApi);
+            if(seen.TryGetValue(c, out var prev) && prev != m.GodotApi) throw new System.InvalidOperationException($"Canonical collision: '{prev}' vs '{m.GodotApi}' -> '{c}'");
+            seen[c]=m.GodotApi;
+        }
+    }
+
+    /// <summary>P2-C1a — 合并视图：基础白名单 + 用户扩展（effectledger.config.json 经 L2/L3 AdditionalFiles 消费，
+    /// 外部用户自助扩展白名单的关键杠杆，诚实边界 #12 的接线本体）。
+    /// internal：消费者仅 L2/L3（ShareSource 源副本天然自带）与仓库测试（IVT）——外部用户只写配置
+    /// 文件不调 API，公共面零增长（QedP1B1 快照不动）。
+    /// 碰撞语义 loud：合并集内任何 Canonical 同键（含扩展 vs 基础表、扩展彼此）⇒ InvalidOperationException——
+    /// 静默覆盖是假绿向量（R3-L1-03 教义：静默改写比报错更危险），配置错误必须在消费方编译期暴露。
+    /// 基础表不被修改（不可变合并视图，返回新数组）。</summary>
+    internal static ImmutableArray<ApiMapping> MergedWith(ImmutableArray<ApiMapping> extra)
+    {
+        if (extra.IsDefaultOrEmpty) return All;
+        var merged = All.AddRange(extra);
+        var seen = new System.Collections.Generic.Dictionary<string, string>();
+        foreach (var m in merged)
+        {
+            var c = Canonical(m.GodotApi);
+            if (seen.TryGetValue(c, out var prev))
+                throw new System.InvalidOperationException(
+                    $"白名单扩展碰撞：'{prev}' 与 '{m.GodotApi}' Canonical 同键 '{c}'（effectledger.config.json 扩展不得与基础表/彼此同键，QED-C1a）");
+            seen[c] = m.GodotApi;
+        }
+        return merged;
+    }
+
+    public static string Canonical(string name) =>
+        name.ToLowerInvariant().Replace(".", "").Replace("_", "");
+
+    static ImmutableArray<ApiMapping> BuildValidated() { var a = Build(); ValidateNoCollisions(a); return a; }
+
+    /// <summary>§7.1–§7.10 白名单（逐条对应 PDR 映射表）。</summary>
+    public static ImmutableArray<ApiMapping> All { get; } = BuildValidated();
+
+    static ImmutableArray<ApiMapping> Build()
+    {
+        var items = new System.Collections.Generic.List<ApiMapping>();
+
+        // §7.1 场景树操作
+        items.Add(M("GetNode", Rd(Tree("path"), Mode.Use, Shell())));                              // §7.1 读场景树
+        items.Add(M("GetTree", Rd(Tree("root"), Mode.Use, Shell())));                              // §7.1 读场景树根
+        items.Add(M("AddChild",                                                                            // §7.1 写树 + 占用
+            Wr(Tree("node.id"), Mode.Create, Shell()),
+            Oc(Tree("node.id"), Mode.Create, Shell(), Interval.Exact(1))));
+        items.Add(M("RemoveChild",                                                                         // §7.1 写树 + 释放
+            Wr(Tree("node.id"), Mode.Release, Shell()),
+            Oc(Tree("node.id"), Mode.Release, Shell(), Interval.Exact(1))));
+        items.Add(M("QueueFree",                                                                           // §7.1 mode=release（iter27：net 计入 −size）
+            Wr(Tree("node.id"), Mode.Release, Shell()),                                              // 与 AddChild 的 Wr(Tree node.id, Create) 对称
+            Oc(Tree("node.id"), Mode.Release, Shell(), Interval.Exact(1)),                          // 与 AddChild 的 Oc(Tree node.id, Create, Exact1) 对称
+            Oc(Mem(), Mode.Release, Shell(), Interval.Dynamic)));
+        items.Add(M("CancelFree",                                                                          // §7.1【QED-A9 方向修正】取消挂起的 queue_free（Godot 4.2+ 官方语义「Cancels any queue_free() call」）
+                                                                                                           // ⇒ 节点继续存活 = 重新占用；原 release-class 归类方向相反（emit release 会掩盖它所取消的泄漏路径），
+                                                                                                           // 现与 QueueFree 逐资源对称回加（Release↔Create 配对恢复守恒语义）
+            Wr(Tree("node.id"), Mode.Create, Shell()),
+            Oc(Tree("node.id"), Mode.Create, Shell(), Interval.Exact(1)),
+            Oc(Mem(), Mode.Create, Shell(), Interval.Dynamic)));
+        items.Add(M("MoveChild", Wr(Tree("node.id"), Mode.Use, Shell())));                            // §7.1 写树
+
+        // §7.2 属性访问
+        items.Add(M("Position.get", Rd(Self("transform"), Mode.Use, Shell())));                       // §7.2 读自身
+        items.Add(M("Position.set", Wr(Self("transform"), Mode.Use, Shell())));                       // §7.2 写自身
+        items.Add(M("GlobalPosition.get",                                                                  // §7.2 读自身 + 父节点
+            Rd(Self("transform"), Mode.Use, Shell()),
+            Rd(Tree("parent_path"), Mode.Use, Shell())));
+        items.Add(M("Rotation.getset",                                                                     // §7.2 读写自身
+            Rd(Self("transform"), Mode.Use, Shell()),
+            Wr(Self("transform"), Mode.Use, Shell())));
+        items.Add(M("Scale.getset",                                                                        // §7.2 读写自身
+            Rd(Self("transform"), Mode.Use, Shell()),
+            Wr(Self("transform"), Mode.Use, Shell())));
+
+        // §7.3 物理操作
+        items.Add(M("MoveAndSlide",                                                                        // §7.3 读写物理 + 读碰撞
+            Rd(Phys("self.body_id"), Mode.Use, Shell()),
+            Wr(Phys("self.body_id"), Mode.Use, Shell()),
+            Rd(Tree("collision_shapes"), Mode.Use, Shell())));
+        items.Add(M("ApplyForce", Wr(Phys("self.body_id"), Mode.Use, Shell())));                       // §7.3 写物理
+        items.Add(M("ApplyImpulse", Wr(Phys("self.body_id"), Mode.Use, Shell())));                     // §7.3 写物理
+        items.Add(M("GetSlideCollisionCount", Rd(Phys("self.body_id"), Mode.Use, Shell())));           // §7.3 读物理
+        items.Add(M("GetSlideCollision", Rd(Phys("self.body_id"), Mode.Use, Shell())));               // §7.3 读物理
+
+        // §7.4 资源加载
+        items.Add(M("Load",                                                                                // §7.4 读磁盘 + 占用内存(global)
+            Rd(Disk("path"), Mode.Use, Shell()),
+            Oc(Mem(), Mode.Create, Global(), Interval.Dynamic)));
+        items.Add(M("LoadInteractive", Rd(Disk("path"), Mode.Use, Shell())));                           // §7.4 读磁盘
+        items.Add(M("Instantiate",                                                                         // §7.4 读场景 + 创建 + 占用
+            Rd(Mem(), Mode.Use, Shell()),
+            // R3-CG-01（三轮审计）：删除 Wr(Tree("new_id"), Create)——"new_id" 是永不配对的幻影资源键
+            //（白名单内无任何 release 端 emits 该键），标准 Instantiate→AddChild→QueueFree 生命周期恒报
+            // EAA0901 且诊断修复建议(1)不可达成。场景实例的树身份由 AddChild（acquire node.id）/
+            // QueueFree（release node.id）承载，实例化本身只占内存（Oc(Mem, Create)，与 QueueFree 的
+            // Mem release 配对）。
+            Oc(Mem(), Mode.Create, Shell(), Interval.Dynamic)));
+        items.Add(M("Preload",                                                                             // §7.4 读磁盘 + 占用内存(global)
+            Rd(Disk("path"), Mode.Use, Shell()),
+            Oc(Mem(), Mode.Create, Global(), Interval.Dynamic)));
+
+        // §7.5 信号系统
+        items.Add(M("EmitSignal",                                                                          // §7.5 写信号 + 读订阅者
+            Wr(SigBus("signal"), Mode.Create, Shell()),
+            Rd(Tree("subscribers_signal"), Mode.Use, Shell())));
+        items.Add(M("Connect",                                                                             // §7.5 写信号(self.signal_*) + 占用回调
+            Wr(Self("signal_x"), Mode.Create, Shell()),
+            Oc(Cb(), Mode.Create, Shell(), Interval.Dynamic)));
+        items.Add(M("Disconnect",                                                                          // §7.5 写信号 + 释放回调
+            Wr(Self("signal_x"), Mode.Release, Shell()),
+            Oc(Cb(), Mode.Release, Shell(), Interval.Dynamic)));
+        items.Add(M("IsConnected", Rd(Self("signal_x"), Mode.Use, Shell())));                            // §7.5 读信号
+
+        // §7.6 渲染操作
+        items.Add(M("DrawMesh",                                                                            // §7.6 读 GPU + 写命令 + 读材质
+            Rd(Gpu("mesh"), Mode.Use, Shell()),
+            Wr(CmdBuf(), Mode.Create, Shell()),
+            Rd(Gpu("material"), Mode.Use, Shell())));
+        items.Add(M("DrawRect", Wr(CmdBuf(), Mode.Create, Shell())));                                    // §7.6 写命令
+        items.Add(M("SetMaterialOverride",                                                                 // §7.6 写材质 + 读材质
+            Wr(Self("material"), Mode.Use, Shell()),
+            Rd(Gpu("material"), Mode.Use, Shell())));
+
+        // §7.7 音频操作
+        items.Add(M("Audio.Play",                                                                          // §7.7 写混音器 + 读音频 + 占用通道
+            Wr(AudioMx(), Mode.Create, Shell()),
+            Rd(Mem(), Mode.Use, Shell()),
+            Oc(Occ("audio"), Mode.Create, Shell(), Interval.Exact(1))));
+        items.Add(M("Audio.Stop",                                                                          // §7.7 写混音器 + 释放通道
+            Wr(AudioMx(), Mode.Release, Shell()),
+            Oc(Occ("audio"), Mode.Release, Shell(), Interval.Exact(1))));
+        items.Add(M("Audio.SetVolumeDb", Wr(AudioMx(), Mode.Use, Shell())));                             // §7.7 写混音器
+
+        // §7.8 输入操作
+        items.Add(M("IsActionPressed", Rd(Inp("action"), Mode.Use, Shell())));                           // §7.8 读输入
+        items.Add(M("IsActionJustPressed", Rd(Inp("action"), Mode.Use, Shell())));                       // §7.8 读输入
+        items.Add(M("GetMousePosition", Rd(Inp("mouse"), Mode.Use, Shell())));                           // §7.8 读输入
+
+        // §7.9 网络操作
+        items.Add(M("Rpc",                                                                                 // §7.9 写网络 + 读内存
+            Wr(Net(0, "method"), Mode.Create, Shell()),
+            Rd(Mem(), Mode.Use, Shell())));
+        items.Add(M("RpcId",                                                                               // §7.9 写网络 + 读内存
+            Wr(Net(0, "method"), Mode.Create, Shell()),
+            Rd(Mem(), Mode.Use, Shell())));
+
+        // §7.10 动画操作
+        items.Add(M("Anim.Play",                                                                           // §7.10 写动画 + 读内存 + 占用状态
+            Wr(Self("animation"), Mode.Create, Shell()),
+            Rd(Mem(), Mode.Use, Shell()),
+            Oc(Occ("animation"), Mode.Create, Shell(), Interval.Exact(1))));
+        items.Add(M("Anim.Stop",                                                                           // §7.10 写动画 + 释放状态
+            Wr(Self("animation"), Mode.Release, Shell()),
+            Oc(Occ("animation"), Mode.Release, Shell(), Interval.Exact(1))));
+        items.Add(M("Anim.Seek", Wr(Self("animation"), Mode.Use, Shell())));                             // §7.10 写动画
+
+        return items.ToImmutableArray();
+    }
+}
+
+/// <summary>
+/// §8.1 — release-class 白名单（强制 emit release/occupy-release，不落默认 Unknown 规则）。
+/// 来源：Godot 开源源码核对（scene/main/node.cpp + Object），2026-08-20 实测枚举：
+/// <summary>
+/// §8.1 权威 release-class（【QED-A9 修正 2026-09-06：godotengine 官方文档签名级复核，收口 iter55 PO-55-09】）。
+/// 保留 4 项（真实释放操作）：queue_free / Object.free（释放 Node 自身 + 递归 children，PREDELETE memdelete）、
+/// remove_child（释放该 child 的 tree 占用）、disconnect（释放信号/回调占用）。
+/// 原清单三处错误归类已修正并防回归（钉 VerificationMatrixTests/CrossLayerTests）：
+///   - cancel_free 移出：官方语义「Cancels any queue_free() call」=取消释放、节点存活（Godot 4.2+）——
+///     归入 release-class 会 emit release，恰好掩盖它所取消的那次释放的泄漏路径（方向相反）；
+///     现以显式白名单条目 CancelFree 按「重新占用」映射（与 QueueFree 逐资源对称，见 §7.1）。
+///   - remove_from_group 移出：纯组织性操作，组员关系非资源占用，emit release = 凭空少计。
+///   - free_children_in_group 移出：Node 公开 API 不存在该方法（官方文档全文无此项，原「源码实测」不可证）。
+/// </summary>
+public static class ReleaseClass
+{
+    /// <summary>§8.1 权威 release-class 清单（4 项，QED-A9 修正后）。</summary>
+    public static ImmutableHashSet<string> Names { get; } = ImmutableHashSet.Create(
+        "queue_free", "free", "remove_child", "disconnect");
+
+    /// <summary>§8.1 — 判定 API（小写）是否属于 release-class；是则映射层必须 emit release/occupy-release。</summary>
+    public static bool IsRelease(string api) => !string.IsNullOrEmpty(api) && Names.Select(GodotApiWhitelist.Canonical).Contains(GodotApiWhitelist.Canonical(api));
+
+    /// <summary>§8.1 — 全部 release-class 名（不可变数组视图）。</summary>
+    public static ImmutableArray<string> All => Names.ToImmutableArray();
+}

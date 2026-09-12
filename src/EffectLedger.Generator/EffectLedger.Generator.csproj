@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks><!-- P1-B5：与 L1 同双目标（net8.0;net10.0）——net9 消费者按 NuGet 就近原则消费 net8.0 资产；原三目标的 net9.0 档随 L1 缩切片删除（A2-06 后残迹） -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NU5128：analyzer-only 包（无 lib）带 TFM 依赖组的已知误报，显式压制 -->
+    <NoWarn>NU5128;RS2008</NoWarn><!-- RS2008：QED-C1c 生成器侧新增诊断 EAA0701（与 L3 侧同契约 ID），发布跟踪建议同分析器侧显式压制 -->
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- NuGet 打包元数据（P0-2：生产可分发）。源生成器须落入 analyzers/dotnet/cs/ 以供消费方编译期加载。 -->
+    <IsPackable>true</IsPackable>
+    <PackageId>EffectLedger.Generator</PackageId>
+    <Authors>Nuctori</Authors>
+    <Company>Nuctori</Company>
+    <Description>资源效应代价代数 L2 源生成器：将 Godot API 调用真委托到 L1 净代数 Signature（§7 / §14）。零 Godot 依赖。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>source-generator;effect-algebra;godot;roslyn</PackageTags>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- R2B-01（二轮审计）：依赖照常流转进 nuspec（此前 Suppress 使单装 Generator 的消费工程必然 CS0246）。
+         流转的是 NuGet 依赖（消费方还原 L1 包），不进编译器隔离 ALC，无 CS8032 风险。 -->
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- L2 是 Roslyn source generator；仅依赖 Roslyn + L1 纯代数。不引用 Godot.NET.Sdk（本机未装，会还原失败）。
+         A2-06（生产审计批4）：生成器 emit 期真调 L1（GodotApiWhitelist.Canonical）——此前 ProjectReference + 
+         IncludeBuildOutput=false + SuppressDependenciesWhenPacking ⇒ 打包产物缺 L1 DLL，NuGet 消费时编译器隔离 ALC
+         解析 EffectLedger 失败 ⇒ 生成器实例化失败/静默不生成。与 L3 同方案：源共享自包含（命名空间改写副本），
+         切断对 L1 程序集的运行期引用。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <ShareSource Include="..\EffectLedger\Objects.cs" />
+    <ShareSource Include="..\EffectLedger\ApiMapping.cs" />
+    <ShareSource Include="..\EffectLedger\Algebra.cs" />
+    <ShareSource Include="..\EffectLedger\Numeric.cs" />
+    <ShareSource Include="..\EffectLedger\SignedNet.cs" />
+    <!-- QED-C1c：白名单扩展配置解析随源共享（LoadExtraFromJson/MergedWith）——生成器经
+         AdditionalFiles 消费 effectledger.config.json；System.Text.Json 为 net8.0/net10.0 BCL 内箱。 -->
+    <ShareSource Include="..\EffectLedger\EffectLedgerConfig.cs" />
+    <!-- R2B-01：pack 期流转完整 NuGet 依赖（含 Compile——消费工程须能编译到 L1 类型，单装 Generator 不再 CS0246）。
+         生成器编译不受影响：代码里对 Shared 副本的引用全部完全限定（见 EffectAlgebraGenerator.cs R2B-01 注），
+         不使用 L1 程序集的任何类型 ⇒ 生成器 PE 不携带对 L1.dll 的引用，A2-06 自包含（隔离 ALC 可加载）语义保持。 -->
+    <ProjectReference Include="..\EffectLedger\EffectLedger.csproj" />
+  </ItemGroup>
+
+  <!-- 构建期从 L1 派生命名空间改写副本：namespace EffectLedger[.X] -> EffectLedger.Generator.Shared[.X]，
+       写入 IntermediateOutputPath\GeneratorShared\，作为生成器自包含编译单元（不触碰 L1 本体；L1 仍是唯一事实来源）。 -->
+  <!-- 【QED-C1b 修复】同 Analyzer 侧：WriteLinesToFile 对非 ASCII 有损 ⇒ Copy 字节级副本 + #if GENERATOR_SHARED。 -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);GENERATOR_SHARED</DefineConstants>
+  </PropertyGroup>
+  <Target Name="PrepareGeneratorSharedSources" BeforeTargets="CoreCompile" Inputs="@(ShareSource)" Outputs="@(ShareSource->'$(IntermediateOutputPath)GeneratorShared\%(Filename).cs')">
+    <MakeDir Directories="$(IntermediateOutputPath)GeneratorShared" />
+    <Copy SourceFiles="%(ShareSource.FullPath)" DestinationFiles="$(IntermediateOutputPath)GeneratorShared\%(ShareSource.Filename).cs" />
+    <ItemGroup>
+      <Compile Remove="@(ShareSource)" />
+      <Compile Include="$(IntermediateOutputPath)GeneratorShared\%(ShareSource.Filename).cs" />
+    </ItemGroup>
+  </Target>
+
+  <!-- 生成器 DLL 打包进 analyzers/dotnet/cs/（消费方编译期自动加载）；IncludeBuildOutput=false 故需显式 None Pack。
+       R3-CG-04：多目标后外层 $(TargetFramework) 为空 ⇒ 显式取 net10.0 镜像（README 宿主前提：生成器跑在 .NET 10 SDK
+       Roslyn 宿主；多目标仅为 nuspec 按 TFM 生成 L1 依赖组，net8/9 消费者还原期自动联装 L1，非编译器镜像选择）。 -->
+  <ItemGroup>
+    <None Include="bin/$(Configuration)/net10.0/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+  </ItemGroup>
+
+</Project>

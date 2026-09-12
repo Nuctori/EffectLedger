@@ -1,4 +1,4 @@
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Godot;
 
 namespace HelloEffect;
@@ -12,7 +12,7 @@ public sealed class Pool : Node
 
 public static class Demo
 {
-    // ── 正确用法 2：白名单扩展 API（cosmos.effect.json）配对使用 ⇒ 零诊断。 ──
+    // ── 正确用法 2：白名单扩展 API（effectledger.config.json）配对使用 ⇒ 零诊断。 ──
     public static void SpawnAndDespawn(Pool pool)
     {
         pool.Spawn();

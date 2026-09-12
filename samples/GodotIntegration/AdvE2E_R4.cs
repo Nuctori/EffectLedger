@@ -1,6 +1,6 @@
 // AdvE2E_R4.cs — 对抗审计 R4：L1 守恒代数边界/数值（E2E，直接消费 L1 + §7 白名单）。
 // 目标：挖掘 net 聚合语义、溢出、负值守恒、资源路径归一、跨 kind 独立守恒、空/单位元、并的结合/交换 等缺陷。
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Xunit;
 
 namespace SampleGame.IntegrationTests;

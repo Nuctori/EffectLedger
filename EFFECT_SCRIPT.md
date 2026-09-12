@@ -1,7 +1,7 @@
 <!--
-    本文件是 Cosmos.EffectAlgebra 的**声明式剧本契约规范**：AI/工具产出 JSON 剧本，
+    本文件是 EffectLedger 的**声明式剧本契约规范**：AI/工具产出 JSON 剧本，
     `EffectScriptContract.Parse` 零 Godot 依赖机审（非法形状 fail-fast 抛 FormatException），
-    `Audit` 三道 gate（守恒/峰值/兼容）给出违例清单，`cosmos audit` CLI 一键闭环。
+    `Audit` 三道 gate（守恒/峰值/兼容）给出违例清单，`effectledger audit` CLI 一键闭环。
     配套：`docs/effect-script.schema.json`（校验用 Schema，契约面已冻结 QED-E2）、
     `templates/effect-script.json`（可复制样板）。面向使用者的速查见主 README ④/⑤。
 -->
@@ -9,7 +9,7 @@
 # EFFECT_SCRIPT — 视觉效应代数剧本（L1 增量设计）
 
 > 状态：设计冻结（已闭环 30 轮迭代对抗审计，轨迹见 §10；QED-P3 后代数核心另有 89 条 Dafny 定律，见 `formal/`）
-> 范围：纯 L1 增量（`Cosmos.EffectAlgebra/`，**零 Godot 依赖**）。**不动** §7 白名单 / L2 Generator / L3 Analyzer。
+> 范围：纯 L1 增量（`EffectLedger/`，**零 Godot 依赖**）。**不动** §7 白名单 / L2 Generator / L3 Analyzer。
 > 目标：把「AI 看参考图/视频 → 写视觉效果」这一步，落地为一层**可静态验证、可符号探索、不跑游戏**的代数剧本类型。
 > 出处：所有类型严格复用 PDR §3.1–§3.3 已建 L1。新增类型不引入任何未证明的代数结构。
 
@@ -49,7 +49,7 @@
 
 ## 2. 核心类型（最小集合）
 
-> **形状注记（R4-RH-16）**：本节 C# 代码块为**设计期草样**——权威形状以 `src/Cosmos.EffectAlgebra` 的 XML doc 为准（实际差异：`EffectEvent` 含 `Scope` 字段、`EffectScript` 是 sealed class 非 record struct、`AuditResult` 含 `CapsChecked`/`IsPeakChecked`）。§4 JSON 契约部分始终精确且有 doc-guard 守护。
+> **形状注记（R4-RH-16）**：本节 C# 代码块为**设计期草样**——权威形状以 `src/EffectLedger` 的 XML doc 为准（实际差异：`EffectEvent` 含 `Scope` 字段、`EffectScript` 是 sealed class 非 record struct、`AuditResult` 含 `CapsChecked`/`IsPeakChecked`）。§4 JSON 契约部分始终精确且有 doc-guard 守护。
 
 ### 2.1 `EffectEvent` — 一个视觉元素的生命周期
 
@@ -227,7 +227,7 @@ AI **不写 Godot 代码**，只产出 `EffectScript` 数据（JSON），直接�
 
 ## 8. 实现清单（落到代码时的精确接口）
 
-新增文件 `src/Cosmos.EffectAlgebra/EffectScript.cs`，仅含：
+新增文件 `src/EffectLedger/EffectScript.cs`，仅含：
 
 1. `EffectEvent` record struct（§2.1）
 2. `EffectScript` record struct + `At(NatStar)` + `Audit(Budget)`（§2.2/§3）

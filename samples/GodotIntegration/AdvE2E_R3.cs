@@ -8,7 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -32,7 +32,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     {
         var comp = MakeCompilation(source);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
         var gTrees = output.SyntaxTrees
             .Where(t => t.FilePath.EndsWith(".g.cs"))
@@ -70,7 +70,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     public void E2E_R3_SameMethodNameAcrossTypes_NoCollision()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class EnemyA {
@@ -105,7 +105,7 @@ namespace SampleGame {
     public void E2E_R3_UnmatchedMethod_EmitsEmptySignature()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Weird {
@@ -125,7 +125,7 @@ namespace SampleGame {
     public void E2E_R3_ZeroAnnotated_NoGeneratedType()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Plain {
@@ -144,7 +144,7 @@ namespace SampleGame {
     public void E2E_R3_EscapedKeywordMethodName_NoCrash()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Kw {
@@ -166,7 +166,7 @@ namespace SampleGame {
     public void E2E_R3_TwoMethods_SameClass_DistinctKeys()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class One {
@@ -192,7 +192,7 @@ namespace SampleGame {
     public void E2E_R3_AddRemove_UniteConserved()
     {
         const string src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Bal {

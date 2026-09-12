@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -18,7 +18,7 @@ namespace SampleGame.IntegrationTests;
 public sealed class IntegrationTests
 {
     private const string GameSource = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes {
     public sealed class GNode { public void AddChild(object c) { } public void RemoveChild() { } }
 }
@@ -75,7 +75,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     {
         var comp = MakeCompilation(GameSource);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+            new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var output, out _);
 
         var genText = output.SyntaxTrees

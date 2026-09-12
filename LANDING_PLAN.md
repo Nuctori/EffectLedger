@@ -10,10 +10,10 @@
 三层 + 一个纯代数核心。**L1 不依赖 Godot**，是可被形式化校验的纯库；L2/L3 只做「Godot 语法 → L1 类型」的薄翻译。
 
 ```
-Cosmos.EffectAlgebra/          L1 纯代数核心（零 Godot 依赖，可独立单测/性质测试）
-Cosmos.EffectAlgebra.Generator/ L2 Source Generator（在 §7 白名单调用点注入 EffectAudit 包装）
-Cosmos.EffectAlgebra.Analyzer/  L3 Roslyn Analyzer（AUDIT001-003 / KIND_MIX / Compat 冲突 / Unknown 人工确认）
-Cosmos.EffectAlgebra.Tests/     xUnit：§14 测试矩阵 + 代数定律测试 + 性质测试
+EffectLedger/          L1 纯代数核心（零 Godot 依赖，可独立单测/性质测试）
+EffectLedger.Generator/ L2 Source Generator（在 §7 白名单调用点注入 EffectAudit 包装）
+EffectLedger.Analyzer/  L3 Roslyn Analyzer（AUDIT001-003 / KIND_MIX / Compat 冲突 / Unknown 人工确认）
+EffectLedger.Tests/     xUnit：§14 测试矩阵 + 代数定律测试 + 性质测试
 ```
 
 **为什么 L1 必须零 Godot 依赖**：它是「数学边界」的唯一真相源。Godot 只是 §7 映射表的输入之一；把映射与代数分离，代数层可被性质测试穷举证明，Godot 侧只是数据。

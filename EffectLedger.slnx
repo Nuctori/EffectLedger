@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EffectLedger.Analyzer/EffectLedger.Analyzer.csproj" />
+    <Project Path="src/EffectLedger.Generator/EffectLedger.Generator.csproj" />
+    <Project Path="src/EffectLedger.Tool/EffectLedger.Tool.csproj" />
+    <Project Path="src/EffectLedger/EffectLedger.csproj" />
+    <Project Path="src/EffectLedger.Runtime/EffectLedger.Runtime.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EffectLedger.Tests/EffectLedger.Tests.csproj" />
+    <Project Path="tests/EffectLedger.Runtime.Tests/EffectLedger.Runtime.Tests.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/GodotIntegration/SampleGame.csproj" />
+    <!-- R3-CI-01：net8 消费验证/分析器接线验证工程入门（否则「net8 兼容」声明无门背书，可静默腐烂） -->
+    <Project Path="samples/GodotReal/GodotReal.csproj" />
+    <Project Path="samples/AnalyzerConsumer/AnalyzerConsumer.csproj" />
+    <Project Path="samples/HelloEffect/HelloEffect.csproj" />
+  </Folder>
+</Solution>

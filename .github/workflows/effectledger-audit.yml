@@ -1,0 +1,16 @@
+name: effectledger-audit
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'  # 每周一 03:UTC 全量四门（push/PR 门由 ci.yml 承担，避免同仓双跑）
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "10.0.x" }
+      - run: dotnet build -c Release -warnaserror
+      - run: dotnet test -c Release --no-build
+      - run: dotnet run --project src/EffectLedger.Tool -c Release -- audit samples/effect-sample.json
+      - run: dotnet pack -c Release

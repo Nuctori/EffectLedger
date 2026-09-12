@@ -444,7 +444,24 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
   - 证据：`QedP8NetOrderDeterminismPins` 8 钉（审计员原始 4-claim 反例净零守恒 / 重复计算确定性 /
     顺序无关 / 真实越界仍 ⊤ / Loop 缩放超域 / Runtime LoadAll 不误拒）；全量 764 测试零回归。
 
-## Blockers
+## P5.9 项目改名：Cosmos → EffectLedger（2026-09-13）
+
+- [x] **P5-9-01（决策）** 全仓改名 `Cosmos.EffectAlgebra*` → `EffectLedger*` ✅ 已完成
+  - 动因：`Cosmos` 是 NuGet 前缀保留规则明文劝退的**通用词**（"avoid common or generic words"，
+    "properly and clearly identify the reservation owner"），且违反 .NET 官方命名模板
+    `<Company>.(<Product>|<Technology>)` 的「第二级用稳定产品名」——`Cosmos` 一个词同时充当
+    公司前缀、产品名、CLI 名与配置域，三义混用是撞名与歧义的根源。
+  - **分解式改名（非简单替换）**：包/程序集/命名空间 → `EffectLedger`；CLI 命令 → `effectledger`；
+    配置文件 → `effectledger.config.json`；config schema → `effectledger-config.schema.json`；
+    workflow → `effectledger-audit.yml`；dafny → `EffectLedger.dfy` / `EffectLedgerSweepLine.dfy`。
+  - 契约面影响：公共 API 快照两枚（L1 155 行 / Runtime 93 行）经 `QED_REGEN_API_SNAPSHOT=1` 重生成，
+    diff 为纯命名空间替换（**零结构性变更**，已逐类核对 class 清单）。此为受控破坏性变更，
+    改名整体归入 semver **major**（1.0.0 尚未发布，无既有消费者受影响）。
+  - 诚实边界：`audit/` 历史报告**保持原貌不改名**（保留证据链与当时语境），故历史报告中
+    的 `Cosmos.*` 字样为**有意保留**，不视为未收口残留。
+  - 证据：`bash ci.sh` 全绿——Dafny 89 verified / 0 errors，764 测试全过
+    （EffectLedger.Tests 562 + Runtime.Tests 129 + SampleGame 73）；CLI 新命令名实测
+    exit 0（合法剧本）/ exit 2（违例剧本）契约不变。
 
 ## Blockers
 

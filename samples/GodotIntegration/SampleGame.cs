@@ -2,7 +2,7 @@
 // 设计意图：证明「游戏侧照常写 Godot API，零门面改动」即可被 L2 生成器 + L3 分析器审计。
 // L2 按方法名规范化匹配 §7 白名单（addchild→AddChild, queue_free→QueueFree, remove_child→RemoveChild ...）；
 // L3 按 §7 acquire/release-class 数据驱动发 EAA0901（仅 acquire 无 release 且无 [EffectOverride]）。
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 
 namespace SampleGame;
 

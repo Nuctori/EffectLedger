@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 多目标：net10.0（游戏/测试消费）+ net8.0（最低公共面；net9 消费者按 NuGet 就近原则消费
+         net8.0 资产）。【P1-B5】原 net9.0 缩减切片（无 EffectScript/DSL）已删除——其为分析器
+         源内嵌时代（CS8032）而设，A2-06 分析器自包含（ShareSource 编译 L1 源副本、零程序集引用）
+         后成为残迹；同一包 ID+版本在不同 TFM 暴露不同 API 的分歧类随之消失（ honesty-13 解决，
+         QedP1B1 快照唯一准绳：全 TFM 同一公共面）。 -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- NuGet 打包元数据（P0-2：生产可分发）。 -->
+    <IsPackable>true</IsPackable>
+    <PackageId>EffectLedger</PackageId>
+    <Authors>Nuctori</Authors>
+    <Company>Nuctori</Company>
+    <Description>资源效应代价代数（净代数 / 量纲隔离 / 兼容全函数）。零 Godot 依赖的纯代数核心（L1），供 Godot 游戏工程的资源泄漏/量纲冲突编译期审计使用（§3 / §7 / §8）。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>effect-algebra;resource;leak;godot;roslyn</PackageTags>
+  </PropertyGroup>
+
+  <!-- 【P1-B5】原 net9.0 缩减切片 ItemGroup 已随 TFM 删除（残迹，见上注）。全 TFM 同一源码同一公共面。 -->
+
+  <!-- P1-B4a：超集本体（非 JSON 契约面的 ResourceId/ScopeId 构造子）转 internal 后，
+       仓库内测试与样例工程仍需构造它们（L1 测试 14 文件 / SampleGame 5 文件）——
+       经 InternalsVisibleTo 授权；这暴露的是测试便利而非公共契约（公共面以 QedP1B1 快照为准）。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="EffectLedger.Tests" />
+    <InternalsVisibleTo Include="EffectLedger.Runtime.Tests" />
+    <InternalsVisibleTo Include="EffectLedger.SampleGame" /><!-- P5.3-H2：命名空间化防撞名 -->
+  </ItemGroup>
+
+</Project>

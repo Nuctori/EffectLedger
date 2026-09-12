@@ -5,9 +5,9 @@
 > 第6轮判定：架构收敛，仅 2 项收尾（§7.1 白名单落位 + §7 ProcessMode 抑制范围纠错），无结构重构 → **v7 为最终收敛版**。
 > v6 标题「v6（收敛版）」因第6轮发现 2 项必须修复项，升级至 v7。
 
-## 0. 术语对齐（论文 → Cosmos）
+## 0. 术语对齐（论文 → EffectLedger）
 
-| 论文 (Cordis) | Cosmos 现有 | 本设计新增 |
+| 论文 (Cordis) | EffectLedger 现有 | 本设计新增 |
 | --- | --- | --- |
 | effect（前向 setup 累积 `ctx.effect`） | `Claim` (R/W/O × Create/Move/Release) | — |
 | coeffect（所需/所提供） | `ResourceId` / `ScopeId` | `Coeffect` 轻量封装 |
@@ -23,7 +23,7 @@
 ## 1. 组件模型（D2/D5/#7 + R4-3 + R5 修正）
 
 ```csharp
-namespace Cosmos.EffectAlgebra.Runtime;
+namespace EffectLedger.Runtime;
 
 public enum FiberState { Inactive, Active, Suspending, TearingDown, Dead }
 

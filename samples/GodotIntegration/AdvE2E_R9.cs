@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -35,7 +35,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
 
     private static string RunGeneratorText(CSharpCompilation comp, out Compilation outComp)
     {
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(new Cosmos.EffectAlgebra.Generator.EffectAlgebraGenerator());
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new EffectLedger.Generator.EffectAlgebraGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(comp, out var outC, out _);
         var genTrees = outC.SyntaxTrees.Where(t => t.FilePath.EndsWith(".g.cs")).ToArray();
         if (genTrees.Length == 0)
@@ -62,7 +62,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     private static string LargeGameSource(int classCount, int methodPerClass)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("using Cosmos.EffectAlgebra;");
+        sb.AppendLine("using EffectLedger;");
         sb.AppendLine("namespace SampleGame {");
         for (int c = 0; c < classCount; c++)
         {
@@ -122,7 +122,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
 
         // 跨类型同名 → 必须含 完全限定类型_序号 消歧符号（ComputeAddChild_SampleGame_Enemy0_0，A2-05 命名空间参与消歧），且无裸重复 ComputeAddChild（防重名编译失败）
         Assert.Contains("ComputeAddChild_SampleGame_Enemy0_0", genText);
-        Assert.DoesNotContain("public static global::Cosmos.EffectAlgebra.Signature ComputeAddChild(", genText);
+        Assert.DoesNotContain("public static global::EffectLedger.Signature ComputeAddChild(", genText);
 
         using var ms = new MemoryStream();
         var emit = outComp.Emit(ms);
@@ -160,7 +160,7 @@ var refs = CompilationRefs.Lean(typeof(Claim).Assembly.Location);
     public void E2E_R9_ZeroAnnotated_NoOutputNoCrash()
     {
         var src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace SampleGame {
     public sealed class Node3D { public object? child; }
     public sealed class Plain {
@@ -176,14 +176,14 @@ namespace SampleGame {
         Assert.Empty(diags);                        // 零标注 → 零诊断（无 [Escape] 即按泄漏？此处 AddChild+QueueFree 配对，漏报属于已知局限，R9 只验无崩溃/零异常）
     }
 
-    // ── R9-5：深嵌套命名空间 + 多 using + 无 Cosmos 引用 → 不崩溃 ──
+    // ── R9-5：深嵌套命名空间 + 多 using + 无 EffectLedger 引用 → 不崩溃 ──
     [Fact]
-    public void E2E_R9_DeepNesting_NoCosmosRef_NoCrash()
+    public void E2E_R9_DeepNesting_NoEffectLedgerRef_NoCrash()
     {
         var src = @"
 using System;
 using System.Collections.Generic;
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace A.B.C.D.E {
     public sealed class Node3D { public object? child; }
     namespace Inner {
@@ -210,7 +210,7 @@ namespace A.B.C.D.E {
     public void E2E_R9_RepeatedCalls_SameMethod_NoIndexError()
     {
         var src = @"
-using Cosmos.EffectAlgebra;
+using EffectLedger;
 namespace Godot.Shapes { public sealed class Node3D { public void AddChild(object c) { } } }
 namespace SampleGame {
     public sealed class Spammer {
