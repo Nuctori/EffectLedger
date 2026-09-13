@@ -485,6 +485,33 @@ P0 语义定稿（11 项）/ P1 API 收缩（5 项）/ P2 死特性处置（2 �
     已用独立探针双向验证：稳定 14.0x ⇒ 判红（正确）；一次性 13.7x ⇒ 重测 6.0x 放行（正确）。
   - 证据：本机连跑 5 次全过（~650ms/次）；`bash ci.sh` 全绿。
 
+## P5.10 第八轮审计遗留处置账本（2026-09-13 起）
+
+P5.8 独立审计 12 条发现中此前仅 P5-8-01（CRITICAL）收口，其余 11 条未在 ROADMAP 显式登记——
+按「禁止静默 won't fix」硬约束补建本账本，逐条处置（修复 / 文档声明 / 显式记录）。
+严重度与发现描述以 `audit/p5-auditor-independent.md` 原文为准（历史报告不改）。
+
+- [x] **P5-10-01（P5-8-07，MEDIUM）** AttachShell 无条件覆盖用户 OnSuspending 钩子 ✅ 已修复
+  - 缺陷：`PluginRuntime.AttachShell` 无条件 `OnSuspending = shell.CascadeProcessModeDisabled`——
+    宿主先 `rt.OnSuspending = f` 再接线壳 ⇒ teardown 级联对 f 调用 0 次（静默丢失），
+    违反「绝不静默」立库原则与 Register/AttachShell 一贯 loud 纪律。
+  - 修复：**组合而非覆盖**——`cascade + 既有钩子`（调用序先壳级联后用户钩子，与「接线后
+    再 +=」的既有合法用法一致）；无既有钩子时单委托同形（零行为差异）。
+    `src/EffectLedger.Runtime/PluginRuntime.cs` + XML doc；README「运行期套件」补壳接线
+    钩子组合声明。
+  - 证据：`QedP510ShellHookPins` 4 钉 TDD 红→绿（覆盖形态 2 钉先红：用户钩子 0 次调用 /
+    通知次数断言；回归形态 2 钉守住无钩子单委托形状、接线后订阅不受影响）；既有
+    AttachShell 4 测试（null 拒绝 / 幂等 / 跨实例拒绝 / 双轨缝合）零回归。
+- [ ] **P5-10-02（P5-8-02，HIGH）** 跨层 ⊆* 过滤口径：Runtime `NetTable.Compute` 按 IncludesIn 过滤后对全部 9 组跨标签 scope 组合 Conserved=true，L1 Audit 判 Leak——README #11 只声明 Global 一例。待处置（候选：README #11 扩大声明为「Runtime 只认 IncludedIn(fiber.Scope) 命中项，跨标签组合一律不过滤」）。
+- [ ] **P5-10-03（P5-8-03，HIGH）** Runtime 无瞬时 NegativeDip gate：release→create 瞬时净负两层结论相反（Runtime 静默放行 L1 捕获的下溢）。待处置（候选：README 声明「Runtime 权威仅限终态闭合，瞬时下溢以 L1 为准」——两层互补口径）。
+- [ ] **P5-10-04（P5-8-04，HIGH）** Runtime 无 ω=⊤ 居民豁免：常驻资源 L1 Passed=true / Runtime Conserved=false（方向安全但未声明口径分裂）。待处置（候选：README 声明或 Runtime 补豁免，二选一）。
+- [ ] **P5-10-05（P5-8-05，HIGH）** EAA0901 语法形状漏报面宽于 README #9 声明（运算符重载/转换运算符/表达式体属性/索引器/字段与事件访问器/静态构造）。待处置（候选：README #9 扩大声明为「仅方法体语句级近似」；F1 流敏感化同窗评估）。
+- [ ] **P5-10-06（P5-8-06，MEDIUM）** EAA0901 对声明但未调用的局部函数误报。待处置（候选：排除无引用 LocalFunctionStatement，或显式声明保守误报边界）。
+- [ ] **P5-10-07（P5-8-08，MEDIUM）** L1 Audit 闭包路径溢出边缘误判：4-claim 反例（create 2^62 + create(2^62+1) + release 2^62 + release(2^62+1)，数学 net=0）报 Leak。代码级核实（推理未实证）：闭包在 EffectScript.cs 内独立 `SignedInterval.Add` 事件序累加（未走 P5-8-01 的 NetTable Int128 修复），中间和 2^63+1 溢出 ⇒ [⊤,⊤] ⇒ `ContainsZero`(⊤⇒false)=false ⇒ Leak。确定性（事件序，非跨进程随机）；fail-closed 方向安全但语义不正确。待处置（候选：闭包同样 Int128 中间累加，修法与 P5-8-01 同型 + Audit 层反例钉）。
+- [ ] **P5-10-08（P5-8-09，MEDIUM）** `Fiber.EffectiveSignature` 折入 create(Provides) 已知锐边（A3-14 自认）可构造合法 Fiber 被误拒，无测试钉。待处置（候选：补可复现形态钉 + 注释升格 README 正式边界）。
+- [ ] **P5-10-09（P5-8-10，LOW）** `GodotShell.EnqueueExitDrain` 无同 Action 去重（Defer 有去重、drain 无），第三方重复注册双执行。待处置（候选：去重或文档声明）。
+- [x] **（登记）** P5-8-11 已声明一致 / P5-8-12 防御生效——P5.8 原报告已裁定，无需动作。
+
 ## Blockers
 
 （无——2026-09-13：出口 HTTPS 中断实为本地代理 `127.0.0.1:7890` 上游隧道故障

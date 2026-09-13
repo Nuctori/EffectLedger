@@ -320,7 +320,9 @@ public sealed class PluginRuntime
     }
 
     /// <summary>§7（reviewer #191 F1/F2）— 接线 Godot 壳：provider 通知 dependent 进入 Suspending 时驱动壳禁用 ProcessMode 级联；关闭路径排空时驱动壳 flush 退出 drain。打通 §7 ProcessMode 级联（此前 OnSuspending/ExitDrain 为孤岛）。
-    /// A3-13（生产审计批3）：幂等守卫——同一 shell 重复接线 no-op（热重载/重绑定场景 drain 会双入队），跨实例抛。</summary>
+    /// A3-13（生产审计批3）：幂等守卫——同一 shell 重复接线 no-op（热重载/重绑定场景 drain 会双入队），跨实例抛。
+    /// P5-10-01（P5.8 独立审计 #P5-8-07）：组合而非覆盖——宿主接线前自设的 OnSuspending 钩子保留（先壳级联后用户钩子，
+    /// 与「接线后用户再 +=」的调用序一致）；无既有钩子时与原版单委托同形。钉：QedP510ShellHookPins。</summary>
     public void AttachShell(GodotShell shell)
     {
         if (shell is null) throw new ArgumentNullException(nameof(shell), "QED-P5.3：接线 null shell 会静默 no-op，宿主将误以为退出 drain 已注册");
@@ -328,7 +330,9 @@ public sealed class PluginRuntime
         if (_attachedShell is not null)
             throw new InvalidOperationException("PluginRuntime 已接线另一 GodotShell：跨实例接线须先解绑或新建运行时（重复接线会双入队退出 drain 并静默覆盖 OnSuspending）");
         _attachedShell = shell;
-        OnSuspending = shell.CascadeProcessModeDisabled; // dependent Suspending ⇒ 壳禁用其子树派发（级联）
+        // dependent Suspending ⇒ 壳禁用其子树派发（级联）；P5-10-01：用户既有钩子组合保留，绝不静默覆盖。
+        Action<Fiber> cascade = shell.CascadeProcessModeDisabled;
+        OnSuspending = OnSuspending is null ? cascade : cascade + OnSuspending;
         shell.EnqueueExitDrain(SynchronousExitDrain);   // 关闭路径由壳 _ExitTree 触发运行时同步排空
     }
     private GodotShell? _attachedShell;

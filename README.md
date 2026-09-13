@@ -269,7 +269,8 @@ dotnet test  EffectLedger.slnx -c Release --no-build
 
 - **状态机**：`Fiber` 五态（Inactive → Active → Suspending → TearingDown → Dead），全转移幂等守卫（`Fiber.Unload` 契约：Inactive 直达 Dead 防双重释放、TearingDown no-op）。
 - **闭合**：`InverseReplay` LIFO 逆回放（部分释放诊断 + 重入门）→ `DrainTeardownBatch` 按 dependent-first 拓扑序排空（硬环子集兜底回放 + CrashReport 可观测）→ `ProviderCrashCascade` fail-open 升级。
-- **兜底**：`PluginRuntime.TickWatchdog` 三路径（Active/Suspending 强转入队 + 自愈入队 + 依赖者级联，全部 OnSuspending 钩子接线）；`GodotShell` 帧驱动（Defer 退出期丢弃、`FlushExitDrain` 单场景生命周期）。
+- **兜底**：`PluginRuntime.TickWatchdog` 三路径（Active/Suspending 强转入队 + 自愈入队 + 依赖者级联，全部 OnSuspending 钩子接线）；`GodotShell` 壳驱动（Defer 退出期丢弃、`FlushExitDrain` 单场景生命周期）。
+- **壳接线钩子组合**：`AttachShell` 对宿主已自设的 `OnSuspending` 钩子**组合而非覆盖**（调用序：先壳 ProcessMode 级联后用户钩子；无既有钩子时单委托同形）——用户钩子绝不静默丢失（P5-10-01，钉 `QedP510ShellHookPins`；`AttachShell(null)` 拒绝、同壳重接幂等、跨实例拒绝照旧）。
 
 ## 诚实边界（故意留债 · 测试守住不漂移）
 
