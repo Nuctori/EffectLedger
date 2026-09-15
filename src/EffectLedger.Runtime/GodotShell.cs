@@ -28,21 +28,32 @@ public sealed class GodotShell
         if (action == null) return;
         if (_exitDraining) return; // §3 R4-1：退出期（_ExitTree 触发 FlushExitDrain 已置 _exitDraining）禁止新 Defer，避免退出序结束后的 use-after-free；_exitDraining 在退出路径持续为真（节点释放不可逆），flush 后新 Defer 仍丢弃
         if (!_deferred.Add(action)) return; // 幂等：已 enqueue 则跳过
-        _host.Defer(() =>
+        try
         {
-            // A3-05（生产审计批3）：入队时判 _exitDraining 只挡「新」Defer——退出【前】已入队、退出【后】
-            // 才被宿主帧执行的闭包（call_deferred 队列与本帧 _ExitTree 先后不保证）必须在此复查，
-            // 否则树拆除后回调照跑（use-after-free 窗口，§3 R4-1 的时序洞）。fail-closed：直接丢弃。
-            if (_exitDraining) { _deferred.Remove(action); return; }
-            // §1 R4-3：句柄失效则静默丢弃；IsSafeToInvoke 可能抛（真实宿主 IsInstanceValid 异常）→ 隔离为 not-safe，fail-closed 不逃逸进宿主 defer 机制
-            if (_deferred.Remove(action))
+            _host.Defer(() =>
             {
-                bool safe;
-                try { safe = handle == null || IsSafeToInvoke(handle); }
-                catch { safe = false; }
-                if (safe) action();
-            }
-        });
+                // A3-05（生产审计批3）：入队时判 _exitDraining 只挡「新」Defer——退出【前】已入队、退出【后】
+                // 才被宿主帧执行的闭包（call_deferred 队列与本帧 _ExitTree 先后不保证）必须在此复查，
+                // 否则树拆除后回调照跑（use-after-free 窗口，§3 R4-1 的时序洞）。fail-closed：直接丢弃。
+                if (_exitDraining) { _deferred.Remove(action); return; }
+                // §1 R4-3：句柄失效则静默丢弃；IsSafeToInvoke 可能抛（真实宿主 IsInstanceValid 异常）→ 隔离为 not-safe，fail-closed 不逃逸进宿主 defer 机制
+                if (_deferred.Remove(action))
+                {
+                    bool safe;
+                    try { safe = handle == null || IsSafeToInvoke(handle); }
+                    catch { safe = false; }
+                    if (safe) action();
+                }
+            });
+        }
+        catch
+        {
+            // 【ROI-2026-09-14 修复】宿主入队失败 ⇒ 撤销本次去重登记并重抛原异常——否则同 Action 的
+            // 重试被 _deferred 永久吞掉（一次可恢复的宿主故障 = 该 Action 在当前壳实例内静默永不执行）。
+            // 契约：宿主入队成功即接管（壳不再重发）；入队抛异常即未入队，调用方重试有效。
+            _deferred.Remove(action);
+            throw;
+        }
     }
 
     /// <summary>§7 — 子树 ProcessMode 级联：teardown 启动时禁用派发（Suspending/TearingDown）。</summary>
@@ -60,14 +71,21 @@ public sealed class GodotShell
     }
 
     /// <summary>§3 R4-1 — 关闭路径同步排空（宿主 _ExitTree 调用）。门控：退出期禁止新 Defer。
-    /// A3-15：第三方 drain 异常经 OnDrainFault 观测（无订阅者则吞掉，维持不中断其余 drain 的语义）。</summary>
+    /// A3-15：第三方 drain 异常经 OnDrainFault 观测（无订阅者则吞掉，维持不中断其余 drain 的语义）。
+    /// 【ROI-2026-09-14 修复】OnDrainFault 自身异常隔离：上报通道故障（日志/遥测抛异常）不得阻断
+    /// 其余 drain 执行与末尾清队——此前观测回调异常直接逸出 FlushExitDrain，剩余 drain 全部不执行、
+    /// _exitDrains 不清（PluginRuntime 的退出排空排在其后时整个运行时未排空）。</summary>
     public void FlushExitDrain()
     {
         _exitDraining = true;
         foreach (var d in _exitDrains.ToArray())
         {
             try { d(); }
-            catch (Exception ex) { OnDrainFault?.Invoke(ex); }
+            catch (Exception ex)
+            {
+                try { OnDrainFault?.Invoke(ex); }
+                catch { /* 观测回调自身故障不升级：drain 语义（其余照跑、批只执行一次）优先 */ }
+            }
         }
         _exitDrains.Clear();
     }

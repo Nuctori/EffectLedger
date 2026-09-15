@@ -256,60 +256,76 @@ public sealed class PluginRuntime
 
     /// <summary>§3 — 关闭路径同步排空（R4-1）：在调度器 _ExitTree 内调用，按 dependent-first 顺序释放全部 TearingDown。
     /// A3-10（生产审计批3，规格 §3 step8）：退出时对全部存活 fiber 补「标记+入队」——宿主漏调 BeginTeardown 时
-    /// 队列为空 ⇒ 逆回放整批不执行且无诊断（假绿式退出）；Inactive fiber 跳过（D4，无资源可回放）。</summary>
+    /// 队列为空 ⇒ 逆回放整批不执行且无诊断（假绿式退出）；Inactive fiber 跳过（D4，无资源可回放）。
+    /// 【ROI-2026-09-14 重入门】嵌套调用（逆 Action 重入 / 宿主防御性重调）直接 no-op：外层排空独占进行中，
+    /// 关闭态保持——此前嵌套空队列路径把 IsShuttingDown 中途复位，逆 Action 可借此 LoadAll 激活未装载 fiber，
+    /// 退出结束后永久 Active 且无 teardown 路径（audit/p5-qed-claim-attack.md 攻击 #2，2026-09-14 复确认）。
+    /// 仅最外层退出复位关闭标志。</summary>
     public void SynchronousExitDrain()
     {
-        IsShuttingDown = true;
-        // A3-10：对仍 Active/Suspending（未标记）与 TearingDown 但任务不在队列（旁路 Unload / 上一批已清队）的 fiber 补入队。
-        foreach (var f in _fibers.Values)
+        if (_exitDrainDepth > 0) return; // 重入：外层排空独占，队列与关闭态归最外层管理
+        _exitDrainDepth++;
+        try
         {
-            bool inQueue = _queuedProviders.Contains(f.Id); // R4-JD-01：O(1)
-            if (inQueue) continue;
-            if (f.State is FiberState.Active or FiberState.Suspending)
+            IsShuttingDown = true;
+            // A3-10：对仍 Active/Suspending（未标记）与 TearingDown 但任务不在队列（旁路 Unload / 上一批已清队）的 fiber 补入队。
+            foreach (var f in _fibers.Values)
             {
-                f.Unload();
-                EnqueueTeardownTask(f);
+                bool inQueue = _queuedProviders.Contains(f.Id); // R4-JD-01：O(1)
+                if (inQueue) continue;
+                if (f.State is FiberState.Active or FiberState.Suspending)
+                {
+                    f.Unload();
+                    EnqueueTeardownTask(f);
+                }
+                else if (f.State == FiberState.TearingDown && !f.ReplayInProgress)
+                {
+                    // 【QED-P5.3】ReplayInProgress 排除（红队 r2 #1）：回放中的 fiber 再入队会触发
+                    // R3-RT-04 loud 抛 → fail-open 提前 Dead + 假崩溃报告 + IsShuttingDown 中途复位
+                    //（= QED-P5.3 LoadAll/Register 守卫被绕过）。与 TickWatchdog 自愈分支的
+                    // ReplayInProgress 排除同纪律（此前只落实一半）。
+                    EnqueueTeardownTask(f);
+                }
+                // Inactive：D4——未装载无资源，跳过（不入队不标记）；Dead：已终结。
             }
-            else if (f.State == FiberState.TearingDown && !f.ReplayInProgress)
+            // R4-JD-03：空队列早退（同 DrainTeardownBatch；关闭标志由 finally 统一复位）。
+            if (_teardownQueue.Count == 0) { _queuedProviders.Clear(); return; }
+            // §3（reviewer #187 F3）：关闭路径同步排空也按 dependent-first（TopoSortLeafFirst）顺序，与 DrainTeardownBatch 一致。
+            var order = _graph.TopoSortLeafFirst();
+            var rank = new Dictionary<FiberId, int>();
+            for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
+            var ordered = _teardownQueue.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
+            _teardownQueue.Clear(); _queuedProviders.Clear();
+            // §3（reviewer #188 F5）：关闭路径崩溃也升级到 ProviderCrashCascade.Handle，不再静默 catch{} 吞掉（与 DrainTeardownBatch 一致）。
+            foreach (var (providerId, task) in ordered)
             {
-                // 【QED-P5.3】ReplayInProgress 排除（红队 r2 #1）：回放中的 fiber 再入队会触发
-                // R3-RT-04 loud 抛 → fail-open 提前 Dead + 假崩溃报告 + IsShuttingDown 中途复位
-                //（= QED-P5.3 LoadAll/Register 守卫被绕过）。与 TickWatchdog 自愈分支的
-                // ReplayInProgress 排除同纪律（此前只落实一半）。
-                EnqueueTeardownTask(f);
+                // REG-01（复审计）：同 DrainTeardownBatch 的陈旧任务防御。
+                if (_fibers.TryGetValue(providerId, out var st) && st.State == FiberState.Dead) continue;
+                try
+                {
+                    var diag = task();
+                    // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
+                    if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
+                        // A3-08：退出路径同样保留原始异常（与 DrainTeardownBatch 对称）。
+                        AddCrash(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
+                }
+                catch (Exception ex)
+                {
+                    if (_fibers.TryGetValue(providerId, out var pf))
+                        AddCrash(ProviderCrashCascade.Handle(this, pf, ex));
+                }
             }
-            // Inactive：D4——未装载无资源，跳过（不入队不标记）；Dead：已终结。
+            PruneDeadFiberAccumulations(); // 【QED-C2】退出排空完成 ⇒ 剪除非 Active Fiber 的累积条目（零语义损失，防跨批次无界增长）
         }
-        // R4-JD-03：空队列早退（同 DrainTeardownBatch；IsShuttingDown 复位保持在唯一出口）。
-        if (_teardownQueue.Count == 0) { IsShuttingDown = false; _queuedProviders.Clear(); return; }
-        // §3（reviewer #187 F3）：关闭路径同步排空也按 dependent-first（TopoSortLeafFirst）顺序，与 DrainTeardownBatch 一致。
-        var order = _graph.TopoSortLeafFirst();
-        var rank = new Dictionary<FiberId, int>();
-        for (int i = 0; i < order.Length; i++) rank[order[i]] = i;
-        var ordered = _teardownQueue.OrderBy(e => rank.TryGetValue(e.Provider, out var r) ? r : int.MaxValue).ToArray();
-        _teardownQueue.Clear(); _queuedProviders.Clear();
-        // §3（reviewer #188 F5）：关闭路径崩溃也升级到 ProviderCrashCascade.Handle，不再静默 catch{} 吞掉（与 DrainTeardownBatch 一致）。
-        foreach (var (providerId, task) in ordered)
+        finally
         {
-            // REG-01（复审计）：同 DrainTeardownBatch 的陈旧任务防御。
-            if (_fibers.TryGetValue(providerId, out var st) && st.State == FiberState.Dead) continue;
-            try
-            {
-                var diag = task();
-                // §6（reviewer #189 F1）：退出路径部分失败也须上抛升级（与 DrainTeardownBatch 一致），并存 LastCrashReport 供调度器观测。
-                if (!diag.AllCompleted && _fibers.TryGetValue(providerId, out var pf))
-                    // A3-08：退出路径同样保留原始异常（与 DrainTeardownBatch 对称）。
-                    AddCrash(ProviderCrashCascade.Handle(this, pf, new InvalidOperationException($"退出路径部分逆释放失败（位置 {diag.FailedIndex}，未释放 {diag.Pending.Length} 项：{string.Join(", ", diag.Pending)}）", diag.FirstError)));
-            }
-            catch (Exception ex)
-            {
-                if (_fibers.TryGetValue(providerId, out var pf))
-                    AddCrash(ProviderCrashCascade.Handle(this, pf, ex));
-            }
+            _exitDrainDepth--;
+            // §3（reviewer #191 F5）：关路径标志仅限本次排空，由最外层复位为防御性默认
+            //（README 诚实边界 10：实例仍为单场景生命周期——场景重载请新建 PluginRuntime，勿复用）。
+            if (_exitDrainDepth == 0) IsShuttingDown = false;
         }
-        PruneDeadFiberAccumulations(); // 【QED-C2】退出排空完成 ⇒ 剪除非 Active Fiber 的累积条目（零语义损失，防跨批次无界增长）
-        IsShuttingDown = false; // §3（reviewer #191 F5）：关路径标志仅限本次排空，复位为防御性默认（README 诚实边界 10：实例仍为单场景生命周期——场景重载请新建 PluginRuntime，勿复用）
     }
+    private int _exitDrainDepth; // 退出排空重入门深度（嵌套调用 no-op，见 SynchronousExitDrain summary）
 
     /// <summary>§6/§7（reviewer #191 F3 / #194 LOW）— 清空累积诊断（CrashReports/SoftCycles/_netAccum 永久 Fiber 周期快照表）。【QED-C2 后为可选出口而非内存安全义务】跨批次/场景重载时宿主可显式整体清空诊断观测（CrashReports 环形上限与 _netAccum 死 Fiber 剪除已在结构上兜住无界增长）；一并 ResetNetAccum 清周期快照表。</summary>
     public void ResetDiagnostics()
@@ -379,7 +395,10 @@ public sealed class PluginRuntime
             // provider 所供资源（跨 Fiber 借用），将在资源被 provider 释放后才执行（use-after-free 同型回收序变体）。
             // R3-RT-04：ReplayInProgress 条件排除「正在回放」的 fiber——排空中队列已清空，仅凭不在队列判定
             // 会让逆 Action 重入 TickWatchdog 时二次入队/二次回放。
-            else if (isTimedOut(f) && f.State == FiberState.TearingDown
+            // 【ROI-2026-09-14 修复】自愈分支复用本帧已判定的 timedOut——原二次调用 isTimedOut(f)
+            // 位于逐 fiber 异常隔离之外：宿主谓词有状态（首次 true、再次抛）时异常逸出 TickWatchdog，
+            // 同帧其余超时 fiber 失去回收机会，且宿主谓词被每帧重复执行（与 §红队 r2 #3 隔离纪律矛盾）。
+            else if (timedOut && f.State == FiberState.TearingDown
                      && !f.ReplayInProgress
                      && !_queuedProviders.Contains(f.Id)) // R4-JD-01：O(1)（原 Any 线性扫）
             {
