@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-blue)
 ![Formal Verification](https://img.shields.io/badge/Dafny-89%20lemmas%20verified-brightgreen)
-![Tests](https://img.shields.io/badge/tests-779%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-808%20passing-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 
 > 效应代数（Effect Algebra）——在**编译期**做**资源守恒 / 泄漏 / 峰值超预算 / 互斥冲突**的静态近似审计，并在**运行时**由 `EffectLedger.Runtime` 做权威闭合判定。
@@ -21,7 +21,7 @@
 
 | 维度 | 现状 |
 | ---- | ---- |
-| 测试 | 779 测试全绿（L1 568 + Runtime 138 + SampleGame 73） |
+| 测试 | 808 测试全绿（L1 596 + Runtime 139 + SampleGame 73） |
 | 形式化 | 89 条 Dafny 定律，`dafny verify` 0 errors 纳入 CI 门禁 |
 | 契约冻结 | 公共 API 面 43 类型快照 + JSON 契约 schema 1.0.0 + 异常方言/退出码 |
 | 对抗审计 | 八轮独立审计（消费/红队/验收/门面/方言/Runtime/供应链/性能/并发/构建矩阵/独立）；发现处置状态以 `audit/ISSUES.md` 台账为准 |
@@ -192,7 +192,7 @@ dotnet run --project src/EffectLedger.Tool -c Release -- audit templates/effect-
 | --------- | ---- |
 | `0` | 审计通过（`passed: true`） |
 | `2` | **存在违例**（解析成功但 Audit 不通过；`--out` 落盘反例） |
-| `1` | 解析/IO/未知命令错误 |
+| `1` | 解析/IO/未知命令错误；**参数用法错误**（未知 flag、`--out` 缺值、`--out=` 等号形态）——参数解析 loud，绝不静默忽略 |
 
 CI 接线示例：`effectledger audit x.json || exit 1` 会把违例当失败（2 非零、0 通过）——按需用 `if [ $? -eq 2 ]` 区分违例与错误。
 
@@ -295,7 +295,7 @@ dotnet test  EffectLedger.slnx -c Release --no-build
 6. **[影响：喂 AI 回修前按 (Kind,Resource) 去重]** `NegativeDip`/`CompatibleConflict` 逐采样点上报（时间序列语义），仅 `PeakExceeded` 做问题集去重（每资源首个反例）——三门去重口径不同是显式设计，喂 AI 回修前请自行按 `(Kind,Resource)` 去重【冻结：三门去重口径，变更=semver major】
 7. **[影响：跨 API 家族加载泄漏可能漏报（Runtime 兜底）]** `EAA0901` 哨兵资源跨 API 假配对：`Load`（Mem create）+ `QueueFree`（Mem release）在同方法内按语法计数互相抵消——跨 API 家族的加载泄漏属静态近似盲区，以运行期 Σnet 为权威判据【冻结：哨兵配对语义，变更=semver major】
 8. **[影响：惯用形态会误报，需 [EffectOverride] 豁免]** `EAA0303/0304` 是意图提示而非数学缺陷：哨兵资源上惯用形态（`DrawRect`×2、`MoveAndSlide`+`GetSlideCollisionCount`）会触发，按需 `[EffectOverride("理由")]`（它们不豁免 EAA0901）
-9. **[影响：构造期/属性形态泄漏不在静态覆盖内]** L3 仅分析**方法体**：构造函数、属性访问器、`using var` 形态不在注册范围；`Position.get/set` 等属性形态白名单条目对 L3 无效——构造期泄漏不在静态覆盖内
+9. **[影响：仅方法体语句级被覆盖，其余语法形状泄漏静默漏报]** L3 只注册 `MethodDeclarationSyntax` ⇒ **仅方法体内的语句级调用**参与 EAA0901/0303/0304 分析。以下形状**全部静默漏报**（实证：`audit/qed/ROADMAP.md` P5-10-05，同一泄漏点在方法体内报错、在其他形状零诊断）：构造函数与静态构造函数、属性访问器与**表达式体属性**（`=> expr`）、**索引器**、**字段/事件初始化器**、**运算符重载**与**转换运算符**、`using var` 形态、局部函数体（其语句属方法体后代故被覆盖，但**声明未调用**的局部函数会被误报，见 #9b）。白名单条目形如 `Position.get/set` 的属性形态对 L3 无效——构造期/属性期泄漏不在静态覆盖内，以运行期 Σnet 为权威判据
 10. **[影响：多线程调用会坏；场景重载须新建实例]** Runtime 非线程安全（帧驱动单线程模型，零锁）：全部调用须在宿主主线程；实例为单场景生命周期——场景重载请新建 `PluginRuntime`（Dead fiber 与图边不回收、同 FiberId 不可重注册，`R7-L1`）【冻结：单线程/单场景/不可重注册契约，变更=semver major】
 11. **[影响：跨 scope 泄漏需以剧本审计兜底]** Runtime `Σnet` 闸门按 `⊆*` 过滤：Effect claim 中 scope ⊄* fiber.Scope（如 Global）的资源**不参与**该 fiber 的守恒判定（L1 `EffectScript.Audit` 无此过滤）——两层口径差异，跨 scope 泄漏请以 L1 剧本审计为权威【冻结：两层口径边界，变更=semver major】
 12. `effectledger.config.json` 白名单扩展 **L3 分析器已真接线（QED-C1b）**：`<AdditionalFiles Include="effectledger.config.json" />` 后扩展 API 参与 L3 泄漏/冲突分析；解析/schema/Canonical 碰撞错误报 **EAA0701**（该文件扩展整体弃用 + 基础白名单不受影响，绝不静默；碰撞时合并集回退基础表；诊断 ID 公共契约面，2026-09-06 登记）。钉：`QedP2C1bAdditionalFilesPins`（5 枚）+ `tests/GateFixture/ExtendedWhitelist` 真实构建门。**L2 生成器亦已真接线（QED-C1c）**：扩展 API 的每方法 Signature 以字面量 Claims emit（扩展-only）；全链路（L3 诊断 + L2 emit）已受保护。合计钉：`QedP2C1bAdditionalFilesPins`（5）+ `QedP2C1aMergedWhitelistPins`（4）+ `QedP2C1cGeneratorAdditionalFilesPins`（3）+ `tests/GateFixture/ExtendedWhitelist` 真实构建门（接线被拔即红）

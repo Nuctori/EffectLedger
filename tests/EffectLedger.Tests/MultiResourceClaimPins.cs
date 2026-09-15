@@ -28,18 +28,6 @@ public class MultiResourceClaimPins
         }
         """;
 
-    // 同一场景、Multi 的两条 Claim 顺序对调（222 在前）——资源选取不得依赖 Claim 顺序。
-    private const string MultiLastConfig = """
-        {
-          "extraMappings": [
-            { "api": "Multi",  "claims": [
-              { "kind": "occupy", "resource": { "memory": 222 }, "mode": "move", "scope": { "scene": "Battle" } },
-              { "kind": "occupy", "resource": { "memory": 111 }, "mode": "move", "scope": { "scene": "Battle" } } ] },
-            { "api": "Other",  "claims": [
-              { "kind": "occupy", "resource": { "memory": 222 }, "mode": "move", "scope": { "scene": "Battle" } } ] }
-          ]
-        }
-        """;
 
     private const string Source = """
         namespace Godot { public class Node { public void Multi() { } public void Other() { } } }
@@ -60,14 +48,31 @@ public class MultiResourceClaimPins
         Assert.DoesNotContain(diags, d => d.Id == "EAA0701"); // 配置本身有效
     }
 
-    // ── 钉 2：Claim 顺序对调 ⇒ 诊断不变（资源分桶不依赖 First() 选取）。 ──
+    // ── 钉 2（红队 2026-09-15 强化）：同一 API 声明 3 个资源、冲突在【非首位】——旧二元组实现只报 1 次，
+    //    修复后应报 2 次（mem:222 与 mem:333 各与 Other 冲突）。
+    //    原钉（Claim 顺序对调）在旧实现下同样通过（旧实现永远取顺序第一个匹配资源，配置随之对调 ⇒ 结果一致），
+    //    对分桶错误不具独立判别力——按红队建议改为"数量断言"，旧实现下必红。 ──
+    private const string ThreeResourceConfig = """
+        {
+          "extraMappings": [
+            { "api": "Multi", "claims": [
+              { "kind": "occupy", "resource": { "memory": 111 }, "mode": "move", "scope": { "scene": "Battle" } },
+              { "kind": "occupy", "resource": { "memory": 222 }, "mode": "move", "scope": { "scene": "Battle" } },
+              { "kind": "occupy", "resource": { "memory": 333 }, "mode": "move", "scope": { "scene": "Battle" } } ] },
+            { "api": "Other", "claims": [
+              { "kind": "occupy", "resource": { "memory": 222 }, "mode": "move", "scope": { "scene": "Battle" } },
+              { "kind": "occupy", "resource": { "memory": 333 }, "mode": "move", "scope": { "scene": "Battle" } } ] }
+          ]
+        }
+        """;
+
     [Fact]
-    public async System.Threading.Tasks.Task ConflictReported_IndependentOfClaimOrder()
+    public async System.Threading.Tasks.Task ConflictOnNonFirstResources_ReportedTwice()
     {
-        var diags = await RunAnalyzer(Source, Config(MultiLastConfig));
-        var eaa0304 = diags.Where(d => d.Id == "EAA0304").ToArray();
-        Assert.Single(eaa0304);
-        Assert.Contains("Move+Move", eaa0304[0].GetMessage());
+        var diags = await RunAnalyzer(Source, Config(ThreeResourceConfig));
+        var conflicts = diags.Where(d => d.Id == "EAA0304").ToArray();
+        // 修复前（按 (kind,mode) 去重 + First 取资源）：只有 mem:222 进桶 ⇒ 仅 1 条冲突
+        Assert.Equal(2, conflicts.Length);
     }
 
     // ── 钉 3：对照——单资源映射行为不变（同资源跨 API 冲突照报；mem:111 仅 Multi 独占不误报）。 ──

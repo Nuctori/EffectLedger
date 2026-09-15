@@ -138,6 +138,27 @@ public class RoiAudit202609Pins
         Assert.Equal(1, ran);                                           // 恰执行一次
     }
 
+    // ── 钉 6（P5-10-09）：EnqueueExitDrain 同 Action 去重——重复注册不得双执行
+    //    （drain 带资源释放语义，双执行可能双重释放）；不同 Action 各自执行；flush 后重注册属新周期。
+    [Fact]
+    public void EnqueueExitDrain_DeduplicatesSameAction_KeepsDistinct()
+    {
+        var shell = new GodotShell(new FakeHost());
+        var count = 0;
+        Action a = () => count++;
+        Action b = () => count += 100;
+        shell.EnqueueExitDrain(a);
+        shell.EnqueueExitDrain(a); // 重复注册 ⇒ 去重（修复前：执行两次）
+        shell.EnqueueExitDrain(b);
+        shell.FlushExitDrain();
+        Assert.Equal(101, count);
+
+        // flush 后重注册同一 Action：新周期，应重新被接受（去重集已随队列清空）
+        shell.EnqueueExitDrain(a);
+        shell.FlushExitDrain();
+        Assert.Equal(102, count);
+    }
+
     // 首次 Defer 抛（可恢复故障），此后正常接管的宿主替身。
     private sealed class FlakyEnqueueHost : IHost
     {

@@ -13,6 +13,13 @@ FEED="$PWD/artifacts/feed"
 SMOKE_CACHE="$PWD/artifacts/nuget-smoke-packages"
 LEAKY_LOG="$PWD/artifacts/leaky-build.log"
 rm -rf "$FEED" "$SMOKE_CACHE" "$LEAKY_LOG"
+# 审计 2026-09-15：pack 复用 bin/ 既有输出 ⇒ 改名前的陈旧产物会被打进包（钉 PackageIdentityPurityPins）。
+# Tool 走 PackAsTool + publish 目录，残留会随包发布 ⇒ 打包输入必须纯净：清该工程旧输出后【重新构建】
+# 该工程再 pack（而非 --no-build 全解决方案，后者会跳过刚被清掉的 Tool 产物）。
+rm -rf src/EffectLedger.Tool/bin src/EffectLedger.Tool/obj
+dotnet build src/EffectLedger.Tool/EffectLedger.Tool.csproj -c Release --nologo --verbosity quiet
+STALE=$(find src/EffectLedger.Tool/bin -name 'Cosmos.*' 2>/dev/null | head -5)
+[ -z "$STALE" ] || { echo "ConsumerSmoke: FAIL——Tool 输出仍含改名前残留：$STALE"; exit 1; }
 dotnet pack EffectLedger.slnx -c Release --no-build -o "$FEED"
 export NUGET_PACKAGES="$SMOKE_CACHE"   # 隔离缓存：全新机器语义
 dotnet build tests/ConsumerSmoke/Paired/Paired.csproj -c Release --nologo

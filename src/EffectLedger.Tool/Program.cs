@@ -23,7 +23,27 @@ if (args[0] != "audit")
 if (args.Length < 2) { Console.Error.WriteLine("audit 需要 <script.json>"); return 1; }
 var input = args[1];
 string? outPath = null;
-for (int i = 2; i < args.Length; i++) if (args[i] == "--out" && i + 1 < args.Length) outPath = args[++i];
+// 审计 2026-09-15：参数解析 loud 化（此前 `--out` 无值 / `--out=path` / 未知 flag 全被静默忽略 ⇒
+// 脚本拿到 exit 0/2 却找不到违例文件——"静默少做一件事"，与立库「绝不静默」不符）。
+// 退出码仍在契约内（1 = 用法/IO 错误族）。
+for (int i = 2; i < args.Length; i++)
+{
+    if (args[i] == "--out")
+    {
+        if (i + 1 >= args.Length) { Console.Error.WriteLine("--out 缺少值（用法：--out violations.json）"); return 1; }
+        outPath = args[++i];
+    }
+    else if (args[i].StartsWith("--out=", StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine($"不支持的参数形态 '{args[i]}'：请用空格分隔（--out violations.json）而非等号形式");
+        return 1;
+    }
+    else if (args[i].StartsWith('-'))
+    {
+        Console.Error.WriteLine($"未知参数：{args[i]}（可用：--out <path>）");
+        return 1;
+    }
+}
 
 string json;
 try { json = File.ReadAllText(input); }

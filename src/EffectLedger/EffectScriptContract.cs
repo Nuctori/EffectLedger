@@ -165,7 +165,11 @@ public static class EffectScriptContract
             throw new FormatException($"{layer}: scope 须含 scene 或 type（至少一个字段）");
         // Global 无 name（修 auditR4 CRITICAL：SerializeScope 输出 {"type":"global"} 无 scene，原 Parse 强制 scene ⇒ round-trip 必炸）。
         var hasScene = el.TryGetProperty("scene", out var sc);
-        var name = hasScene ? ReqStr(sc, $"{layer}.scene") : "";
+        // 【审计 2026-09-15 修复】scope 名同样过 NoPad（与资源 id 同口径）——" S" 与 "S" 会被
+        // gate(3) 当两个不同分组，同资源同模式的并发冲突从此静默消失（实证：两 create 同 gpu 资源、
+        // scope 差一空格 ⇒ 只报 Leak 不报 CompatibleConflict；两 scope 相同时正常报冲突）。
+        // 这是 L1 权威审计层的漏报（比 EAA0304 静态近似严重），故拒绝而非改写。
+        var name = hasScene ? NoPad(ReqStr(sc, $"{layer}.scene"), layer, "scene") : "";
         // 缺 type ⇒ 默认 Scene(name)（与 SerializeScope 的 Scene 形态 {"scene":"S"} 一致）；
         // 仅未知 type（如 "gloabl"）才抛，避免静默当成 Scene("")（修 reviewer LOW）。
         if (!el.TryGetProperty("type", out var ty))
@@ -430,8 +434,11 @@ public static class EffectScriptContract
     // 下游日志/原生互操作（NUL）——claim 侧字符串（kind/mode/resource id/scope 名）同为报告与分组身份，fail-fast 拒绝。
     static string ReqStr(JsonElement v, string field)
     {
-        if (v.ValueKind != JsonValueKind.String || v.GetString() is not { } s || s.Length == 0)
-            throw new FormatException($"{field} 须为非空字符串");
+        // 【审计 2026-09-15 修复】纯空白按空串拒（与 EffectLedgerConfig.ReqStr 的 IsNullOrWhiteSpace 同源）：
+        // 原仅判 Length==0 ⇒ "   " 这类"看起来非空"的身份串被接受，而其作为 scope 名/资源 id 会与他处
+        // 拼写分裂，静默拆散 gate(3) 冲突分组。
+        if (v.ValueKind != JsonValueKind.String || v.GetString() is not { } s || s.Length == 0 || string.IsNullOrWhiteSpace(s))
+            throw new FormatException($"{field} 须为非空（且非纯空白）字符串");
         foreach (var ch in s)
             if (ch < ' ') throw new FormatException($"{field} 含控制字符 U+{((int)ch):X4}（身份串不可含 U+0000–U+001F）");
         return s;

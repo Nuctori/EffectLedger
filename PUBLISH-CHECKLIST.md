@@ -19,7 +19,7 @@
 - [ ] `bash ci.sh`（或 `ci.ps1`）PASS：
   - 全量构建 0 错误（`-warnaserror --no-incremental`）；
   - **Dafny 形式验证 89 定律 0 errors**（formal/*.dfy，P3 证明产物）；
-  - 测试全绿（≥779：L1 568 + Runtime 138 + SampleGame 73，只增不减）。
+  - 测试全绿（≥808：L1 596 + Runtime 139 + SampleGame 73，只增不减）。
 - [ ] `dotnet pack -c Release` 五包走查成功（五 nupkg 含 Tool）。
 - [ ] 打包消费烟测 PASS（`tests/ConsumerSmoke/run-smoke.sh`，CI 同款）：Paired（net8，Generator
   单装传递闭包 + emit 落盘核对）绿 / Leaky（net10，Analyzer 真实包链）红且含 EAA0901。
@@ -37,8 +37,9 @@
 ## 4. 发布物核对
 
 - [ ] 五个 nupkg：`EffectLedger` / `.Analyzer` / `.Generator` / `.Runtime` / `.Tool`。
-- [ ] 依赖闭包正确：单装 Generator 自动联装 L1（钉 R2B-01/「干净缓存实验」）；L1 三 TFM（net8.0/net10.0）齐。
+- [ ] 依赖闭包正确：单装 Generator 自动联装 L1（钉 R2B-01/「干净缓存实验」）；L1 双目标 TFM（`net8.0;net10.0`）齐；Analyzer 保持 net9.0（编译器宿主对齐）。
 - [ ] 包内 README 存在（NU5039 门）；RepositoryUrl 指向本仓库。
+- [ ] **发布物身份纯度**：nupkg 内不得出现改名前（`Cosmos.*`）程序集残留（钉 `PackageIdentityPurityPins`；pack 前建议 `dotnet clean` 或确认 `bin/` 无旧产物——`bin/` 不进版本库，曾在改名前后都构建过的机器会残留）。
 
 ## 5. 发布（人类执行）
 

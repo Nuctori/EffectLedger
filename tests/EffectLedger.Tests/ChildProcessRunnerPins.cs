@@ -60,7 +60,8 @@ public sealed class ChildProcessRunnerPins
             var (code, stdout, stderr) = ChildProcessRunner.Run(psi, 120_000);
             Assert.Equal(0, code);
             Assert.Equal("DONE", stdout.Trim()); // 行事件累加带行尾换行
-            Assert.True(stderr.Length >= 4 * 1024 * 1024, $"stderr 应完整回收（≥4MB），实际 {stderr.Length}");        }
+            Assert.True(stderr.Length >= 4 * 1024 * 1024, $"stderr 应完整回收（≥4MB），实际 {stderr.Length}");
+        }
         finally { Directory.Delete(Path.GetDirectoryName(dll)!, recursive: true); }
     }
 
@@ -76,6 +77,31 @@ public sealed class ChildProcessRunnerPins
             var sw = System.Diagnostics.Stopwatch.StartNew();
             Assert.Throws<TimeoutException>(() => ChildProcessRunner.Run(psi, 3_000));
             Assert.True(sw.ElapsedMilliseconds < 15_000, "超时后必须及时杀树返回，不得等满子进程时长");
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(dll)!, recursive: true); }
+    }
+
+    // ── 钉 3（红队 2026-09-15 增补）：块缓冲排空专属钉——只在【非 Windows】生效。
+    // 背景：钉 1/2 在 Windows 上对 c810300 的真实修复点（退出后无参 WaitForExit() 排空块缓冲输出）
+    // 不敏感（Windows 子进程 stdout 非块缓冲，删掉该行钉仍绿）。本钉在 Linux/CI 上构造"大量输出后
+    // 立即退出"形态，并对【是否收到完整输出】下断言——删掉无参 WaitForExit 即红。
+    [Fact]
+    public void Runner_BlockBufferedOutput_FlushedOnExit_LinuxOnly()
+    {
+        if (OperatingSystem.IsWindows()) return; // Windows 非块缓冲：此回归不可复现（钉在 CI/Linux 生效）
+
+        var dll = EmitTempApp("""
+            for (int i = 0; i < 3000; i++) System.Console.Out.WriteLine("line-" + i + " " + new string('y', 256));
+            """);
+        try
+        {
+            var psi = new ProcessStartInfo("dotnet");
+            psi.ArgumentList.Add("exec");
+            psi.ArgumentList.Add(dll);
+            var (code, stdout, _) = ChildProcessRunner.Run(psi, 120_000);
+            Assert.Equal(0, code);
+            Assert.Contains("line-0 ", stdout);      // 首行
+            Assert.Contains("line-2999 ", stdout);   // 末行（块缓冲未排空时会丢尾部 ⇒ 本钉红）
         }
         finally { Directory.Delete(Path.GetDirectoryName(dll)!, recursive: true); }
     }

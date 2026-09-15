@@ -4,6 +4,38 @@ EffectLedger 的用户可见变更记录。格式遵循 [Keep a Changelog](https
 
 ## [Unreleased]
 
+### 对抗审计收口（2026-09-15：两组独立审计后的 7 项修复）
+
+对本轮 ROI 修复做对抗性复查（未覆盖领域 + 反驳式红队），发现并处置 7 项；台账见 `audit/ISSUES.md`。
+
+- **L1 权威审计层漏报（HIGH）**：scope 名前后空白使 gate(3) 冲突分组静默分裂——同资源同时刻两个
+  `create` 仅因 `"S"` 与 `" S"` 即丢失 `CompatibleConflict`。资源 id 侧早有防护、scope 名留洞。
+  现 `ReqStr` 拒纯空白、scope 名过 `NoPad`，schema 同步收紧（`ScopeNameWhitespacePins` 6 枚）。
+- **L1 溢出误判（P5-10-07 闭合）**：gate(1) 扫换线与闭包两处累加走 `ZStar.+` 的 unchecked long 环绕，
+  中间和超域即误判 Leak（数学 net=0 被拒）。改 Int128 中间累加（与 P5-8-01 同型，`P510OverflowClosurePins` 5 枚）。
+- **发布物身份混淆**：Tool nupkg 混入改名前的 7 个 `Cosmos.*` 文件（`PackAsTool` 走 `publish/`，而该目录
+  留有改名（07809a2）之前的产物）。清理 + 烟测打包前清 Tool 输出重构建 + `PackageIdentityPurityPins` 2 枚。
+- **生成器整体失败（同类第二入口）**：`@Load` 与其非转义重载 `Load` 同类型 ⇒ hint 撞名 ⇒ CS8785、0 文件
+  （`dupCount` 分组键未剥 `@`）。统一到剥 `@` 后的名字，补钉。
+- **CLI 参数静默忽略**：`--out` 缺值 / `--out=` / 未知 flag 曾静默 exit 0（README ⑤ 的落盘闭环静默失效）。
+  现一律 stderr + exit 1（`CliArgParsingPins` 4 枚）；README 退出码表补注。
+- **`EnqueueExitDrain` 无去重（P5-10-09）**：重复注册同一 Action 会双执行（drain 带释放语义）。
+  加引用去重集，flush 后同步清空。
+- **README #9 声明校准（P5-10-05）**：EAA0901 实测漏报面宽于原文（并含表达式体属性/索引器/运算符重载/
+  转换运算符/事件访问器等 7 种形状）；按实证扩写，并加 `AnalyzerShapeCoveragePins` 8 枚钉住边界不漂移。
+- **无效钉修正（红队指出）**：`MultiResourceClaimPins` 的"Claim 顺序无关"钉在旧实现下同样通过（无判别力），
+  改为"3 资源、冲突在非首位 ⇒ 应报 2 次"（旧实现下实测变红）；`ChildProcessRunnerPins` 补 Linux 专属
+  块缓冲排空钉（Windows 上对 c810300 修复点不敏感）。
+- **误诊留痕**：红队提出看门狗修复"非语义等价"（跨 fiber 副作用下漏回收）；经独立复现【不成立】——
+  修复后谓词每 fiber 恰 1 次且级联回收完整，旧实现在非幂等谓词下反而漏回收。结论已写入核对记录。
+
+### 测试与文档
+
+- 测试 808 全绿（L1 596 + Runtime 139 + SampleGame 73）。
+- `IHost.Defer` 契约显式化（抛异常当且仅当未入队）。
+- PUBLISH-CHECKLIST 修正 TFM 计数（"三 TFM" → 双目标 `net8.0;net10.0` + Analyzer 保持 net9.0），
+  补发布物身份纯度检查项。
+
 ### 修复（2026-09-14 ROI 审计：六项已复现缺陷 + 打包消费烟测）
 
 全部缺陷先复现后修复，回归钉逐条在位；处置台账见 `audit/ISSUES.md`。

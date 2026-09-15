@@ -5,6 +5,13 @@ $feed = Join-Path (Get-Location) 'artifacts/feed'
 $smokeCache = Join-Path (Get-Location) 'artifacts/nuget-smoke-packages'
 $leakyLog = Join-Path (Get-Location) 'artifacts/leaky-build.log'
 Remove-Item -Recurse -Force $feed, $smokeCache, $leakyLog -ErrorAction SilentlyContinue
+# 审计 2026-09-15：pack 复用 bin/ 既有输出 ⇒ 改名前陈旧产物会被打进包（钉 PackageIdentityPurityPins）；
+# Tool 走 PackAsTool + publish 目录 ⇒ 清旧输出后重新构建该工程再 pack，保证打包输入纯净。
+Remove-Item -Recurse -Force 'src/EffectLedger.Tool/bin', 'src/EffectLedger.Tool/obj' -ErrorAction SilentlyContinue
+dotnet build src/EffectLedger.Tool/EffectLedger.Tool.csproj -c Release --nologo --verbosity quiet
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$stale = Get-ChildItem 'src/EffectLedger.Tool/bin' -Recurse -Filter 'Cosmos.*' -ErrorAction SilentlyContinue
+if ($stale) { Write-Host "ConsumerSmoke: FAIL——Tool 输出仍含改名前残留：$($stale.Name -join ', ')"; exit 1 }
 dotnet pack EffectLedger.slnx -c Release --no-build -o $feed
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $env:NUGET_PACKAGES = $smokeCache   # 隔离缓存：全新机器语义（排除同 id+version 全局缓存遮蔽）

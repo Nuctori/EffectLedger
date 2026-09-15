@@ -153,6 +153,34 @@ class Other  { [EffectLedger.EffectOverride(""r"")] public void Load() { } }
                 result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.GetMessage())));
     }
 
+    // ── 审计 2026-09-15（红队）：转义方法名 `@Load` 与非转义重载 `Load` 同类型 ⇒ 消歧分组键必须用
+    //    剥 '@' 后的名字。修复前 dupCount 按含 '@' 的原始 MethodName 分组（两者各计 1 ⇒ 都无后缀）
+    //    ⇒ hint 撞名 C_Load.g.cs ⇒ AddSource ArgumentException（CS8785，生成器整体不生成，0 文件）。 ──
+    [Fact]
+    public void Generator_EscapedMethodName_WithPlainOverload_EmitsBothHints()
+    {
+        const string source = @"
+public class C
+{
+    [EffectLedger.EffectOverride(""r"")] public void @Load(int x) { }
+    [EffectLedger.EffectOverride(""r"")] public void Load(string y) { }
+}";
+        var compilation = MakeCompilation(source);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new EffectLedger.Generator.EffectAlgebraGenerator());
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var updDiags);
+        var hints = driver.GetRunResult().Results
+            .SelectMany(r => r.GeneratedSources).Select(s => s.HintName).ToArray();
+
+        Assert.DoesNotContain(updDiags, d => d.Id == "CS8785");
+        Assert.Equal(2, hints.Length);                       // 修复前：0（hint 撞名抛异常，整体不生成）
+        Assert.Equal(2, hints.Distinct().Count());           // hint 必须唯一
+        using var pe = new MemoryStream();
+        Assert.True(outputCompilation.Emit(pe).Success,
+            "重载对产物应可编译：" + string.Join("; ", outputCompilation.GetDiagnostics()
+                .Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.GetMessage())));
+    }
+
     // ── A2-14：消费者自有全局 EffectAlgebraGenerated 不得 CS0101（生成类移入 namespace 后须可编译） ──
     [Fact]
     public void Generator_ConsumerOwnGeneratedClass_NoCollision()

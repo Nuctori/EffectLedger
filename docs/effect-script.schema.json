@@ -55,8 +55,10 @@
             ],
             "properties": {
               "scene": {
+                "description": "scope 名：非空、非纯空白、无前后空白（与 Parse 的 NoPad 同界——拼写失配会静默拆散 gate(3) 冲突分组）",
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "pattern": "^\\S(?:.*\\S)?$"
               },
               "type": {
                 "type": "string",

@@ -10,6 +10,7 @@ public sealed class GodotShell
     private readonly IHost _host;
     private readonly HashSet<Action> _deferred = new();   // 去重：同 Action 引用仅入一次（R4-3 幂等）
     private readonly List<Action> _exitDrains = new();
+    private readonly HashSet<Action> _exitDrainSet = new(); // P5-10-09：drain 注册去重（与 _deferred 同判据：引用相等）
     private bool _exitDraining;
 
     /// <summary>A3-15（生产审计批3）— 壳上第三方 drain 的异常观测出口：此前裸 catch{} 凭空吞掉，
@@ -63,10 +64,15 @@ public sealed class GodotShell
         foreach (var dep in fiber.Dependents) _host.DisableDispatch(dep); // 级联依赖者
     }
 
-    /// <summary>§3 R4-1 — 退出路径同步排空：注册 drain，由宿主在 _ExitTree 调用 FlushExitDrain。</summary>
+    /// <summary>§3 R4-1 — 退出路径同步排空：注册 drain，由宿主在 _ExitTree 调用 FlushExitDrain。
+    /// 【P5-10-09 修复】同 Action 引用去重（与 Defer 的 R4-3 幂等纪律对齐）：此前 drain 列表无去重，
+    /// 第三方重复注册同一 Action 会被执行两次——退出排空带资源释放语义，重复执行可能造成双重释放。
+    /// 去重只按引用相等（Action 相等性即引用相等，与 _deferred 同判据）；不同 Action 实例即使行为
+    /// 相同也不合并（无法判定等价，保守保留各自执行）。</summary>
     public void EnqueueExitDrain(Action drain)
     {
         if (drain == null) return;
+        if (!_exitDrainSet.Add(drain)) return; // 幂等：已注册则跳过（重复注册不再双执行）
         _exitDrains.Add(drain);
     }
 
@@ -88,6 +94,7 @@ public sealed class GodotShell
             }
         }
         _exitDrains.Clear();
+        _exitDrainSet.Clear(); // P5-10-09：与列表同步清空（flush 后重注册属新周期，不应被旧去重集吞掉）
     }
 
     /// <summary>§1 R4-3 — 原生句柄门控：Defer/逆 Action 执行前判空（Godot Object 经 QueueFree 后裸引用失效）。</summary>

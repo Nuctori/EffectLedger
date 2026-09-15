@@ -51,21 +51,25 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
             var extras = LoadExtras(configs, spc);
             // A2-05（生产审计批4）：消歧键 = (方法名, 完全限定类型名)——跨命名空间同名类型各得唯一后缀，
             // 同一 partial 类不再产出重复成员（CS0111），AddSource hint 不再互相覆盖被 Roslyn 丢弃（R1.8）。
-            var dupCount = all.GroupBy(m => m.MethodName).ToDictionary(g => g.Key, g => g.Count());
+            // 【审计 2026-09-15 修复】分组键统一为 hint 名所用的 saneName（剥前导 '@'）：此前 dupCount 按含
+            // '@' 的原始 MethodName 分组，而 hint 用剥离后的名字 ⇒ 同类型内 `@Load` 与 `Load` 重载被当作
+            // "两个不同方法名"（dupCount 各为 1）⇒ 都得到空后缀 ⇒ hint 同为 C_Load.g.cs ⇒ AddSource 抛
+            // ArgumentException（CS8785，生成器整体不生成，0 文件）。与 verbatim 类型名修复同一失败类。
+            var dupCount = all.GroupBy(m => m.MethodName.TrimStart('@')).ToDictionary(g => g.Key, g => g.Count());
             var seen = new System.Collections.Generic.Dictionary<(string MethodName, string FullType), int>();
             foreach (var method in all)
             {
+                // hint 名不允许含 '@'（转义关键字方法名如 @class）；仅 method.MethodName 可能带前导 '@'，先剥离再拼文件名。
+                var saneName = method.MethodName.TrimStart('@');
                 var suffix = string.Empty;
-                if (dupCount[method.MethodName] > 1)
+                if (dupCount[saneName] > 1)
                 {
-                    var key = (method.MethodName, method.TypeName);
+                    var key = (saneName, method.TypeName);
                     seen.TryGetValue(key, out int idx);
                     suffix = $"_{method.TypeName}_{idx}";
                     seen[key] = idx + 1;
                 }
                 var source = GenerateMethodSignature(method, suffix, extras);
-                // hint 名不允许含 '@'（转义关键字方法名如 @class）；仅 method.MethodName 可能带前导 '@'，先剥离再拼文件名。
-                var saneName = method.MethodName.TrimStart('@');
                 var hintBase = (method.TypeName + "_" + saneName + suffix);
                 spc.AddSource($"{hintBase}.g.cs", SourceText.From(source, Encoding.UTF8));
             }

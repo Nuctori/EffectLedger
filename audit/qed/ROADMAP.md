@@ -507,7 +507,17 @@ P5.8 独立审计 12 条发现中此前仅 P5-8-01（CRITICAL）收口，其余 
 - [ ] **P5-10-04（P5-8-04，HIGH）** Runtime 无 ω=⊤ 居民豁免：常驻资源 L1 Passed=true / Runtime Conserved=false（方向安全但未声明口径分裂）。待处置（候选：README 声明或 Runtime 补豁免，二选一）。
 - [ ] **P5-10-05（P5-8-05，HIGH）** EAA0901 语法形状漏报面宽于 README #9 声明（运算符重载/转换运算符/表达式体属性/索引器/字段与事件访问器/静态构造）。待处置（候选：README #9 扩大声明为「仅方法体语句级近似」；F1 流敏感化同窗评估）。
 - [ ] **P5-10-06（P5-8-06，MEDIUM）** EAA0901 对声明但未调用的局部函数误报。待处置（候选：排除无引用 LocalFunctionStatement，或显式声明保守误报边界）。
-- [ ] **P5-10-07（P5-8-08，MEDIUM）** L1 Audit 闭包路径溢出边缘误判：4-claim 反例（create 2^62 + create(2^62+1) + release 2^62 + release(2^62+1)，数学 net=0）报 Leak。代码级核实（推理未实证）：闭包在 EffectScript.cs 内独立 `SignedInterval.Add` 事件序累加（未走 P5-8-01 的 NetTable Int128 修复），中间和 2^63+1 溢出 ⇒ [⊤,⊤] ⇒ `ContainsZero`(⊤⇒false)=false ⇒ Leak。确定性（事件序，非跨进程随机）；fail-closed 方向安全但语义不正确。待处置（候选：闭包同样 Int128 中间累加，修法与 P5-8-01 同型 + Audit 层反例钉）。
+- [x] **P5-10-07（P5-8-08，MEDIUM）** L1 Audit 溢出边缘误判 ✅ 已修复（2026-09-15）
+  - 缺陷：gate(1) 逐事件 `cur.Add(contrib)` 走 `ZStar.+`（unchecked long，环绕 ⇒ ⊤ 且不具结合律）——
+    中间和超 long 域即变号，`ContainsZero` 假 false ⇒ 数学上闭合（net=0）的剧本被误报 Leak。
+    两处独立累加点：扫换线 `Step`（NegativeDip 判定）与闭包段（Leak 判定）——均未走 P5-8-01 的 NetTable Int128 路径。
+  - 复现（修复前实证，非推理）：create 2^62 + create(2^62+1) + release(2^62+1) + release 2^62
+    ⇒ `Passed=False violations=[Leak]`；同形态小值（3+5 / 5+3）⇒ `Passed=True` —— 溢出专属误判。
+  - 修复：两处均改 Int128 中间累加（与 P5-8-01 同型）——聚合期恒不溢出，仅**最终结果**超 long 域才取 ⊤
+    （真实越界 fail-closed）；端点 ⊤ 声明按 0 计入数值、⊤ 标记独立承载（与 NetTable.Compute 同口径）。
+    净 effect 仍取 enter 事件的 OccupyClaims；归因语义（netScope/leakScope）与违例消息格式均保持。
+  - 证据：`P510OverflowClosurePins` 5 钉（反例不误报 / 小值对照不变 / 真泄漏仍检出 / 部分释放仍泄漏 /
+    扫换线不伪造负陷）；L1 全量 573 绿（Round*Adversarial、CrossTable、EffectScriptEdge 族零回归）。
 - [ ] **P5-10-08（P5-8-09，MEDIUM）** `Fiber.EffectiveSignature` 折入 create(Provides) 已知锐边（A3-14 自认）可构造合法 Fiber 被误拒，无测试钉。待处置（候选：补可复现形态钉 + 注释升格 README 正式边界）。
 - [ ] **P5-10-09（P5-8-10，LOW）** `GodotShell.EnqueueExitDrain` 无同 Action 去重（Defer 有去重、drain 无），第三方重复注册双执行。待处置（候选：去重或文档声明）。
 - [x] **（登记）** P5-8-11 已声明一致 / P5-8-12 防御生效——P5.8 原报告已裁定，无需动作。

@@ -184,7 +184,14 @@ public sealed partial class EffectScript
             : (a.enter ? 0 : 1).CompareTo(b.enter ? 0 : 1));
 
         // 运行态（引用类型，局部函数捕获）。
-        var net = new Dictionary<ResourceId, SignedInterval>();                 // gate(1) 累积 net（仅 enter 累加）
+        // 【P5-10-07 修复】gate(1) 扫换线路径改 Int128 中间累加（与 P5-8-01 的 NetTable 同型）：
+        // 原实现逐事件 cur.Add(contrib)（ZStar+ 环绕 ⇒ ⊤，不具结合律），中间和超 long 域即误判——
+        // 反例：create 2^62 + create(2^62+1) + release 2^62 + release(2^62+1)（数学 net=0）在
+        // 累加中途 2^63+1 环绕 ⇒ [⊤,⊤] ⇒ ContainsZero(⊤⇒false) ⇒ 误报 Leak（fail-closed 方向安全
+        // 但语义错误）。Int128 域 ≫ long²，聚合期恒不溢出；仅当**最终结果**超 long 域才 ⊤（真实越界
+        // fail-closed）。净 effect 仍取 enter 事件的 OccupyClaims（release 自带负贡献于 Lo），exit 不改。
+        var netLo = new Dictionary<ResourceId, (Int128 V, bool Top)>();
+        var netHi = new Dictionary<ResourceId, (Int128 V, bool Top)>();
         var peakSum = new Dictionary<ResourceId, NatStar>();                    // gate(2) 有限峰值和（不含 ⊤ 声明）
         var topCount = new Dictionary<ResourceId, int>();                       // gate(2) 活跃 ⊤ 声明计数（>0 ⇒ 该资源峰值 ⊤）
         var grp = new Dictionary<(ResourceId, ScopeId, int), HashSet<int>>();   // gate(3) 每 (res,scope,mode) 的活跃事件集合
@@ -198,6 +205,10 @@ public sealed partial class EffectScript
         ScopeId ResolvePeakScope(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s.scope : new ScopeId.Global();
         int ResolvePeakEi(ResourceId r) => peakScope.TryGetValue(r, out var s) ? s.ei : -1;
 
+        // Int128 中间量 → ZStar（超 long 域才 ⊤，与 NetTable.Compute 同判据）。
+        static ZStar ToZStar(Int128 v) =>
+            v > long.MaxValue || v < long.MinValue ? ZStar.Top : ZStar.Of((long)v);
+
         void Step(int ei, bool enter)
         {
             var e = Events[ei];
@@ -209,11 +220,18 @@ public sealed partial class EffectScript
                 {
                     var r = ResourceId.Normalize(c.Resource);
                     var scaled = ScaleSize(c.Size ?? Interval.Default, e.Loop.Count);
-                    var contrib = c.Mode == Mode.Release
-                        ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
-                        : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
                     if (!netScope.ContainsKey(r)) netScope[r] = (e.Scope, ei);
-                    net[r] = net.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
+                    // 【P5-10-07】Int128 累加：Lo 加（release 取负的 Hi），Hi 加（release 取负的 Lo）；
+                    // ⊤ 端点按 0 计入（与 NetTable.Compute 同口径——⊤ 声明不参与数值累加，其保守性由
+                    // 端点 ⊤ 标记直接承载）。任一端点曾出现 ⊤ ⇒ 该端点保持 ⊤（fail-closed 不谎称有限）。
+                    bool loTop = scaled.Lo.IsTop, hiTop = scaled.Hi.IsTop;
+                    bool isRelease = c.Mode == Mode.Release;
+                    Int128 dLo = isRelease ? (hiTop ? 0 : -(Int128)scaled.Hi.Value) : (loTop ? 0 : (Int128)scaled.Lo.Value);
+                    Int128 dHi = isRelease ? (loTop ? 0 : -(Int128)scaled.Lo.Value) : (hiTop ? 0 : (Int128)scaled.Hi.Value);
+                    var curLo = netLo.TryGetValue(r, out var cl) ? cl : (V: (Int128)0, Top: false);
+                    var curHi = netHi.TryGetValue(r, out var ch) ? ch : (V: (Int128)0, Top: false);
+                    netLo[r] = (curLo.V + dLo, curLo.Top || loTop);
+                    netHi[r] = (curHi.V + dHi, curHi.Top || hiTop);
                 }
             }
             // gate(3) grp 先于 gate(2) peak 处理（A1-04，生产审计批1）：exit 时 peakScope 清理（S06-004）要读
@@ -289,14 +307,19 @@ public sealed partial class EffectScript
         void AuditAtSample(NatStar t)
         {
             // gate(1) 负陷：运行中 net.Hi < 0（按资源归属的事件 scope 归因，非 Global）。
-            foreach (var kv in net)
-                if (!kv.Value.Hi.IsTop && kv.Value.Hi.Value < 0)
-                {
-                    // 取该资源的任一活跃贡献者的 scope 作归因（net 已按归一化资源聚合，scope 取首个活跃 key 的 e.Scope）
-                    var scope = ResolveNetScope(kv.Key);
-                    violations.Add(new Violation(t, kv.Key, scope, "NegativeDip",
-                        $"累积净占用在 t={t} 为负（release 早于 create）：{kv.Value}", ResolveNetEi(kv.Key)));
-                }
+            // 【P5-10-07】改读 Int128 中间量：先按 Int128 判「数学上是否真为负」，仅真负才报；
+            // 端点 ⊤（曾出现 unknown 声明）不参与判定（与本 gate 原有 `!Hi.IsTop` 保守口径一致）。
+            foreach (var kv in netHi)
+            {
+                if (kv.Value.Top) continue;                 // ⊤ 端点不判（未知即不谎报负陷，同原 Hi.IsTop 跳过）
+                if (kv.Value.V >= 0) continue;              // 数学净高界非负 ⇒ 无负陷
+                var scope = ResolveNetScope(kv.Key);
+                var shown = new SignedInterval(
+                    netLo.TryGetValue(kv.Key, out var l) && !l.Top ? ToZStar(l.V) : ZStar.Top,
+                    ToZStar(kv.Value.V));
+                violations.Add(new Violation(t, kv.Key, scope, "NegativeDip",
+                    $"累积净占用在 t={t} 为负（release 早于 create）：{shown}", ResolveNetEi(kv.Key)));
+            }
             // gate(2) 峰值：每 cap 资源当前运行中峰值 ≤ Caps[r]（按 cap 对应的归因 scope）。
             foreach (var kv in cap.Caps)
             {
@@ -342,8 +365,13 @@ public sealed partial class EffectScript
 
         // 闭包：全部有限事件结束后（t=maxFinite），有限 ω 累积 net 必须含 0（生命周期闭合），否则 Leak。
         // 独立于扫换线（仅一次 O(E·K)），与 CumulativeNet(closureT) 等价（全部 Lo≤closureT）。
+        // 【P5-10-07 修复】改 Int128 中间累加（与 P5-8-01 的 NetTable 同型）：原逐事件 cur.Add(contrib)
+        // 经 ZStar+ 环绕（unchecked long）——中间和超 long 域即变号 ⇒ ContainsZero 假 false ⇒ 误报 Leak。
+        // 反例（本修复的钉）：create 2^62 + create(2^62+1) + release 2^62 + release(2^62+1)，数学 net=0。
+        // Int128 域 ≫ long² 聚合期恒不溢出；仅当**最终结果**超 long 域才取 ⊤（真实越界 fail-closed）。
         {
-            var closureNet = new Dictionary<ResourceId, SignedInterval>();
+            var closureLo = new Dictionary<ResourceId, (Int128 V, bool Top)>();
+            var closureHi = new Dictionary<ResourceId, (Int128 V, bool Top)>();
             for (int ei = 0; ei < Events.Length; ei++)
             {
                 var e = Events[ei];
@@ -354,10 +382,14 @@ public sealed partial class EffectScript
                 {
                     var r = ResourceId.Normalize(c.Resource);
                     var scaled = ScaleSize(c.Size ?? Interval.Default, e.Loop.Count);
-                    var contrib = c.Mode == Mode.Release
-                        ? new SignedInterval(Negate(scaled.Hi), Negate(scaled.Lo))
-                        : new SignedInterval(ToZ(scaled.Lo), ToZ(scaled.Hi));
-                    closureNet[r] = closureNet.TryGetValue(r, out var cur) ? cur.Add(contrib) : contrib;
+                    bool loTop = scaled.Lo.IsTop, hiTop = scaled.Hi.IsTop;
+                    bool isRelease = c.Mode == Mode.Release;
+                    Int128 dLo = isRelease ? (hiTop ? 0 : -(Int128)scaled.Hi.Value) : (loTop ? 0 : (Int128)scaled.Lo.Value);
+                    Int128 dHi = isRelease ? (loTop ? 0 : -(Int128)scaled.Lo.Value) : (hiTop ? 0 : (Int128)scaled.Hi.Value);
+                    var cl = closureLo.TryGetValue(r, out var l) ? l : (V: (Int128)0, Top: false);
+                    var ch = closureHi.TryGetValue(r, out var h) ? h : (V: (Int128)0, Top: false);
+                    closureLo[r] = (cl.V + dLo, cl.Top || loTop);
+                    closureHi[r] = (ch.V + dHi, ch.Top || hiTop);
                 }
             }
             // rich-hickey2 R6 S06-004 + A1-09（生产审计批1 正名）：Leak 归因取「最晚开始的有限贡献者」（Lo 最大者）。
@@ -377,13 +409,22 @@ public sealed partial class EffectScript
                         leakScope[rr] = (ee.Lifetime.Lo.Value, ee.Scope, ei2);
                 }
             }
-            foreach (var kv in closureNet)
-                if (!kv.Value.ContainsZero)
+            foreach (var kv in closureLo)
+            {
+                // 端点 ⊤（含 unknown 声明）⇒ 视为未闭合（fail-closed，与原 ContainsZero 的 ⊤⇒false 一致）；
+                // 两端均有限时按 Int128 真实值判「区间是否含 0」——数学上闭合就不再误报（P5-10-07 的正解）。
+                closureHi.TryGetValue(kv.Key, out var hi);
+                bool closed = !kv.Value.Top && !hi.Top && kv.Value.V <= 0 && hi.V >= 0;
+                if (!closed)
                 {
                     var (_, ls, ei) = leakScope.TryGetValue(kv.Key, out var t) ? t : (0UL, new ScopeId.Global(), -1);
+                    var shown = new SignedInterval(
+                        kv.Value.Top ? ZStar.Top : ToZStar(kv.Value.V),
+                        hi.Top ? ZStar.Top : ToZStar(hi.V));
                     violations.Add(new Violation(closureT, kv.Key, ls, "Leak",
-                        $"生命周期未闭合（净效应不含 0）：{kv.Value}", ei));
+                        $"生命周期未闭合（净效应不含 0）：{shown}", ei));
                 }
+            }
         }
 
         // R1-HIGH-3（hickey-x）：报告 gate(2) 实际检查的预算资源数——Caps.Count==0 ⇒ 峰值门未运行，调用方须知情。
