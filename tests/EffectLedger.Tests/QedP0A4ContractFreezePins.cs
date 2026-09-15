@@ -22,20 +22,10 @@ public sealed class QedP0A4ContractFreezePins
     static (int Code, string StdOut, string StdErr) RunTool(params string[] args)
     {
         var dll = Path.Combine(RepoRoot(), "src", "EffectLedger.Tool", "bin", "Release", "net10.0", "EffectLedger.Tool.dll");
-        var psi = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            ArgumentList = { "exec", dll },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+        var psi = new ProcessStartInfo { FileName = "dotnet", ArgumentList = { "exec", dll } };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit(60_000);
-        return (p.ExitCode, stdout, stderr);
+        // 【O-2026-09-14-01 修复】并发排空双流 + 有界等待 + 超时杀树（旧双同步 ReadToEnd 死锁模式）。
+        return ChildProcessRunner.Run(psi, 60_000);
     }
 
     // ── 冻结钉 1：CLI 退出码 0 = 审计通过（README ⑤ 契约表的通过格，真实子进程）。 ──

@@ -35,17 +35,16 @@ public sealed class ProdAuditR6ToolingTests
         {
             FileName = "dotnet",
             // -p:TargetFramework=net10.0：多目标 L1 只建 net10 切片，钉测试时长可控
-            ArgumentList = { "build", sample, "-c", "Release", "--no-incremental", "-p:TargetFramework=net10.0" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
+            // -p:UseSharedCompilation=false：子构建不排队本机共享 Roslyn 编译服务器（VBCSCompiler 被
+            //   长会话并行构建搞僵后排队 15 分钟超时循环 = O-2026-09-14-01 挂起根因之二；CI 干净机
+            //   不受影响，关闭共享编译对本钉仅增少量编译耗时）
+            ArgumentList = { "build", sample, "-c", "Release", "--no-incremental", "-p:TargetFramework=net10.0", "-p:UseSharedCompilation=false" },
         };
-        using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit(240_000);
+        // 【O-2026-09-14-01 修复】旧写法双同步 ReadToEnd 在 stderr 灌满管道时确定性死锁（测试宿主
+        // CPU 空转挂起、被 blame 回收后即"进程崩溃"）——统一走并发排空 + 有界等待 + 超时杀树。
+        var (code, stdout, stderr) = ChildProcessRunner.Run(psi, 240_000);
         var output = stdout + stderr;
-        Assert.True(p.ExitCode == 0, $"样例构建须成功，实际 exit={p.ExitCode}\n{output}");
+        Assert.True(code == 0, $"样例构建须成功，实际 exit={code}\n{output}");
         Assert.Contains("EAA0901", output); // 分析器须在真实编译期触发（样本 GodotLeaker 故意泄漏）
     }
 }

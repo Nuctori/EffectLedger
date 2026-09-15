@@ -36,20 +36,10 @@ public sealed class ProdAuditR3ToolingTests
     static (int Code, string StdOut, string StdErr) RunTool(params string[] args)
     {
         var (dll, _) = ResolveToolDll();
-        var psi = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            ArgumentList = { "exec", dll },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+        var psi = new ProcessStartInfo { FileName = "dotnet", ArgumentList = { "exec", dll } };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit(60_000);
-        return (p.ExitCode, stdout, stderr);
+        // 【O-2026-09-14-01 修复】并发排空双流 + 有界等待 + 超时杀树（旧双同步 ReadToEnd 死锁模式）。
+        return ChildProcessRunner.Run(psi, 60_000);
     }
 
     // ── R3-TQ-02：退出码 1 = 解析失败 ──
