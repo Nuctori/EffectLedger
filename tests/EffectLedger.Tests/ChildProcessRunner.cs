@@ -41,8 +41,10 @@ internal static class ChildProcessRunner
                 $"子进程 {timeoutMs}ms 未退出，已杀整进程树：{psi.FileName} {string.Join(" ", psi.ArgumentList)}"
                 + $"\n--- 已收到的部分输出 ---\nstdout:\n{Snapshot(stdout)}\nstderr:\n{Snapshot(stderr)}");
         }
-        // EOF 宽限：正常情况子进程退出 ⇒ 管道关闭 ⇒ 事件立即排空；孤儿句柄病态下最多付 5s，绝不永久阻塞。
-        p.WaitForExit(5_000);
+        // 退出后必须再做一次【无参 WaitForExit()】：这是 .NET 保证"重定向流的事件已全部派发完毕"的唯一语义
+        // （带超时重载只等进程退出，不保证异步读取事件送达——Linux 上子进程输出为块缓冲，进程退出瞬间
+        // 数据可能尚未派发 ⇒ stdout/stderr 偶发为空）。EOF 已由子进程退出保证，此处等待有界（进程已死）。
+        p.WaitForExit();
         return (p.ExitCode, Snapshot(stdout), Snapshot(stderr));
     }
 
