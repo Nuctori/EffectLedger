@@ -361,15 +361,16 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
             if (m is null) { invIndex++; continue; }
             apiBySite[invIndex] = m.Value.GodotApi; // R3-CG-02
 
-            // 同站点去重：本调用贡献的 (kind,mode) 集合（按（kind,mode）去重，避免单 API 内部重复 Claim 计入）
-            var siteClaims = m.Value.Claims
-                .Select(c => (c.Kind, c.Mode))
-                .Distinct()
-                .ToArray();
-
-            foreach (var (kind, mode) in siteClaims)
+            // 同站点去重：按（归一资源, kind, mode）三元组去重——避免单 API 内部重复 Claim 计入。
+            // 【ROI-2026-09-14 修复】原按 (kind,mode) 二元组去重后以 Claims.First(kind,mode) 取资源：
+            // 同一 API 对多个资源声明同 (kind,mode) 时，首个之后的资源被静默丢弃，后续调用在这些
+            // 资源上的跨 API 冲突（EAA0304）/ 量纲混用（EAA0303）漏报（支持范围内分桶错误，非已声明
+            // 的近似边界）。
+            var siteSeen = new HashSet<(ResourceId, Kind, Mode)>();
+            foreach (var c in m.Value.Claims)
             {
-                var key = ResourceId.Normalize(m.Value.Claims.First(c => c.Kind == kind && c.Mode == mode).Resource);
+                var key = ResourceId.Normalize(c.Resource);
+                if (!siteSeen.Add((key, c.Kind, c.Mode))) continue;
                 if (!byResource.ContainsKey(key))
                 {
                     byResource[key] = new Dictionary<int, List<(Kind, Mode)>>();
@@ -377,7 +378,7 @@ public sealed class EffectAlgebraAnalyzer : DiagnosticAnalyzer
                 }
                 if (!byResource[key].ContainsKey(invIndex))
                     byResource[key][invIndex] = new List<(Kind, Mode)>();
-                byResource[key][invIndex].Add((kind, mode));
+                byResource[key][invIndex].Add((c.Kind, c.Mode));
             }
             invIndex++;
         }

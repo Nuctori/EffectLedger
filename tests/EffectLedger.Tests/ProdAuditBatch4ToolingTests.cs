@@ -124,6 +124,35 @@ namespace NS2 { public class Cfg { [EffectLedger.EffectOverride(""r"")] public v
             + string.Join("; ", result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.GetMessage())));
     }
 
+    // ── ROI-2026-09-14：verbatim 转义类型名（class @event）不得破坏生成器——修复前 TypeName 带 '@'：
+    //    hint 名含 '@' ⇒ AddSource ArgumentException（CS8785，生成器整体不生成，0 个文件），且 '@' 进入
+    //    生成成员名 Compute{…} 也是非法标识符。修复后类型段统一过 SanitizeTypePart（剥 '@'、'.'→'_'）。 ──
+    [Fact]
+    public void Generator_EscapedTypeName_EmitsCompilableOutput()
+    {
+        const string source = @"
+class @event { [EffectLedger.EffectOverride(""r"")] public void Load() { } }
+class Other  { [EffectLedger.EffectOverride(""r"")] public void Load() { } }
+";
+        var compilation = MakeCompilation(source);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new EffectLedger.Generator.EffectAlgebraGenerator());
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var updDiags);
+        var generatedText = string.Join("\n", driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()));
+
+        Assert.DoesNotContain(updDiags, d => d.Severity == DiagnosticSeverity.Error
+            || d.Id == "CS8785");                          // 修复前：hint '@event_Load_@event_0.g.cs' 抛 ⇒ CS8785
+        Assert.True(outputCompilation.SyntaxTrees.Count() >= 3,
+            "转义类型名的标注方法必须照常生成（修复前：生成器整体失败，0 个生成文件）");
+        Assert.Contains("ComputeLoad", generatedText);
+        Assert.DoesNotContain("@", generatedText);         // 生成代码不得残留非法标识符字符
+        using var pe = new MemoryStream();
+        var result = outputCompilation.Emit(pe);
+        Assert.True(result.Success,
+            "转义类型名场景产物应可编译：" + string.Join("; ",
+                result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.GetMessage())));
+    }
+
     // ── A2-14：消费者自有全局 EffectAlgebraGenerated 不得 CS0101（生成类移入 namespace 后须可编译） ──
     [Fact]
     public void Generator_ConsumerOwnGeneratedClass_NoCollision()
@@ -190,15 +219,10 @@ public class Consumer
 
     private static (int code, string output) DotnetBuild(string projectDir)
     {
-        var psi = new ProcessStartInfo("dotnet", $"build \"{projectDir}\" -c Release --nologo")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        using var p = Process.Start(psi)!;
-        var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return (p.ExitCode, output);
+        // -p:UseSharedCompilation=false：子构建不排队本机可能僵死的共享 Roslyn 编译服务器（O-2026-09-14-01）。
+        var psi = new ProcessStartInfo("dotnet", $"build \"{projectDir}\" -c Release --nologo -p:UseSharedCompilation=false");
+        // 【O-2026-09-14-01 修复】并发排空双流 + 有界等待 + 超时杀树（旧双同步 ReadToEnd 死锁模式）。
+        var (exitCode, stdout, stderr) = ChildProcessRunner.Run(psi, 240_000);
+        return (exitCode, stdout + stderr);
     }
 }

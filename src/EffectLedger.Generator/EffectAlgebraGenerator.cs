@@ -148,12 +148,15 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
         }
         // 取完全限定类型名（A2-05，生产审计批4）：命名空间链 + 外层类型链，'.' 折叠为 '_' 保证生成成员名合法。
         // 此前仅取最近类型名——NS1.Cfg 与 NS2.Cfg 同名方法都得到 _Cfg_0 ⇒ CS0111 / AddSource hint 被丢。
+        // 【ROI-2026-09-14 修复】类型段统一过 SanitizeTypePart（含剥离 verbatim 前缀 '@'）——此前
+        // class @event 的 TypeName 带 '@'：hint 名含 '@' 直接 ArgumentException（CS8785，生成器整体
+        // 不生成），且 '@' 进入生成成员名 Compute{…} 也是非法标识符。
         string fullType = "Global";
         {
             var parts = new List<string>();
             for (var p = method.Parent; p is not null; p = p.Parent)
             {
-                if (p is TypeDeclarationSyntax tds) parts.Insert(0, tds.Identifier.Text);
+                if (p is TypeDeclarationSyntax tds) parts.Insert(0, SanitizeTypePart(tds.Identifier.Text));
                 else if (p is NamespaceDeclarationSyntax nsd) parts.Insert(0, SanitizeTypePart(nsd.Name.ToString()));
                 else if (p is FileScopedNamespaceDeclarationSyntax fsd) parts.Insert(0, SanitizeTypePart(fsd.Name.ToString()));
             }
@@ -164,8 +167,11 @@ public sealed class EffectAlgebraGenerator : IIncrementalGenerator
             : new AnnotatedMethod(method.Identifier.Text, fullType, hasOverride, hasAccept);
     }
 
+    // 【ROI-2026-09-14 修复】类型段清洗：剥 verbatim 前缀 '@'（仅前缀合法，剥后即真实名；裸类型名/命名空间段
+    // 均可能带 '@'）+ 'global::' 剥离 + '.' 折叠 '_'。产出同时用于 hint 名（禁 '@'）与生成成员名后缀（'@'
+    // 会使 Compute{…} 成为非法标识符）。'@' 剥离不引入新撞名：带 '@' 与不带 '@' 的标识符在 C# 中本就同形。
     private static string SanitizeTypePart(string s) =>
-        s.Replace("global::", "").Replace('.', '_');
+        s.Replace("global::", "").Replace("@", "").Replace('.', '_');
 
     private const string EffectLedgerOverrideFqn = "EffectLedger.EffectOverrideAttribute";
     private const string EffectLedgerAcceptDeviationFqn = "EffectLedger.AcceptDeviationAttribute";
