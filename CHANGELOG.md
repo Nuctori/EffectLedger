@@ -4,6 +4,37 @@ EffectLedger 的用户可见变更记录。格式遵循 [Keep a Changelog](https
 
 ## [Unreleased]
 
+### 修复（2026-09-14 ROI 审计：六项已复现缺陷 + 打包消费烟测）
+
+全部缺陷先复现后修复，回归钉逐条在位；处置台账见 `audit/ISSUES.md`。
+
+- **Runtime**：`TickWatchdog` 自愈分支改为复用本帧 `timedOut`——原二次调用宿主谓词在异常隔离外，
+  谓词有状态时异常逸出帧循环、同帧其余超时 fiber 失去回收（钉 `RoiAudit202609Pins` 前 2 枚）。
+- **Runtime**：`SynchronousExitDrain` 增加重入门——嵌套调用（逆 Action 重入）no-op 且关闭态保持，
+  仅最外层复位 `IsShuttingDown`；原嵌套空队列路径中途复位关闭标志，逆 Action 内 `LoadAll` 可激活
+  未装载 fiber 并在退出后永久 Active（`audit/p5-qed-claim-attack.md` 攻击 #2，复确认后闭合；
+  钉 `NestedExitDrain_KeepsShuttingDown_LoadAllRejected_InactiveStaysInactive`）。
+- **Runtime**：`GodotShell.FlushExitDrain` 的 `OnDrainFault` 观测回调异常隔离——上报通道故障不再
+  阻断其余 drain 与末尾清队；`GodotShell.Defer` 宿主入队失败回滚去重登记并重抛——同 Action 重试
+  不再被幂等集合永久吞掉（钉 `FlushExitDrain_OnDrainFaultThrows_RemainingDrainsStillRun` /
+  `Defer_HostEnqueueFails_RollbackDedup_RetrySucceeds`）。
+- **Analyzer**：同站点 Claim 分桶改按（归一资源, kind, mode）三元组——原 `(kind,mode)` 去重 +
+  `First()` 取资源使多资源映射的后续资源被静默丢弃，跨 API 同资源冲突（EAA0304）在支持范围内漏报
+  （钉 `MultiResourceClaimPins` 3 枚）。
+- **Generator**：verbatim 转义类型名（`class @event`）不再使生成器整体失败（hint 名/生成成员名
+  剥离 `@`；原症状 CS8785 + 0 个生成文件；钉 `Generator_EscapedTypeName_EmitsCompilableOutput`）。
+- **CI/打包**：新增打包消费烟测 `tests/ConsumerSmoke/`（五包 pack 到本地 feed → 隔离
+  `NUGET_PACKAGES` 独立还原：Paired（net8，Generator 单装、L1 传递闭包）必绿；Leaky（net10，
+  Analyzer 真实包链加载）必红且含 EAA0901）——接入 `ci.yml` PR 门、`ci.sh`、`ci.ps1`。
+- **文档**：README「内部质量已收口 / 发现全处置」改为以 `audit/ISSUES.md` 台账为准的表述；
+  测试计数与徽章同步实际值；PUBLISH-CHECKLIST 补烟测步骤与新计数地板。
+- **测试基建（O-2026-09-14-01 修复）**：EffectLedger.Tests 测试宿主在含真实子进程 `dotnet build`
+  的测试中间歇挂起（"进程崩溃"实为挂起被 vstest 回收）——根因为子进程管道 EOF 被孤儿 MSBuild 驻留
+  节点（nodeReuse 继承句柄）无限推迟 + 双同步 ReadToEnd 双流死锁变体。新增 `ChildProcessRunner`
+  统一收编 4 处 spawn（事件累加 / 进程退出边界 / 超时杀树 / `MSBUILDDISABLENODEREUSE=1`），
+  门禁测试步骤加 `--blame-hang` 兜底；钉 `ChildProcessRunnerPins`（dotnet-stack 栈证据与
+  处置记录见 `audit/ISSUES.md`）。
+
 ### 改名：Cosmos → EffectLedger（破坏性，未发布前无既有消费者）
 
 项目由 `Cosmos` 更名为 `EffectLedger`。旧名是通用词（撞名/歧义），且不符合 .NET 官方命名模板

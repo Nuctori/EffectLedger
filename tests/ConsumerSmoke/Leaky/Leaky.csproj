@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 烟测的失败半边：TreatWarningsAsErrors 把 EAA0901（warning）升 error ⇒ 此工程构建必须失败。
+         与 tests/GateFixture/Leaky 同法，但走真实 NuGet 包链（PackageReference + OutputItemType=Analyzer）。 -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- net10 消费者显式装全三件（L1 + Analyzer + Generator），对照 Paired 的 Generator 单装传递闭包。 -->
+    <PackageReference Include="EffectLedger" Version="1.0.0-*" />
+    <PackageReference Include="EffectLedger.Analyzer" Version="1.0.0-*"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="EffectLedger.Generator" Version="1.0.0-*"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-blue)
 ![Formal Verification](https://img.shields.io/badge/Dafny-89%20lemmas%20verified-brightgreen)
-![Tests](https://img.shields.io/badge/tests-764%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-779%20passing-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 
 > 效应代数（Effect Algebra）——在**编译期**做**资源守恒 / 泄漏 / 峰值超预算 / 互斥冲突**的静态近似审计，并在**运行时**由 `EffectLedger.Runtime` 做权威闭合判定。
@@ -17,14 +17,14 @@
 - **三层冻结契约**——公共 API 面 43 类型快照钉死、JSON 契约面 schema version 1.0.0 冻结、异常方言/退出码冻结：升级兼容性可被机器断言。
 - **AI 友好**——声明式剧本 JSON（6 资源 × 4 scope）可被 LLM 产出并直接机审，`effectledger audit` CLI 一键闭环。
 
-**项目状态**：pre-release（内部质量已收口，尚待首次公开发布）。
+**项目状态**：pre-release（缺陷处置与接受边界以 `audit/ISSUES.md` 台账为准；尚待首次公开发布）。
 
 | 维度 | 现状 |
 | ---- | ---- |
-| 测试 | 764 测试全绿（L1 562 + Runtime 129 + SampleGame 73） |
+| 测试 | 779 测试全绿（L1 568 + Runtime 138 + SampleGame 73） |
 | 形式化 | 89 条 Dafny 定律，`dafny verify` 0 errors 纳入 CI 门禁 |
 | 契约冻结 | 公共 API 面 43 类型快照 + JSON 契约 schema 1.0.0 + 异常方言/退出码 |
-| 对抗审计 | 八轮独立审计（消费/红队/验收/门面/方言/Runtime/供应链/性能/并发/构建矩阵/独立），发现全处置 |
+| 对抗审计 | 八轮独立审计（消费/红队/验收/门面/方言/Runtime/供应链/性能/并发/构建矩阵/独立）；发现处置状态以 `audit/ISSUES.md` 台账为准 |
 | 分发 | 尚未发布到 nuget.org——走 ① 源码引用；发布清单见 `PUBLISH-CHECKLIST.md` |
 | 支持 | Issue / Discussion 欢迎；本库为个人项目，无商业支持承诺 |
 
@@ -40,6 +40,8 @@
 | 运行时壳层设计 | `docs/spatial-plugin-shell-design.md` |
 | 发布流程（人类执行） | `PUBLISH-CHECKLIST.md` |
 | QED 路线与维护模式 | `audit/qed/ROADMAP.md` |
+| 缺陷台账（处置状态/回归钉/接受边界） | `audit/ISSUES.md` |
+| 打包消费烟测（真实 NuGet 管线走查） | `tests/ConsumerSmoke/run-smoke.sh`（CI 同款） |
 | 历史交付快照 | `DELIVERABLE.md` |
 | 已知边界（20 条，逐条附证据） | 本页「诚实边界」节（语义锐边短笺在前） |
 | 贡献指引 | `CONTRIBUTING.md` |
@@ -261,7 +263,9 @@ dotnet test  EffectLedger.slnx -c Release --no-build
 
 - **变异门**：`tests/GateFixture/`（Leaky 工程必红且含 EAA0901 / Paired 工程必绿），由 `ProdAuditBatch4ToolingTests` 以真实 `dotnet build` 行使——分析器接线被静默拔掉（裸 ProjectReference）即红。
 - **性能钉**：`EffectScriptEdgeTests` 端点采样==密集扫描随机/对抗等价钉（`Iter26_SweepLine_EqualsBruteForce_*`）+ 硬墙钟钉（5000 粒子 <2000ms / 1000 事件 <5000ms）。
+- **进程门禁钉**：测试内真实子进程统一经 `ChildProcessRunner`（输出事件累加不依赖管道 EOF / 有界超时杀树 / `MSBUILDDISABLENODEREUSE=1` 防孤儿句柄持有管道），钉 `ChildProcessRunnerPins`；门禁测试步骤带 `--blame-hang` 兜底——任何宿主停滞转为有界确定性失败而非挂死（O-2026-09-14-01，处置记录见 `audit/ISSUES.md`）。
 - **CLI 门**：`effectledger-audit.yml` 每周全量四门（build -warnaserror / test / `effectledger audit` 样本 / pack）；`ProdAuditR3ToolingTests` 以真实子进程钉退出码 0/1/2 契约。
+- **打包消费烟测**：`tests/ConsumerSmoke/run-smoke.sh`（CI 同款）——五包 pack 到本地 feed → 隔离 `NUGET_PACKAGES` 全新还原：Paired（net8，**Generator 单装、L1 经 nuspec 依赖组传递**）必绿；Leaky（net10，Analyzer 真实包链加载）必红且日志含 EAA0901。包被静默拔线（未落 `analyzers/`、依赖闭包断裂、缓存遮蔽）任一环断裂即红。
 
 ---
 

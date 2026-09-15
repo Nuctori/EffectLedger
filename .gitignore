@@ -6,6 +6,9 @@ obj/
 *.suo
 .vs/
 
+# 打包消费烟测产物（ci.yml / ci.sh / ci.ps1 的 pack + 独立还原，不进版本库）
+artifacts/
+
 # Tool caches
 .ruff_cache/
 

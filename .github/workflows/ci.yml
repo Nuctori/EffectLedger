@@ -32,5 +32,9 @@ jobs:
           grep -qE ', 0 errors$' /tmp/dafny.txt || { echo "P3-H3 计数门：Dafny 存在验证错误"; exit 1; }
           COUNT=$(grep -oE '[0-9]+ verified' /tmp/dafny.txt | grep -oE '[0-9]+' | head -1)
           [ "${COUNT:-0}" -ge 89 ] || { echo "P3-H3 计数门：verified $COUNT < 89——定律被删减即红"; exit 1; }
-      - name: Test (审计 + 代数 + L2/L3 端到端；slnx 已含 SampleGame，任何失败=红)
-        run: dotnet test EffectLedger.slnx -c Release --no-build --verbosity normal
+      - name: Test (审计 + 代数 + L2/L3 端到端；slnx 已含 SampleGame，任何失败=红；
+              blame-hang 把宿主停滞转为有界确定性失败，O-2026-09-14-01 兜底)
+        run: dotnet test EffectLedger.slnx -c Release --no-build --verbosity normal --blame-hang --blame-hang-timeout 300s
+      - name: Pack + Consumer smoke (真实 NuGet 管线走查：五包落本地 feed → 隔离缓存独立还原 →
+              配对样例绿 / 泄漏样例红 / Generator 单装传递闭包)
+        run: bash tests/ConsumerSmoke/run-smoke.sh

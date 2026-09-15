@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- 落盘生成文件（放 obj/ 下：SDK 默认 Compile glob 排除中间目录，不会二次编译）：烟测脚本据此
+         断言生成器真从包链加载并 emit（含 ComputeLoad 签名），而非仅"未破坏构建"。 -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>obj/Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 打包消费烟测（配对样例：构建必须成功）——只引用 Generator 包（net8 消费者），
+         L1 经 nuspec 依赖组传递联装（R2B-01 闭包主张的真实 NuGet 管线验证，README ⓪ 本地缓存陷阱
+         由烟测脚本的隔离 NUGET_PACKAGES 排除）。标注方法 emit 的 ComputeLoad 硬引用 L1 类型 ⇒
+         还原/编译任一环缺 L1 即红。 -->
+    <PackageReference Include="EffectLedger.Generator" Version="1.0.0-*"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

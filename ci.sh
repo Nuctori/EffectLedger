@@ -12,9 +12,11 @@ dafny verify --solver-path "${DAFNY_Z3:-$HOME/.dotnet/tools/z3/bin/z3-4.12.1.exe
 grep -qE ', 0 errors$' /tmp/dafny-gate.txt || { echo "P3-H3 计数门：Dafny 存在验证错误（含 "10 errors" 子串假匹配漏洞已修复）"; exit 1; }
 DAFNY_COUNT=$(grep -oE "[0-9]+ verified" /tmp/dafny-gate.txt | grep -oE "[0-9]+" | awk '{s+=$1} END {print s+0}')
 [ "$DAFNY_COUNT" -ge 89 ] || { echo "P3-H3 计数门：verified $DAFNY_COUNT < 89——定律被删减即红"; exit 1; }
-dotnet test tests/EffectLedger.Tests/EffectLedger.Tests.csproj -c Release --no-build
-dotnet test tests/EffectLedger.Runtime.Tests/EffectLedger.Runtime.Tests.csproj -c Release --no-build
-dotnet test samples/GodotIntegration/SampleGame.csproj -c Release --no-build
+dotnet test tests/EffectLedger.Tests/EffectLedger.Tests.csproj -c Release --no-build --blame-hang --blame-hang-timeout 300s
+dotnet test tests/EffectLedger.Runtime.Tests/EffectLedger.Runtime.Tests.csproj -c Release --no-build --blame-hang --blame-hang-timeout 300s
+dotnet test samples/GodotIntegration/SampleGame.csproj -c Release --no-build --blame-hang --blame-hang-timeout 300s
+# roi-2026-09-14：打包消费烟测——真实 NuGet 管线走查（五包本地 feed + 隔离缓存独立还原 + 配对绿/泄漏红）
+bash tests/ConsumerSmoke/run-smoke.sh
 echo "CI audit gate: PASS (0 errors, 0 test failures; AnalyzerConsumer 1 条 EAA0901 故意泄漏警告为样例设计)"
 # qed-gate（2026-09-06）：本地两次偶红 OOM（A5/A2 会话）根因均为 MSBuild 节点 + Roslyn 编译服务器
 # 跨多次门禁运行累积内存（~2GB），饿死三门并行测试宿主的进程内 Roslyn 编译；build-server shutdown

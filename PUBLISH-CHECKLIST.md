@@ -19,8 +19,12 @@
 - [ ] `bash ci.sh`（或 `ci.ps1`）PASS：
   - 全量构建 0 错误（`-warnaserror --no-incremental`）；
   - **Dafny 形式验证 89 定律 0 errors**（formal/*.dfy，P3 证明产物）；
-  - 测试全绿（≥705：L1 512 + Runtime 120 + SampleGame 73，只增不减）。
+  - 测试全绿（≥779：L1 568 + Runtime 138 + SampleGame 73，只增不减）。
 - [ ] `dotnet pack -c Release` 五包走查成功（五 nupkg 含 Tool）。
+- [ ] 打包消费烟测 PASS（`tests/ConsumerSmoke/run-smoke.sh`，CI 同款）：Paired（net8，Generator
+  单装传递闭包 + emit 落盘核对）绿 / Leaky（net10，Analyzer 真实包链）红且含 EAA0901。
+- [ ] `audit/ISSUES.md` 台账无未处置的 OPEN 阻塞项（测试宿主挂起 O-2026-09-14-01 已修复并有
+  blame-hang 兜底；如再现按台账流程处置，不阻塞发布但须在 Release 说明中披露）。
 - [ ] GitHub Actions CI（push/PR 门）最近一次运行绿：`gh run list --limit 1`。
 
 ## 3. 契约冻结核对（发布即永久，逐条确认）
