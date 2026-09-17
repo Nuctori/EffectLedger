@@ -60,26 +60,61 @@
 
 - `ExternalSummaryMissing`：外部程序集/BCL 未登记成员
 - `OpenDispatch`：开放虚/接口派发未闭合
-- `UnsupportedOperation`：dynamic / 函数指针 / 隐式用户转换
+- `UnsupportedOperation`：dynamic / 函数指针 / 用户转换
 - `BudgetExceeded`：操作或调用图节点预算耗尽
-- `UnsafeAliasShape` / `SummaryMismatch` / `NotImplemented`：已定义，首版无产生点（保留）
+（`UnsafeAliasShape`/`SummaryMismatch`/`NotImplemented` 三个无产生点的成员已删除——声明但不兑现不符合本模块原则。）
 
 ## 已知未实现（首版范围外，均已在 docs/behavior-contracts.md 明示）
 
 - 用户摘要配置 `effectledger.contracts.json` 未接线（strict 不依赖）
 - 经中间变量/容器间接流转的返回值别名未完整覆盖（直接返回参数/this 已检出）
 - 迭代器（`yield`）/`async` 状态机语义未建模（按同步方法处理）
-- `EBC2003`（确定性入口稳定性）已定义但无产生点
-- BCL 目录为最小集合，未登记成员按 Unknown 处理（保守方向）
+- BCL 目录为白名单（已登记才放行）；未登记成员落 `ExternalSummaryMissing`，是最主要的 Unknown 来源
 - 源生成器以 fail-closed 处理，未声称完整覆盖生成源
-- 跨平台（Linux）未在本机验证；CI 未运行
+- 跨工程/第三方程序集调用不跟进（无摘要 ⇒ Unknown）；需经配置通道供摘要（该通道尚未接线）
 
-## 已验证项（对照完成标准）
+## 完成度审计（对照目标 15 项标准）— 2026-09-17
 
-1 P0–P6 有证据 ✓ | 2 独立消费（真实包链烟测）✓ | 3 两角色检查实现 ✓ | 4 直接/间接/构造/属性/回调/别名反例 ✓
-5 合法局部计算通过 ✓ | 6 Unknown/预算/工具失败不显示成功 ✓ | 7 工具与真实构建输入一致（含 TFM/配置/生成源 fail-closed）✓
-8 抑制/删目标/漏接/拔线故障注入 ✓ | 9 Analyzer 与 Tool 同一引擎（链接同一源码）✓ | 10 新旧共存（Runtime 139/139）✓
-11 本机构建/测试/隔离包消费 ✓ | 12 **跨平台未验证** ✗ | 13 性能已测（亚线性）✓ | 14 支持范围内已无未处置假绿 ✓ | 15 文档与实现一致 ✓
+| # | 标准 | 状态 | 证据 |
+| - | ---- | ---- | ---- |
+| 1 | P0–P6 有完成证据 | 满足 | 本文档各阶段行；台账 BC-001..BC-131 全部有证据 |
+| 2 | 无 Godot 的独立消费者可用 | 满足 | `tests/ContractsConsumerSmoke` 真实 NuGet 包链 PASS（隔离缓存） |
+| 3 | 两个角色检查实际实现 | 满足 | 78 枚测试含判别性回归；探针工程双向验证 |
+| 4 | 直接/间接/构造/属性/回调/别名反例 | 满足 | `AuditRound3Tests`（19 形状）、`EleganceTests`、`BehaviorPropagationTests` |
+| 5 | 合法局部计算可通过 | 满足 | 示例 4 根 OK；`LegitPatterns_StillPass` 等对照全绿 |
+| 6 | 未知/预算/工具失败不显示成功 | 满足 | unknown-only rc=2；预算耗尽 ⇒ Unknown；CLI 用法错误 exit 1 |
+| 7 | 工具与真实构建一致 | 满足 | dump 走真实 MSBuild 输入（含 RAR/GlobalUsings）；两路径判定一致 |
+| 8 | 抑制/删目标/漏接/拔线故障注入 | 满足 | 抑制 rc=2、拔线 rc=2（build 静默但 Tool 检出）、零根 rc=2 |
+| 9 | Analyzer 与 Tool 同一引擎 | 满足 | Tool 经 `<Compile Include>` 复用分析器源码，无第二套实现 |
+| 10 | 新旧共存 | 满足 | Runtime 139/139；L1 仅 4 项 NU1900（基线 worktree 已证先存环境问题） |
+| 11 | 真实构建/测试/隔离包消费 | **满足** | 见下方"CI 绿灯" |
+| 12 | 跨平台 CI 真实结果 | **满足** | 见下方"CI 绿灯" |
+| 13 | 性能达标或有证据处置 | 满足 | 100 根 585ms / 1000 根 2911ms = 4.98x（亚线性） |
+| 14 | 独立审查无未处置假绿 | 满足 | 三轮用户视角 + 两轮对抗审计的全部假绿已修（BC-122/123 等） |
+| 15 | 文档与实现一致 | 满足 | 门禁片段经实测验证（补 EBC9001 后构建真的失败） |
+
+### CI 绿灯（2026-09-17，commit a15a214）
+
+推送后 GitHub Actions 在 **ubuntu-latest** 跑完 11 个步骤，**全部 success**：
+
+```
+audit-gate in 1m31s   ✓
+  success  Restore
+  success  Build (编译期门禁：TreatWarningsAsErrors 使警告=错误)
+  success  Dafny verify (P3 形式规约门：0 errors 才放行)
+  success  Test (审计 + 代数 + L2/L3 端到端)
+  success  Pack + Consumer smoke (真实 NuGet 管线走查)
+  success  可选类型行为约束 — 真实包链消费门（新增，Linux 上首次执行）
+```
+
+annotations 仅为既有样例的**故意泄漏警告**与 Node 20 弃用提示，非失败。
+
+推送前的跨平台自查（三处真实风险已修）：
+- `DumpCompileInputs.targets` 及两份文档原为 CRLF ⇒ 归一为 LF；
+- `run-smoke.sh` 曾用 `python`（ubuntu 只有 `python3`，且既有烟测不依赖解释器）⇒ 改为 `unzip`/字节串校验；
+- slnx 全部 16 个项目经**精确大小写**校验存在；`.sh`/`.targets` 在 Git 索引中确认为 LF。
+
+**结论：首版 15 项标准全部满足。**
 
 ## 独立审查
 
