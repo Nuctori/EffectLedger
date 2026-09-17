@@ -1,0 +1,9 @@
+root = true
+
+[*.cs]
+# 合法消费者同样接线门禁：零违规必须仍然构建成功（防止把合法代码误报为 error）。
+dotnet_diagnostic.EBC2001.severity = error
+dotnet_diagnostic.EBC2002.severity = error
+dotnet_diagnostic.EBC1001.severity = error
+dotnet_diagnostic.EBC1002.severity = error
+dotnet_diagnostic.EBC1003.severity = error

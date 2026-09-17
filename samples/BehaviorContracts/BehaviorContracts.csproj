@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EffectLedger.Contracts\EffectLedger.Contracts.csproj" />
+    <!-- 分析器必须以 OutputItemType="Analyzer" 接线才会被编译器加载（裸引用不产生诊断）。 -->
+    <ProjectReference Include="..\..\src\EffectLedger.Contracts.Analyzer\EffectLedger.Contracts.Analyzer.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

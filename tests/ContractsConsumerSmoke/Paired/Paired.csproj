@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 走真实 NuGet 包链（非 ProjectReference）：验证包落 analyzers/ 且能被加载。 -->
+    <PackageReference Include="EffectLedger.Contracts" Version="1.0.0" />
+    <PackageReference Include="EffectLedger.Contracts.Analyzer" Version="1.0.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

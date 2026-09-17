@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 声明包：零依赖（无 Godot / 无 L1 / 无 Runtime / 无 Roslyn）。
+         目标是「只要类型声明也能装」，因此不引入任何实现程序集。 -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>EffectLedger.Contracts</PackageId>
+    <Authors>Nuctori</Authors>
+    <Company>Nuctori</Company>
+    <Description>可选类型行为约束的声明面（实验）：IConstrained&lt;TProfile&gt; 与内建角色 ImmutableValue / DeterministicComputation。仅声明不提供检查；静态检查由 EffectLedger.Contracts.Analyzer 提供。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>roslyn;analyzer;immutability;determinism;contracts</PackageTags>
+  </PropertyGroup>
+
+</Project>

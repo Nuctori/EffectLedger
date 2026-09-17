@@ -1,0 +1,26 @@
+<!-- DumpCompileInputs.targets：在 CoreCompile 之前注入，把真实编译输入写出。
+     输出三个子文件（.meta/.src/.ref），逐行书写，规避 JSON 对 Windows 反斜杠的转义问题。 -->
+<Project>
+
+  <Target Name="EffectLedgerDumpCompileInputs"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ResolveAssemblyReferences;GenerateGlobalUsings">
+    <!-- 审计第十轮（门禁头条）：直接 -t: 调用本目标时，RAR 与 GenerateGlobalUsings 不会执行
+         ⇒ @(ReferencePath) 为空、obj/GlobalUsings.g.cs 缺失 ⇒ 任何真实工程都被误判编译错误。
+         显式声明依赖后，单目标调用也会先解析引用与全局 using。 -->
+    <ItemGroup>
+      <_EbcDefine Include="$(DefineConstants)" Condition="'$(DefineConstants)' != ''" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <_EbcMeta>lang=:$(LangVersion):nullable=:$(Nullable):defines=:@(_EbcDefine->'%(Identity)', ';'):generators=:@(Analyzer->'%(FullPath)', ';'):tfms=:$(TargetFrameworks)</_EbcMeta>
+    </PropertyGroup>
+
+    <!-- 也收集生成器已产出的源（CoreCompile 后 @(Compile) 可能已含生成文件；每次构建都重跑本目标）。 -->
+    <WriteLinesToFile File="$(EffectLedgerDumpFile).meta" Lines="$(_EbcMeta)" Overwrite="true" />
+    <WriteLinesToFile File="$(EffectLedgerDumpFile).src" Lines="@(Compile->'%(FullPath)')" Overwrite="true" />
+    <WriteLinesToFile File="$(EffectLedgerDumpFile).ref" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
+    <WriteLinesToFile File="$(EffectLedgerDumpFile).gen" Lines="@(Analyzer->'%(FullPath)')" Overwrite="true" />
+  </Target>
+
+</Project>

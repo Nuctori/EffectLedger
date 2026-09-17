@@ -5,10 +5,15 @@
     <Project Path="src/EffectLedger.Tool/EffectLedger.Tool.csproj" />
     <Project Path="src/EffectLedger/EffectLedger.csproj" />
     <Project Path="src/EffectLedger.Runtime/EffectLedger.Runtime.csproj" />
+    <!-- 可选类型行为约束（独立模块，不与上面五个包互相依赖） -->
+    <Project Path="src/EffectLedger.Contracts/EffectLedger.Contracts.csproj" />
+    <Project Path="src/EffectLedger.Contracts.Analyzer/EffectLedger.Contracts.Analyzer.csproj" />
+    <Project Path="src/EffectLedger.Contracts.Tool/EffectLedger.Contracts.Tool.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EffectLedger.Tests/EffectLedger.Tests.csproj" />
     <Project Path="tests/EffectLedger.Runtime.Tests/EffectLedger.Runtime.Tests.csproj" />
+    <Project Path="tests/EffectLedger.Contracts.Tests/EffectLedger.Contracts.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/GodotIntegration/SampleGame.csproj" />
@@ -16,5 +21,6 @@
     <Project Path="samples/GodotReal/GodotReal.csproj" />
     <Project Path="samples/AnalyzerConsumer/AnalyzerConsumer.csproj" />
     <Project Path="samples/HelloEffect/HelloEffect.csproj" />
+    <Project Path="samples/BehaviorContracts/BehaviorContracts.csproj" />
   </Folder>
 </Solution>

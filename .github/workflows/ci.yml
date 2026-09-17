@@ -38,3 +38,6 @@ jobs:
       - name: Pack + Consumer smoke (真实 NuGet 管线走查：五包落本地 feed → 隔离缓存独立还原 →
               配对样例绿 / 泄漏样例红 / Generator 单装传递闭包)
         run: bash tests/ConsumerSmoke/run-smoke.sh
+      - name: 可选类型行为约束 — 真实包链消费门（配对样例绿 / 违规样例红且含 EBC2001 /
+              analyzers/ 落位；分析器未落即红）
+        run: bash tests/ContractsConsumerSmoke/run-smoke.sh Release

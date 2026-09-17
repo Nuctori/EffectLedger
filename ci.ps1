@@ -16,12 +16,18 @@ dotnet test tests/EffectLedger.Runtime.Tests/EffectLedger.Runtime.Tests.csproj -
 $t2 = $LASTEXITCODE
 dotnet test samples/GodotIntegration/SampleGame.csproj -c Release --no-build --blame-hang --blame-hang-timeout 300s
 $t3 = $LASTEXITCODE
+# 可选类型行为约束测试（同 ci.sh）
+dotnet test tests/EffectLedger.Contracts.Tests/EffectLedger.Contracts.Tests.csproj -c Release --no-build --blame-hang --blame-hang-timeout 300s
+$t5 = $LASTEXITCODE
 # roi-2026-09-14：打包消费烟测——真实 NuGet 管线走查（同 ci.sh；PowerShell 版脚本）
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/ConsumerSmoke/run-smoke.ps1
 $t4 = $LASTEXITCODE
+# 可选类型行为约束：真实 NuGet 包链消费门（同 ci.sh）
+bash tests/ContractsConsumerSmoke/run-smoke.sh Release
+$t6 = $LASTEXITCODE
 # qed-gate（2026-09-06）：同 ci.sh——防本机长会话 MSBuild/Roslyn 服务器累积致并行测试宿主 OOM 偶红
 dotnet build-server shutdown 2>$null
 $gateExit = 0
-foreach ($c in @($dafnyExit, $t1, $t2, $t3, $t4)) { if ($c -ne 0) { $gateExit = $c; break } }
+foreach ($c in @($dafnyExit, $t1, $t2, $t3, $t5, $t4, $t6)) { if ($c -ne 0) { $gateExit = $c; break } }
 if ($gateExit -eq 0) { Write-Host "CI audit gate: PASS (0 errors, 0 test failures; AnalyzerConsumer 1 条 EAA0901 故意泄漏警告为样例设计)" }
 exit $gateExit

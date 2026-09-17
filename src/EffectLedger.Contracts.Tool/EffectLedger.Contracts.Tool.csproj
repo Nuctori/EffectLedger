@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>RS2008;RS1041;RS1035</NoWarn>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>effectledger-contracts</ToolCommandName>
+    <PackageId>EffectLedger.Contracts.Tool</PackageId>
+    <Authors>Nuctori</Authors>
+    <Company>Nuctori</Company>
+    <Description>可选类型行为约束的严格审核入口（实验）：读取真实构建输入，复用与分析器相同的检查引擎，按覆盖与策略判定。IDE 诊断被抑制时仍失败。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>roslyn;analyzer;immutability;determinism;ci</PackageTags>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 编译期复用与分析器完全相同的引擎源码（单一真源，避免两套判断语义）。 -->
+    <Compile Include="..\EffectLedger.Contracts.Analyzer\Analysis\*.cs" LinkBase="Engine\Analysis" />
+    <Compile Include="..\EffectLedger.Contracts.Analyzer\Diagnostics\*.cs" LinkBase="Engine\Diagnostics" />
+    <Compile Include="..\EffectLedger.Contracts.Analyzer\Profiles\*.cs" LinkBase="Engine\Profiles" />
+    <Compile Include="..\EffectLedger.Contracts.Analyzer\Engine\*.cs" LinkBase="Engine\Core" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- 声明包与引擎都引用 Contracts 的 IConstrained<T> 符号，需引用其编译输出。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\EffectLedger.Contracts\EffectLedger.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- MSBuild 目标文件需随工具输出，供 BuildProbe 注入到目标工程的构建中。 -->
+  <ItemGroup>
+    <None Include="DumpCompileInputs.targets" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
