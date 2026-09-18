@@ -356,3 +356,11 @@
 - P6.7 发布候选证据包（部分由 progress/台账承载）；
 - BC-142 net8 目标与 Windows CI 矩阵；
 - 跨工程调用的**自动**摘要生成（现由用户摘要配置人工登记——这是计划 P4.4 的设计形态，非缺陷）。
+
+## 第十六轮（补）：Linux CI 首跑 — 既有性能断言偶红
+
+推送 49af706 后 Linux CI 首跑失败：`EffectScriptEdgeTests.Property_Random300_AuditDeterministicAndTerminates`
+——"300 随机脚本审计应 <1s，实际 1217ms"。该断言为**既有 L1 性能墙钟钉**（本模块未触碰 L1 代码），
+GitHub 共享 runner 变慢即可能超 1s（仓库先例：R12"伸缩性曲线钉共享 runner 假红收口"）。
+**同提交 `gh run rerun --failed` 后转绿** ⇒ 偶红（runner 方差），非确定性回归。
+与既往处置一致，建议后续把该墙钟钉改为"Linux runner 阈值放宽或按 runner 环境判据"（既有 L1 维护事项，不属本模块范围）。
