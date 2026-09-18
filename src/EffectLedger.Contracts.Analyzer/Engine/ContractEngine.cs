@@ -37,10 +37,20 @@ public sealed class ContractEngine
     private readonly Compilation _compilation;
     private readonly AnalysisBudget _budget;
 
+    private readonly ContractConfig _config;
+
     public ContractEngine(Compilation compilation, AnalysisBudget budget)
+        : this(compilation, budget, ContractConfig.Empty) { }
+
+    /// <summary>
+    /// <paramref name="config"/> 承载 P4.4 用户摘要与策略：外部符号若有匹配摘要，
+    /// 以摘要替代 Unknown；否则保持 Unknown（绝不静默当作纯）。
+    /// </summary>
+    public ContractEngine(Compilation compilation, AnalysisBudget budget, ContractConfig config)
     {
         _compilation = compilation;
         _budget = budget;
+        _config = config;
     }
 
     public ContractResult Evaluate(ContractDeclaration decl)
@@ -53,7 +63,16 @@ public sealed class ContractEngine
             return result;
         }
 
-        var analyzer = new CallGraphAnalyzer(_compilation, _budget);
+        // 计划 §2.2：受约束 class/record class 须 sealed（BC-139：角色经派生继承会扩大
+        // 契约面，基类未 sealed 时派生类可自由扩展——只对引用类型要求，值类型天然 sealed）。
+        if (decl.Type.TypeKind == TypeKind.Class && decl.Type is INamedTypeSymbol nt && !nt.IsSealed)
+        {
+            result.Violations.Add(Diagnostic.Create(ContractDiagnostics.InvalidProfile,
+                decl.Location, decl.Type.Name,
+                $"受约束的 class 须声明 sealed（角色语义不容未受控的派生扩展）"));
+        }
+
+        var analyzer = new CallGraphAnalyzer(_compilation, _budget, _config);
         var behavior = MethodSummary.Empty;
 
         // 覆盖全部可执行成员（含属性/索引器访问器与事件访问器）：

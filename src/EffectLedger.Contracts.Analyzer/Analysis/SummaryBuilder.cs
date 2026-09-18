@@ -22,10 +22,17 @@ public sealed class SummaryBuilder
     private readonly AnalysisBudget _budget;
     private int _steps;
 
+    private readonly ContractConfig _config;
+
     public SummaryBuilder(Compilation compilation, AnalysisBudget budget)
+        : this(compilation, budget, ContractConfig.Empty) { }
+
+    /// <summary><paramref name="config"/>：P4.4 用户摘要——外部符号命中摘要时以摘要替代 Unknown。</summary>
+    public SummaryBuilder(Compilation compilation, AnalysisBudget budget, ContractConfig config)
     {
         _compilation = compilation;
         _budget = budget;
+        _config = config;
     }
 
     /// <summary>构建一个方法（或其构造函数/访问器）的直接摘要。</summary>
@@ -427,9 +434,12 @@ public sealed class SummaryBuilder
         }
 
         // 2) 用户代码（同 compilation 有源码）→ 由调用图传播（此处只记调用关系，不重复展开）。
-        //    外部无摘要 → Unknown（不默认纯）。
+        //    外部符号：先查 P4.4 用户摘要；命中则以摘要为准（trust），否则 Unknown（不默认纯）。
         if (target.IsExtern || target.DeclaringSyntaxReferences.IsEmpty)
         {
+            if (TryUserSummary(typeName, memberName, loc, out var viaSummary))
+                return viaSummary;
+
             if (IsSystemNamespace(typeName))
             {
                 return MethodSummary.Empty.WithUnknown(UnknownReason.ExternalSummaryMissing,
@@ -663,6 +673,52 @@ public sealed class SummaryBuilder
             }
         }
         return worst;
+    }
+
+    /// <summary>
+    /// P4.4：查用户摘要。命中 ⇒ 按摘要返回（trust 级证据，报告须标注）；
+    /// 未命中/策略禁止 ⇒ false，由调用方落 Unknown。
+    /// 匹配为**精确符号 ID**（`命名空间.类型::成员`），不做短名匹配（防误命中）。
+    /// </summary>
+    private bool TryUserSummary(string? typeName, string memberName, string? loc, out MethodSummary summary)
+    {
+        summary = MethodSummary.Empty;
+        if (!_config.Policy.AllowUserSummaries || _config.Summaries.IsDefaultOrEmpty || typeName is null)
+            return false;
+
+        var symbolId = typeName + "::" + memberName;
+        UserSummary? hit = null;
+        foreach (var s in _config.Summaries)
+            if (string.Equals(s.SymbolId, symbolId, StringComparison.Ordinal)) { hit = s; break; }
+        if (hit is null) return false;
+
+        var desc = $"用户摘要 {hit.SymbolId}（trust；依据 {hit.EvidenceRef}）";
+        switch (hit.Effect)
+        {
+            case "pure":
+            case "none":
+                break;
+            case "hidden-time":
+                summary = summary.WithHidden(HiddenInputKind.Time, desc, loc); break;
+            case "hidden-random":
+                summary = summary.WithHidden(HiddenInputKind.Random, desc, loc); break;
+            case "hidden-ambient":
+                summary = summary.WithHidden(HiddenInputKind.Ambient, desc, loc); break;
+            case "hidden-culture":
+                summary = summary.WithHidden(HiddenInputKind.Culture, desc, loc); break;
+            case "io-console":
+                summary = summary.WithEffect(ExternalEffectKind.Console, desc, loc); break;
+            case "io-file":
+                summary = summary.WithEffect(ExternalEffectKind.File, desc, loc); break;
+            case "io-network":
+                summary = summary.WithEffect(ExternalEffectKind.Network, desc, loc); break;
+            case "io-static-write":
+                summary = summary.WithEffect(ExternalEffectKind.StaticWrite, desc, loc); break;
+        }
+        if (hit.ReturnsAlias) summary = MethodSummary.Merge(summary, new MethodSummary { ReturnsInputAlias = true });
+        if (hit.StoresCallback) summary = MethodSummary.Merge(summary, new MethodSummary { StoresCallback = true });
+        if (hit.ExecutesCallback) summary = MethodSummary.Merge(summary, new MethodSummary { ExecutesCallback = true });
+        return true;
     }
 
     /// <summary>

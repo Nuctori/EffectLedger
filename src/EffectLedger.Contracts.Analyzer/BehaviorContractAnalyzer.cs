@@ -22,7 +22,8 @@ public sealed class BehaviorContractAnalyzer : DiagnosticAnalyzer
         ContractDiagnostics.DeterministicHiddenInput,
         ContractDiagnostics.DeterministicExternalWrite,
         ContractDiagnostics.DeterministicEntryCondition,
-        ContractDiagnostics.UnknownDependency);
+        ContractDiagnostics.UnknownDependency,
+        ContractDiagnostics.ConfigInvalid);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -33,7 +34,20 @@ public sealed class BehaviorContractAnalyzer : DiagnosticAnalyzer
             var compilation = compilationContext.Compilation;
             var resolver = new ProfileResolver(compilation);
             var engine = new ContractEngine(compilation, AnalysisBudget.Default);
-            foreach (var decl in resolver.FindDeclarations())
+            var decls = resolver.FindDeclarations().ToList();
+            // 计划 §2.1：同一类型声明多个角色 ⇒ EBC0001 冲突，并只对首个角色评估
+            // （两个角色语义互斥，双双评估只会产生误导性噪声）。
+            var conflicts = decls.GroupBy(d => d.Type, SymbolEqualityComparer.Default)
+                .Where(g => g.Count() > 1);
+            foreach (var g in conflicts)
+            {
+                var first = g.First();
+                compilationContext.ReportDiagnostic(Diagnostic.Create(
+                    ContractDiagnostics.InvalidProfile, first.Location,
+                    first.Type.Name, $"声明了 {g.Count()} 个互斥角色（{string.Join("/", g.Select(d => d.Profile))}）；每类型只支持一个"));
+            }
+            foreach (var decl in decls.Where(d =>
+                !conflicts.Any(g => SymbolEqualityComparer.Default.Equals(g.Key, d.Type))))
             {
                 var result = engine.Evaluate(decl);
                 foreach (var d in result.Violations) compilationContext.ReportDiagnostic(d);

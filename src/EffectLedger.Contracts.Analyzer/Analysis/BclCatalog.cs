@@ -37,6 +37,10 @@ public readonly struct CatalogEntry
 /// </summary>
 public static class BclCatalog
 {
+    /// <summary>目录版本（P5.6）：条目增补递增 1.x；判定语义变更递增 2.0。
+    /// 报告记录它以区分"同一引擎不同目录"的结论。</summary>
+    public const string Version = "1.0.0";
+
     private static readonly Dictionary<string, CatalogEntry> Entries = new()
     {
         // ── 隐藏输入：时钟（含值成员，避免只禁类型）──

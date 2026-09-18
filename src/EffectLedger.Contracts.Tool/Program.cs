@@ -74,11 +74,18 @@ public static class Program
             return 1;
         }
 
+        // P1.4/P4.4：加载 effectledger.contracts.json（重复文件/未知键/非法版本/缺 reason ⇒ 明确错误）。
+        // 配置错误一律 exit 1——静默按"无配置"继续会让用户以为摘要已生效。
+        var contractConfig = LoadContractConfig(inputs.AdditionalFiles);
+        foreach (var e in contractConfig.Errors)
+            Console.Error.WriteLine("error: effectledger.contracts.json 无效：" + e);
+        if (!contractConfig.IsValid) return 1;
+
         var resolver = new ProfileResolver(compilation);
-        var engine = new ContractEngine(compilation, AnalysisBudget.Default);
+        var engine = new ContractEngine(compilation, AnalysisBudget.Default, contractConfig);
         var decls = resolver.FindDeclarations().ToList();
 
-        var report = BuildReport(opt, compilation, decls, engine);
+        var report = BuildReport(opt, compilation, decls, engine, contractConfig);
         if (opt.ReportPath is not null)
         {
             try
@@ -103,6 +110,18 @@ public static class Program
             return 2;
         }
 
+        // 基线核对（P5.5）：提供 --baseline 时，删除角色/改名/漏项目必须显式更新基线，
+        // 否则 exit 2——防止"静默丢根"让门禁悄悄缩水。
+        if (opt.BaselinePath is not null)
+        {
+            var missing = CheckBaseline(opt, report.Roots);
+            if (missing is { Count: > 0 } || opt.BaselineMismatch)
+            {
+                Console.Error.WriteLine("error: 与基线不一致（详见上方输出）。");
+                return 2;
+            }
+        }
+
         if (opt.Mode == "strict")
         {
             if (report.FailedRoots > 0) return 2;
@@ -119,16 +138,58 @@ public static class Program
 
     private sealed record RootReport(string Type, string Profile, bool Violated, bool Unknown,
         int ViolationCount, int UnknownCount, IReadOnlyList<string> Diagnostics,
-        IReadOnlyList<string> UnknownReasons);
+        IReadOnlyList<string> UnknownReasons,
+        IReadOnlyList<string> RuleBasis, IReadOnlyList<string> TrustDependencies);
+
+    /// <summary>覆盖计数（P5.6）：让"没查清"可观测。</summary>
+    private sealed record CoverageReport(int SourceFiles, int ConstrainedTypesFound,
+        int RootsEvaluated, int RootsWithViolations, int RootsWithUnknown, int RootsClean);
 
     private sealed record AuditReport(int RootCount, int FailedRoots, int UnknownRoots,
-        string Mode, string EngineVersion, IReadOnlyList<RootReport> Roots)
+        string Mode, string EngineVersion, IReadOnlyList<RootReport> Roots,
+        CoverageReport Coverage, string SourceFingerprint, string CatalogVersion,
+        IReadOnlyList<string> ConfigSources)
     {
         public bool Passed => FailedRoots == 0 && UnknownRoots == 0;
     }
 
+    /// <summary>
+    /// 从真实构建导出的 AdditionalFiles 中加载 effectledger.contracts.json（P1.4）。
+    /// 多于一个 ⇒ 拒绝（生效来源不确定）；缺失 ⇒ 空配置；解析错误 ⇒ 由调用方 loud 处理。
+    /// </summary>
+    private static ContractConfig LoadContractConfig(IReadOnlyList<string> additionalFiles)
+    {
+        var matches = additionalFiles
+            .Where(f => string.Equals(Path.GetFileName(f), "effectledger.contracts.json",
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0) return ContractConfig.Empty;
+
+        if (matches.Count > 1)
+            return new ContractConfig(
+                System.Collections.Immutable.ImmutableArray<UserSummary>.Empty,
+                "none",
+                System.Collections.Immutable.ImmutableArray.Create(
+                    $"发现 {matches.Count} 个 effectledger.contracts.json（{string.Join(", ", matches)}）；" +
+                    "重复配置会让生效来源不确定，故拒绝"),
+                PolicyOptions.Default);
+
+        string text;
+        try { text = File.ReadAllText(matches[0]); }
+        catch (Exception ex)
+        {
+            return new ContractConfig(
+                System.Collections.Immutable.ImmutableArray<UserSummary>.Empty,
+                "none",
+                System.Collections.Immutable.ImmutableArray.Create($"无法读取 {matches[0]}：{ex.Message}"),
+                PolicyOptions.Default);
+        }
+        return ContractConfigParser.Parse(text);
+    }
+
     private static AuditReport BuildReport(Options opt, Compilation compilation,
-        IReadOnlyList<ContractDeclaration> decls, ContractEngine engine)
+        IReadOnlyList<ContractDeclaration> decls, ContractEngine engine, ContractConfig contractConfig)
     {
         var roots = new List<RootReport>();
         int failed = 0, unknown = 0;
@@ -149,11 +210,80 @@ public static class Program
             int unknownCount = unknownReasons.Count;
             if (violationCount > 0) failed++;
             if (unknownCount > 0) unknown++;
+
+            // 规则依据与信任依赖（P5.6）：报告必须能回答"这个结论凭什么"。
+            var ruleBasis = res.Violations.Select(v => v.Id)
+                .Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            var trust = new List<string> { "builtin-bcl-catalog" };
+            if (contractConfig.Summaries.Length > 0) trust.Add("user-summaries");
+
             roots.Add(new RootReport(d.Type.Name, d.Profile.ToString(), violationCount > 0, unknownCount > 0,
-                violationCount, unknownCount, diags, unknownReasons));
+                violationCount, unknownCount, diags, unknownReasons, ruleBasis, trust));
         }
+
+        // 覆盖计数（P5.6）：只报"N 根全 OK"无法区分"查过且干净"与"根本没查到"。
+        var coverage = new CoverageReport(
+            SourceFiles: compilation.SyntaxTrees.Count(),
+            ConstrainedTypesFound: decls.Count,
+            RootsEvaluated: roots.Count,
+            RootsWithViolations: roots.Count(r => r.Violated),
+            RootsWithUnknown: roots.Count(r => r.Unknown),
+            RootsClean: roots.Count(r => !r.Violated && !r.Unknown));
+
         return new AuditReport(roots.Count, failed, unknown, opt.Mode,
-            typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0", roots);
+            typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0", roots,
+            coverage, SourceFingerprint(compilation), BclCatalog.Version,
+            contractConfig.Fingerprint == "none"
+                ? Array.Empty<string>()
+                : new[] { "effectledger.contracts.json:" + contractConfig.Fingerprint });
+    }
+
+    /// <summary>源指纹（P5.6）：按文件名+长度摘要；报告可比对"两次审核是否同一份源码"。</summary>
+    private static string SourceFingerprint(Compilation compilation)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var sb = new System.Text.StringBuilder();
+        foreach (var tree in compilation.SyntaxTrees.OrderBy(t => t.FilePath, StringComparer.Ordinal))
+            sb.Append(Path.GetFileName(tree.FilePath)).Append(':').Append(tree.Length).Append('\n');
+        var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// 基线核对（P5.5）：期望根清单（JSON 数组或 {expectedRoots:[…]}）。
+    /// 删除角色/改名/漏项目都会产生差异 ⇒ 缺失与多余都要报告（不能更新基线自动掩盖）。
+    /// </summary>
+    private static List<string>? CheckBaseline(Options opt, IReadOnlyList<RootReport> roots)
+    {
+        if (opt.BaselinePath is null) return null;
+        List<string> expected;
+        try
+        {
+            // 支持两种形态：裸字符串数组，或 {"expectedRoots":[…]} 对象。
+            var doc = JsonDocument.Parse(File.ReadAllText(opt.BaselinePath));
+            expected = doc.RootElement.ValueKind == JsonValueKind.Array
+                ? doc.RootElement.EnumerateArray().Select(e => e.GetString()!).ToList()
+                : doc.RootElement.GetProperty("expectedRoots")
+                    .EnumerateArray().Select(e => e.GetString()!).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"error: 基线无法读取 '{opt.BaselinePath}'：{ex.Message}");
+            opt.BaselineMismatch = true;   // 视为与基线不一致（fail-closed）
+            return null;
+        }
+        var found = roots.Select(r => r.Type).ToHashSet(StringComparer.Ordinal);
+        var missing = expected.Where(e => !found.Contains(e)).OrderBy(x => x).ToList();
+        var extra = roots.Select(r => r.Type).Where(t => !expected.Contains(t, StringComparer.Ordinal))
+            .OrderBy(x => x).ToList();
+        if (missing.Count > 0 || extra.Count > 0)
+        {
+            Console.Error.WriteLine("error: 受约束根与基线不一致（删除/改名/漏项目必须显式更新基线）：");
+            foreach (var m in missing) Console.Error.WriteLine("  缺失（基线有、本次未发现）：" + m);
+            foreach (var e in extra) Console.Error.WriteLine("  新增（基线无、本次出现）：" + e);
+            opt.BaselineMismatch = true;
+        }
+        return missing;
     }
 
     private static void PrintSummary(AuditReport r, Options opt)
@@ -207,6 +337,8 @@ public static class Program
         public bool AllowGenerators;
         public bool ShowHelp;
         public bool InvalidUsage;
+        public string? BaselinePath;
+        public bool BaselineMismatch;
     }
 
     private static Options ParseArgs(string[] args)
@@ -233,6 +365,7 @@ public static class Program
                 case "--report": o.ReportPath = Next(a) ?? o.ReportPath; break;
                 case "--allow-empty": o.AllowEmpty = true; break;
                 case "--allow-generators": o.AllowGenerators = true; break;
+                case "--baseline": o.BaselinePath = Next(a) ?? o.BaselinePath; break;
                 case "-h": case "--help": o.ShowHelp = true; break;
                 default:
                     if (a.StartsWith("-"))
@@ -261,6 +394,7 @@ public static class Program
         Console.WriteLine("  --report <path>                JSON 报告输出路径");
         Console.WriteLine("  --allow-empty                  目标清单允许 0 个受约束类型");
         Console.WriteLine("  --allow-generators             确认生成源不含受约束类型（默认对生成器工程 fail-closed）");
+        Console.WriteLine("  --baseline <path>              期望根清单（JSON 字符串数组）；与本次结果不一致即失败");
     }
 }
 
@@ -272,4 +406,6 @@ internal sealed record CompileInputs(
     NullableContextOptions NullableOptions,
     IEnumerable<string> Defines,
     IReadOnlyList<string> GeneratorsReferenced,
-    IReadOnlyList<string> MultiTargetFrameworks);
+    IReadOnlyList<string> MultiTargetFrameworks,
+    /// <summary>P1.4：消费方 AdditionalFiles（含 effectledger.contracts.json）。</summary>
+    IReadOnlyList<string> AdditionalFiles);

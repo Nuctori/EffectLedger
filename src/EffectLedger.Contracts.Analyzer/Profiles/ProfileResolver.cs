@@ -60,17 +60,35 @@ public sealed class ProfileResolver
         var result = new List<ContractDeclaration>();
         foreach (var type in _compilation.GlobalNamespace.GetAllTypes())
         {
-            // 每个接口实现；IConstrained<T> 只有一个类型参数。
+            // 收集该类型声明的所有角色（判重/判冲突用）。
+            var profiles = new List<ContractProfileKind>();
             foreach (var iface in type.AllInterfaces)
             {
                 if (!iface.IsGenericType) continue;
                 if (!IsOurSymbol(iface.ConstructedFrom, IConstrainedName)) continue;
 
-                // 只接受直接、显式实现（alias/全限定均可，符号已归一）。
                 var profileType = iface.TypeArguments[0] as INamedTypeSymbol;
                 var kind = profileType is null ? ContractProfileKind.Unknown : ResolveProfile(profileType);
-                var loc = type.Locations.FirstOrDefault(l => l.IsInSource) ?? Location.None;
-                result.Add(new ContractDeclaration(type, kind, loc));
+                // 未知角色必须保留：计划 §2.1 要求发"不支持的角色"诊断（不能静默接受）。
+                profiles.Add(kind);
+            }
+
+            if (profiles.Count == 0) continue;
+
+            // 计划 §2.1：每个类型只支持一个显式角色；多角色 ⇒ 冲突（去重后仍 >1）。
+            // 首选规则：取第一个已知角色；冲突时保留两个声明，由引擎按"冲突"报告
+            // （实现为两个 ContractDeclaration，引擎端对同类型多声明报 EBC0001）。
+            var loc = type.Locations.FirstOrDefault(l => l.IsInSource) ?? Location.None;
+            var distinct = profiles.Distinct().ToList();
+            if (distinct.Count == 1)
+            {
+                result.Add(new ContractDeclaration(type, distinct[0], loc));
+            }
+            else
+            {
+                // 多角色冲突：每个角色各发一条声明，引擎将因重复根而报冲突（见 ContractEngine）。
+                foreach (var k in distinct)
+                    result.Add(new ContractDeclaration(type, k, loc));
             }
         }
         return result;

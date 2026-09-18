@@ -51,10 +51,16 @@ dotnet_diagnostic.EBC1001.severity = error   # 不可变值被修改
 dotnet_diagnostic.EBC1002.severity = error   # 内部可变别名泄露
 dotnet_diagnostic.EBC1003.severity = error   # 构造期 this 逃逸
 dotnet_diagnostic.EBC9001.severity = error   # 未知依赖（最常触发；漏了它门禁形同虚设）
+dotnet_diagnostic.EBC9002.severity = error   # 配置文件无效（配置错配绝不静默回落）
 ```
 
 > **不要把 EBC9001 留成 warning**：Unknown 是本工具最常报的一类，
 > 只把前几条升为 error 会让"未验证"的代码在构建上显示为通过——那正是本工具要消除的假绿。
+
+### 声明规则（EBC0001）
+
+- **每类型一个角色**：同时声明 `ImmutableValue` 与 `DeterministicComputation` 是冲突（EBC0001）。
+- **class 须 sealed**：角色语义不容未受控的派生扩展；值类型天然 sealed。
 
 ### 3. 严格审核（推荐用于 CI）
 
@@ -74,6 +80,10 @@ dotnet run --project src/EffectLedger.Contracts.Tool -- check <你的工程.cspr
 严格模式读取**真实构建输入**并按内部原始结论判定：即使 `NoWarn` 隐藏了全部 EBC 诊断、或源码里写了 `#pragma warning disable`，违规仍会以 exit 2 失败。
 
 **源生成器**：若工程引用了源生成器、而本次编译输入中未见生成产物（`obj/`），工具会拒绝给出通过结论（exit 1）——因为生成源可能声明受约束类型而工具看不到。确认生成源不含受约束类型后，用 `--allow-generators` 显式放行。
+
+**基线门（P5.5）**：`--baseline roots.json` 提供期望受约束类型清单（JSON 字符串数组
+或 `{"expectedRoots":[…]}`）。与本次结果不一致（删除角色/改名/漏项目）⇒ exit 2，
+防止门禁被静默缩水；有意变更时更新基线文件即可。
 
 ## 两个角色
 
@@ -156,7 +166,12 @@ strict 模式下，只要根上存在任何 Unknown，该根即判定为不通�
 - **数组/可变集合作为确定性入口**被 EBC2003 拒绝（设计；迁移到 `IReadOnlyList<T>`）。
 - **公共方法/索引器的暴露检查**：方法返回内部可变字段、可写 `ref` 返回索引器已检出；
   经多层容器间接流转的暴露可能未完整覆盖。
-- 用户摘要配置（`effectledger.contracts.json`）未接线；strict 不依赖它。
+- **用户摘要配置（`effectledger.contracts.json`）已接线（P1.4/P4.4）**：
+  可为外部程序集符号登记 trust 级摘要（effect/reason/evidenceRef 必填），
+  使跨工程调用可被判定而不再永久 Unknown。摘要按**精确符号 ID** 匹配，
+  重复符号/未知键/缺 reason 拒绝；`policy.allowBuiltinOverride` 默认 false
+  （覆盖内建禁止项须附批准依据）。摘要属于 **trust 而非 proof**，报告会标注。
+  注意：`--report` 的 `ConfigSources` 字段会记录生效配置的指纹。
 - **BCL 目录仍是"已登记才放行"的白名单**：未登记成员落 `ExternalSummaryMissing`。
   已覆盖常见集合/字符串/数值/LINQ 纯子集与 InvariantCulture 重载，但**不可能穷尽**；
   这也是当前最主要的 Unknown 来源。遇此情况请提 issue 或改用已覆盖的等价 API。

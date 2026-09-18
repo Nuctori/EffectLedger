@@ -227,4 +227,128 @@ public class EleganceTests
         Assert.True(r.WithId("EBC1001").Any(),
             "静态可变状态写入应报 EBC1001（与确定性角色的同款判定对齐）");
     }
+
+    // P1.4/P4.4：用户摘要配置入口（解除跨工程 Unknown 死局——审计判定的最大采纳障碍）。
+    // 用真实存在但**不在 BCL 目录**的外部符号（Convert.ToInt32(string) 走 CurrentCulture）：
+    // 无摘要 ⇒ Unknown；有摘要 ⇒ 解析为具体违规（trust，标注 reason/evidenceRef）。
+    [Fact]
+    public void UserSummary_ResolvesExternalSymbol_ToSpecificViolation()
+    {
+        const string json = """
+        {
+          "schemaVersion": "1.0.0",
+          "policy": { "allowUserSummaries": true },
+          "summaries": [
+            { "symbolId": "System.Convert::ToInt32",
+              "effect": "hidden-culture",
+              "reason": "字符串解析受 CurrentCulture 影响，已确认",
+              "evidenceRef": "docs/adr/0012-convert-culture.md" }
+          ]
+        }
+        """;
+        var result = CompilationFixture.EvaluateWithConfig("""
+namespace Probe;
+public sealed class Calc : EffectLedger.Contracts.IConstrained<EffectLedger.Contracts.DeterministicComputation>
+{
+    public int Go(string s) => System.Convert.ToInt32(s);
+}
+""", json);
+        Assert.True(result.Violations.Count > 0, "用户摘要须把外部符号解析为具体违规");
+        Assert.Contains("EBC2001", result.Violations.Select(v => v.Id));
+        // 注意：Assert.Contains(子串, IEnumerable<string>) 检查的是**元素相等**而非子串，
+        // 必须用谓词重载（实测此处踩过：消息含"用户摘要"但元素不相等 ⇒ 假红）。
+        Assert.Contains(result.Violations.Select(v => v.GetMessage()),
+            m => m.Contains("用户摘要") && m.Contains("trust"));
+    }
+
+    // 对照：无摘要时同一符号保持 Unknown（绝不静默当纯）。
+    [Fact]
+    public void SameExternalSymbol_WithoutSummary_StaysUnknown()
+    {
+        var r = CompilationFixture.Run("""
+namespace Probe;
+public sealed class Calc : EffectLedger.Contracts.IConstrained<EffectLedger.Contracts.DeterministicComputation>
+{
+    public int Go(string s) => System.Convert.ToInt32(s);
+}
+""");
+        Assert.True(r.Compiled);
+        Assert.NotEmpty(r.WithId("EBC9001"));
+    }
+
+    [Fact]
+    public void ConfigWithDuplicateSymbol_ReportedAsInvalid()
+    {
+        const string json = """
+        {
+          "schemaVersion": "1.0.0",
+          "summaries": [
+            { "symbolId": "A::B", "effect": "pure", "reason": "r", "evidenceRef": "e" },
+            { "symbolId": "A::B", "effect": "pure", "reason": "r", "evidenceRef": "e" }
+          ]
+        }
+        """;
+        var cfg = ContractConfigParser.Parse(json);
+        Assert.False(cfg.IsValid);
+        Assert.Contains(cfg.Errors, e => e.Contains("冲突摘要") || e.Contains("重复"));
+    }
+
+    [Fact]
+    public void ConfigMissingReason_IsRejected()
+    {
+        const string json = "{ \"schemaVersion\": \"1.0.0\", \"summaries\": [ { \"symbolId\": \"A::B\", \"effect\": \"pure\" } ] }";
+        var cfg = ContractConfigParser.Parse(json);
+        Assert.False(cfg.IsValid);
+        Assert.Contains(cfg.Errors, e => e.Contains("reason"));
+    }
+
+    // BC-138（计划 §2.1）：同一类型声明多个互斥角色 ⇒ EBC0001，不得双双放行。
+    [Fact]
+    public void DualRoleDeclaration_IsRejected()
+    {
+        var r = CompilationFixture.Run("""
+using EffectLedger.Contracts;
+namespace T;
+public sealed class Both : IConstrained<ImmutableValue>, IConstrained<DeterministicComputation>
+{
+    public int X => 1;
+}
+""");
+        Assert.True(r.Compiled);
+        Assert.Contains(r.EbcViolations(), d =>
+            d.Id == "EBC0001" && d.GetMessage().Contains("2 个互斥角色"));
+    }
+
+    // BC-139（计划 §2.2）：受约束 class 须 sealed。
+    [Fact]
+    public void UnsealedConstrainedClass_IsRejected()
+    {
+        var r = CompilationFixture.Run("""
+using EffectLedger.Contracts;
+namespace T;
+public class NotSealed : IConstrained<ImmutableValue>
+{
+    public int X => 1;
+}
+""");
+        Assert.True(r.Compiled);
+        Assert.Contains(r.EbcViolations(), d =>
+            d.Id == "EBC0001" && d.GetMessage().Contains("sealed"));
+    }
+
+    // 对照：sealed 的合法声明不受影响。
+    [Fact]
+    public void SealedConstrainedClass_Passes()
+    {
+        var r = CompilationFixture.Run("""
+using EffectLedger.Contracts;
+namespace T;
+public sealed class Ok : IConstrained<ImmutableValue>
+{
+    public int X => 1;
+}
+""");
+        Assert.True(r.Compiled);
+        Assert.Empty(r.EbcViolations());
+    }
 }

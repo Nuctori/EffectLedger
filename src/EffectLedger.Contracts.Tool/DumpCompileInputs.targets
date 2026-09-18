@@ -21,6 +21,9 @@
     <WriteLinesToFile File="$(EffectLedgerDumpFile).src" Lines="@(Compile->'%(FullPath)')" Overwrite="true" />
     <WriteLinesToFile File="$(EffectLedgerDumpFile).ref" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
     <WriteLinesToFile File="$(EffectLedgerDumpFile).gen" Lines="@(Analyzer->'%(FullPath)')" Overwrite="true" />
+    <!-- P1.4：把消费方的 AdditionalFiles 一并导出，Tool 侧据此加载 effectledger.contracts.json。
+         （分析器经 Roslyn Options.AdditionalFiles 拿，Tool 走真实构建输入，两者必须同源。） -->
+    <WriteLinesToFile File="$(EffectLedgerDumpFile).addl" Lines="@(AdditionalFiles->'%(FullPath)')" Overwrite="true" />
   </Target>
 
 </Project>

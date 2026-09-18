@@ -66,6 +66,7 @@ internal sealed class BuildProbe
         var srcFile = outFile + ".src";
         var refFile = outFile + ".ref";
         var genFile = outFile + ".gen";
+        var addlFile = outFile + ".addl";
         if (!File.Exists(metaFile) || !File.Exists(srcFile) || !File.Exists(refFile))
         {
             Console.Error.WriteLine("error: 构建未产生编译输入（MSBuild 失败或目标未执行）。");
@@ -130,7 +131,11 @@ internal sealed class BuildProbe
             documentationMode: DocumentationMode.None,
             preprocessorSymbols: defines);
 
-        return new CompileInputs(sources, refs, parse, nullable, defines, GeneratorsReferenced, MultiTargetFrameworks);
+        var additionalFiles = File.Exists(addlFile)
+            ? File.ReadAllLines(addlFile).Where(l => l.Length > 0).ToList()
+            : new List<string>();
+
+        return new CompileInputs(sources, refs, parse, nullable, defines, GeneratorsReferenced, MultiTargetFrameworks, additionalFiles);
     }
 
     private static (string Stdout, string Stderr, int Exit) RunDotnet(IEnumerable<string> args)

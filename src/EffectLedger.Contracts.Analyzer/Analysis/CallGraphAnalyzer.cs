@@ -20,10 +20,16 @@ public sealed class CallGraphAnalyzer
     private readonly HashSet<IMethodSymbol> _inProgress = new(SymbolEqualityComparer.Default);
     private int _nodeCount;
 
+    private readonly ContractConfig _config;
+
     public CallGraphAnalyzer(Compilation compilation, AnalysisBudget budget)
+        : this(compilation, budget, ContractConfig.Empty) { }
+
+    public CallGraphAnalyzer(Compilation compilation, AnalysisBudget budget, ContractConfig config)
     {
         _compilation = compilation;
         _budget = budget;
+        _config = config;
     }
 
     /// <summary>解析（必要时递归）一个方法的完整摘要。</summary>
@@ -44,7 +50,7 @@ public sealed class CallGraphAnalyzer
         _inProgress.Add(method);
         _nodeCount++;
 
-        var builder = new SummaryBuilder(_compilation, _budget);
+        var builder = new SummaryBuilder(_compilation, _budget, _config);
         var self = builder.Build(method, new ContractProfileKindHint(
             method.MethodKind is MethodKind.Constructor or MethodKind.StaticConstructor));
         _memo[method] = self;

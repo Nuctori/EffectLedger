@@ -16,7 +16,8 @@ public static class ContractDiagnostics
         category: Category,
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "EBC0001：要么类型未实现 IConstrained<T>，要么 T 不是受支持的内建角色，要么在同一类型上声明了多个角色.");
+        description: "EBC0001：要么类型未实现 IConstrained<T>，要么 T 不是受支持的内建角色，要么在同一类型上声明了多个角色.",
+        customTags: Microsoft.CodeAnalysis.WellKnownDiagnosticTags.CompilationEnd);
 
     public static readonly DiagnosticDescriptor ImmutableMutatingWrite = new(
         id: "EBC1001",
@@ -71,6 +72,15 @@ public static class ContractDiagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "EBC2003：公共方法参数/返回值/receiver 配置不是已知稳定值（未知可变输入或外部可变引用）.");
+
+    public static readonly DiagnosticDescriptor ConfigInvalid = new(
+        id: "EBC9002",
+        title: "行为契约配置无效",
+        messageFormat: "effectledger.contracts.json 无效：{0}",
+        category: Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "EBC9002: P1.4/P4.4 配置解析、schema、版本、重复文件、未知键、大小或条目超限、摘要缺 reason/evidenceRef、冲突摘要。配置错误绝不静默回落.");
 
     public static readonly DiagnosticDescriptor UnknownDependency = new(
         id: "EBC9001",

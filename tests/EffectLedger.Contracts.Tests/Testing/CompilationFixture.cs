@@ -7,6 +7,9 @@ using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
+using EffectLedger.Contracts.Analyzer.Engine;
+using EffectLedger.Contracts.Analyzer.Analysis;
+using EffectLedger.Contracts.Analyzer.Profiles;
 
 namespace EffectLedger.Contracts.Tests.Testing;
 
@@ -26,6 +29,53 @@ public static class CompilationFixture
     };
 
     /// <summary>把源码编译进带 Contracts + Contracts.Analyzer 的 compilation，并运行分析器。</summary>
+    /// <summary>
+    /// P4.4 端到端：真实 `dotnet build` 一个带 AdditionalFiles 配置的工程，再用 Tool 审核，
+    /// 断言用户摘要把外部符号解析为**具体违规**而不是 Unknown。
+    /// 走真实管线（而非内存 compilation），因为配置经 MSBuild 的 AdditionalFiles 传递。
+    /// </summary>
+    /// <summary>
+    /// P4.4 单元级验证：内存 compilation 提供源码，用用户摘要配置驱动引擎，
+    /// 断言外部符号被解析为具体违规而非 Unknown。内存路径避免跨进程编码/程序集隔离的不确定性。
+    /// </summary>
+    public static ContractResult EvaluateWithConfig(string source, string json)
+    {
+        var r = Run(source);
+        if (!r.Compiled) return new ContractResult();
+        var config = ContractConfigParser.Parse(json);
+        var engine = new ContractEngine(r.Compilation, AnalysisBudget.Default, config);
+        var resolver = new ProfileResolver(r.Compilation);
+        var decl = resolver.FindDeclarations().FirstOrDefault();
+        return decl is null ? new ContractResult() : engine.Evaluate(decl);
+    }
+
+
+    private static int RunProcess(string file, string args, out string stdout)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = file, Arguments = args, RedirectStandardOutput = true,
+            RedirectStandardError = true, UseShellExecute = false,
+            // 子进程输出含中文诊断：统一 UTF-8，否则读取端按系统 ANSI 解码成乱码
+            // （实测把"用户摘要"读成 mojibake，导致断言假红）。
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        stdout = p.StandardOutput.ReadToEnd();
+        var err = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        stdout += err;
+        return p.ExitCode;
+    }
+
+    private static string FindRepoRoot()
+    {
+        var d = new DirectoryInfo(AppContext.BaseDirectory);
+        while (d is not null && !File.Exists(Path.Combine(d.FullName, "EffectLedger.slnx"))) d = d.Parent;
+        return d?.FullName ?? throw new InvalidOperationException("找不到仓库根（EffectLedger.slnx）");
+    }
+
     public static CompilationResult Run(params string[] sources)
     {
         var refs = BuildReferences();

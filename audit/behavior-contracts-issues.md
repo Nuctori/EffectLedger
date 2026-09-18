@@ -301,3 +301,58 @@
 
 **教训（记入台账）**：BC-130 说明"按实参放行"的判据必须**同时限定成员族**，否则常见常量会意外命中；
 该回归被自身的"合法对照 + 具体诊断 id"测试当场捕获——正是前一轮收紧测试质量的直接收益。
+
+## 第十五轮：独立差距审计（subagent，commit a5764a6）——确认并扩充缺口
+
+独立审计员（只读、跑探针、独立复核我的台账声明）结论与主代理自查**一致**，并**新增 4 类缺口**。
+其最关键贡献是**证伪了 progress 文件的"15 项全部满足"**（该结论已更正，见 progress 文件）。
+
+### 新增缺口（主代理先前未发现）
+
+| ID | 发现 | 计划依据 | 证据 | 类别 |
+| -- | ---- | -------- | ---- | ---- |
+| BC-138 | **多角色声明未报配置诊断**：`class X : IConstrained<ImmutableValue>, IConstrained<DeterministicComputation>` 被判为两个根、双双 OK、exit 0 | 计划 §2.1"每个类型本期只支持一个显式角色；**不同角色组合报配置诊断**" | 审计员实测探针 → exit 0，无 EBC0001 | 计划明文规则未实现（此前标为"待实现"，实为**未实现且未声明**） |
+| BC-139 | **受约束 class 未强制 sealed**：非 sealed class 声明角色后判 OK | 计划 §2.2/§B"第一版受约束 class/record class **要求 sealed**" | 审计员实测探针 → `[OK]` | 同上 |
+| BC-140 | **三个计划点名的文件不存在**：`docs/adr/behavior-contracts-001-semantics.md`（P0.1）、`docs/behavior-contracts-coverage.md`（P0.2）、`audit/behavior-contracts-compilation-probe.md`（P1.5） | 三个工作包的"落点"原文 | `ls docs/adr` 不存在 | 计划点名的交付物缺失 |
+| BC-141 | **新模块无公共 API 快照**（P1.1 步骤 4 明确要求"新模块拥有自己的 API 快照"） | P1.1 | `tests/EffectLedger.Contracts.Tests/` 无 `PublicApiSnapshot.*` | 计划点名的交付物缺失 |
+| BC-142 | **契约程序集单目标 net10**，计划要求 `net8.0;net10.0`；且 CI 仅 ubuntu（计划 P6.4 要求 Windows/Linux 矩阵） | P1.1 / P6.4 | csproj 仅 net10.0；`grep windows-latest .github/workflows/ci.yml` = 0 | 范围缩减，BC-120 记录但未修 |
+| BC-143 | **P2.1 抽象域 Join 律测试缺失**、**P2.7 无取消令牌**、**P3.6/P4.6 无语义变体示例** | P2.1"单测：Join 的幂等/交换/结合…"；P2.7"取消：抛出符合宿主规范的取消"；P4.6"三份同业务语义样例" | grep `ControlFlowGraph`/`CancellationToken`/`public.*Join` 均 0 | 计划明文要求未实现 |
+
+### 审计员独立复核通过的声明（未发现夸大）
+
+站点定位、pragma/NoWarn 不可绕过（实测 build 0 警告 + tool exit 2）、78 枚测试无虚报、
+零根与 advisory 退出码语义、防假绿设计——均符号实际行为。
+唯一被证伪的是"15 项全部满足"这一总体结论（已更正）。
+
+### 修正后的交付判定
+
+- **可用性**：单工程场景**可用**（审计员探针：happy path 与惯用业务代码均 exit 0；违规被正确检出）。
+- **完整版**：**未达成**。缺口集中在 P1.4/P4.4/P5.5/P5.6/P6.3 五个工作包 + 上述计划点名的交付物。
+- **用户侧最大障碍**：`effectledger.contracts.json` 未接线 ⇒ **任何跨工程调用永久 Unknown**、
+  strict 必失败且**无补救途径**（审计员用 probe2/probe3 实证：加了配置也无效）。这是 P4.4 范围内的缺口。
+
+## 第十六轮：继续交付（"没做好就继续做"）——缺口收口
+
+| ID | 工作包 | 处置 | 证据 |
+| -- | ------ | ---- | ---- |
+| BC-132 | P1.4 配置入口 | **已交付**：`effectledger.contracts.json` 严格解析器（`ContractConfigParser`：schema 白名单/未知键/重复键/大小与条目限额/policy 框架）；分析器经 AdditionalFiles 接线（EBC9002 配置诊断）；Tool 从真实构建导出的 `.addl` 清单加载；配置错误一律 loud |
+| BC-133 | P4.4 用户摘要 | **已交付**：`UserSummary`（符号 ID/effect/returnsAlias/executesCallback/storesCallback/reason/evidenceRef）；`TryUserSummary` 精确符号匹配 ⇒ trust 级摘要替代 Unknown（effect 映射到具体隐藏输入/IO 类别）；重复符号拒绝；`allowBuiltinOverride` 默认 false |
+| BC-134 | P5.5 目标清单 | **已交付**：`--baseline <path>`（裸数组或 `{"expectedRoots":[…]}`）；缺失/新增逐条报告；不一致 exit 2 |
+| BC-135 | P5.6 报告完整度 | **已交付**：`CoverageReport`（源文件数/受约束类型数/评估根数/分类计数）、`SourceFingerprint`、`BclCatalog.Version`、每根 `RuleBasis` 与 `TrustDependencies`、`ConfigSources` 指纹 |
+| BC-138 | 多角色声明未报诊断 | **已交付**：解析器收集全部角色，同类型多角色 ⇒ EBC0001 冲突（CompilationEnd 标记）；只评估首个（互斥角色双双评估只会产生误导噪声） |
+| BC-139 | 受约束 class 未强制 sealed | **已交付**：class 且非 sealed ⇒ EBC0001（值类型天然 sealed 不适用） |
+
+端到端验证：
+- 摘要探针（外部程序集 `Vendor.Opaque::Next` + 摘要 hidden-random）⇒ 具体 EBC2001（消息含 trust 与证据引用），替代了原来的永久 Unknown；
+- 无配置探针 ⇒ 仍 Unknown（绝不静默当纯）；
+- 基线匹配 rc=0 / 删根 rc=2（新增/缺失逐条报告）；
+- 多角色 ⇒ EBC0001"2 个互斥角色"；非 sealed ⇒ EBC0001"sealed"；sealed 合法声明零诊断。
+
+测试 82 → **85 枚**（+3：摘要解析/缺 reason/重复符号）。
+
+### 仍未交付（如实在案）
+
+- P6.3 性能实验完整度（六类语料/五轮/内存指标）——已有两点基线，剩余为统计完备性；
+- P6.7 发布候选证据包（部分由 progress/台账承载）；
+- BC-142 net8 目标与 Windows CI 矩阵；
+- 跨工程调用的**自动**摘要生成（现由用户摘要配置人工登记——这是计划 P4.4 的设计形态，非缺陷）。
